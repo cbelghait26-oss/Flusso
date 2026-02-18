@@ -91,19 +91,16 @@ function patchSwift(appDelegate) {
     return appDelegate;
   }
 
-  // IMPORTANT:
-  // - No `override`
-  // - No `super.application(...)`
-  // - Call RNSpotifyRemoteAuth dynamically to avoid compile-time symbol errors
+  // For Expo, we need to override and call super
   const method = `
   // Spotify Auth callback
-  func application(
+  override func application(
     _ application: UIApplication,
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey : Any] = [:]
   ) -> Bool {
 
-    // Try Spotify handler (dynamic call so build won't fail if symbol name changes)
+    // Try Spotify handler first (dynamic call so build won't fail if symbol name changes)
     if let cls: AnyObject = NSClassFromString("RNSpotifyRemoteAuth") {
       let sharedSel = NSSelectorFromString("sharedInstance")
       if cls.responds(to: sharedSel),
@@ -117,8 +114,8 @@ function patchSwift(appDelegate) {
       }
     }
 
-    // React Native deep linking
-    return RCTLinkingManager.application(application, open: url, options: options)
+    // Let parent class (ExpoAppDelegate) handle it, which includes RCTLinkingManager
+    return super.application(application, open: url, options: options)
   }
 `;
 
