@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Flusso",
+    "slug": "FlowApp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/AppIcon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "flusso",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.BLGgroup.flusso",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "LSApplicationQueriesSchemes": ["spotify"],
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": ["flusso"]
+          }
+        ]
+      }
+    },
+    "android": {
+      "package": "com.BLGgroup.flusso",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker",
+      "@react-native-google-signin/google-signin",
+      "./app.plugin.js"
+      
+    ],
+    "extra": {
+      "googleWebClientId": "402208533063-jk5a2gdeqina4u0lb5cjpd7f1kh8a4k4.apps.googleusercontent.com",
+      "spotifyClientId": "f95c8effcc63427e8b98c6a92a9d0c17",
+      "eas": {
+        "projectId": "a60164e5-2286-47bb-a7ad-5b579567b662"
+      }
+    }
+  }
+}
