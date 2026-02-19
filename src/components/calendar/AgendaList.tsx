@@ -24,10 +24,9 @@ export function AgendaList(props: {
   const listRef = useRef<ScrollView>(null);
 
   const keys = useMemo(() => {
-    // show a “window” around selected even if no items that day
-    const min = selected;
-    const max = selected;
-    const all = Array.from(new Set([selected, ...dayKeys])).sort(ymdCompare);
+    // show a "window" around selected, starting from selected date onwards
+    const filtered = dayKeys.filter(k => k >= selected);
+    const all = Array.from(new Set([selected, ...filtered])).sort(ymdCompare);
     return all;
   }, [dayKeys, selected]);
 

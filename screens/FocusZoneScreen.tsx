@@ -10,10 +10,11 @@ import {
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
+import { Audio } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../src/components/theme/theme";
+import { useGlobalMusic } from "../src/services/GlobalMusicPlayer";
 import { s } from "react-native-size-matters";
 import {
   loadTasks,
@@ -28,7 +29,7 @@ import {
   saveBreakMinutes,
 } from "../src/data/storage";
 import type { Task, Objective } from "../src/data/models";
-
+import Entypo from '@expo/vector-icons/Entypo';
 import { SpotifyMiniPlayer } from "../src/components/SpotifyMiniPlayer";
 import { useSpotifyRemote } from "../src/hooks/useSpotifyRemote";
 
@@ -65,9 +66,15 @@ type Phase = "work" | "break";
 
 export default function FocusZoneScreen({ navigation }: any) {
   const { colors } = useTheme();
+  const { isMuted, toggleMute, loading } = useGlobalMusic();
 
   // Spotify (Focus screen only)
   const spotify = useSpotifyRemote();
+
+  // Log music state changes
+  useEffect(() => {
+    console.log("FocusZone: Music state - isMuted:", isMuted, "loading:", loading);
+  }, [isMuted, loading]);
 
   // Room navigation
   const [isInRoom, setIsInRoom] = useState(false);
@@ -78,6 +85,7 @@ export default function FocusZoneScreen({ navigation }: any) {
   const [focusMinutes, setFocusMinutes] = useState(25);
   const [breakMinutes, setBreakMinutes] = useState(5);
   const [displayTime, setDisplayTime] = useState(false);
+  const [hideTimer, setHideTimer] = useState(false);
 
   // Tasks & Objectives
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -87,9 +95,6 @@ export default function FocusZoneScreen({ navigation }: any) {
   const [secondsLeft, setSecondsLeft] = useState(25 * 60);
   const [isRunning, setIsRunning] = useState(false);
 
-  const [musicEnabled, setMusicEnabled] = useState(false);
-  const [musicPosition, setMusicPosition] = useState(0);
-  const musicRef = useRef<Audio.Sound | null>(null);
   const cueRef = useRef<Audio.Sound | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -119,22 +124,6 @@ export default function FocusZoneScreen({ navigation }: any) {
     objectives.forEach((o) => m.set(o.id, o));
     return m;
   }, [objectives]);
-
-  /* ------------------ AUDIO MODE (ALLOW MIXING) ------------------ */
-  useEffect(() => {
-    (async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: false, // keep background music volume
-          interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
-          interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-          playThroughEarpieceAndroid: false,
-        });
-      } catch {}
-    })();
-  }, []);
 
   /* ------------------ LOAD ------------------ */
   useEffect(() => {
@@ -203,43 +192,6 @@ export default function FocusZoneScreen({ navigation }: any) {
       await cueRef.current?.unloadAsync();
     } catch {}
     cueRef.current = null;
-  };
-
-  /* ------------------ MUSIC (PAUSE/PLAY) ------------------ */
-  const unloadMusic = async () => {
-    try {
-      await musicRef.current?.unloadAsync();
-    } catch {}
-    musicRef.current = null;
-  };
-
-  const toggleMusic = async () => {
-    if (musicEnabled) {
-      try {
-        const status = await musicRef.current?.getStatusAsync();
-        if (status && status.isLoaded && status.positionMillis !== undefined) {
-          setMusicPosition(status.positionMillis);
-        }
-        await musicRef.current?.pauseAsync();
-      } catch {}
-      setMusicEnabled(false);
-      return;
-    }
-
-    if (musicRef.current) {
-      try {
-        await musicRef.current.setPositionAsync(musicPosition);
-        await musicRef.current.playAsync();
-      } catch {}
-    } else {
-      const { sound } = await Audio.Sound.createAsync(
-        require("../assets/focus/ModernPiano.mp3"),
-        { isLooping: true, volume: 0.6, positionMillis: musicPosition },
-      );
-      musicRef.current = sound;
-      await sound.playAsync();
-    }
-    setMusicEnabled(true);
   };
 
   /* ------------------ TIMER ------------------ */
@@ -335,7 +287,6 @@ export default function FocusZoneScreen({ navigation }: any) {
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      void unloadMusic();
       void unloadCue();
     };
   }, []);
@@ -390,11 +341,6 @@ export default function FocusZoneScreen({ navigation }: any) {
     setIsInRoom(false);
     setShowLeaveConfirm(false);
     resetTimer();
-    setMusicPosition(0);
-    if (musicEnabled) {
-      void unloadMusic();
-      setMusicEnabled(false);
-    }
   };
 
   const getCurrentTime = () => {
@@ -503,12 +449,12 @@ export default function FocusZoneScreen({ navigation }: any) {
                 <Text style={styles.pillText}>Leave Room</Text>
               </Pressable>
 
-              <View style={{ flexDirection: "row", gap: s(10) }}>
+              <View style={{ flexDirection: "row", gap: s(8) }}>
                 <Pressable
                   onPress={spotify.connected ? spotify.disconnect : spotify.connect}
                   disabled={spotify.connecting}
                   style={({ pressed }) => [
-                    styles.iconPill,
+                    styles.smallIconPill,
                     {
                       opacity: pressed || spotify.connecting ? 0.65 : 1,
                       backgroundColor: spotify.connected 
@@ -517,8 +463,8 @@ export default function FocusZoneScreen({ navigation }: any) {
                     },
                   ]}
                 >
-                  <Text style={[styles.pillText, { color: "#1DB954" }]}>♫</Text>
-                  <Text style={[styles.pillText, { color: "#1DB954" }]}>
+                  <Entypo name="spotify" size={s(18)} color="#1DB954" />
+                  <Text style={[styles.smallPillText, { color: "#76eea0" }]}>
                     {spotify.connecting 
                       ? "Connecting..." 
                       : spotify.connected 
@@ -530,12 +476,12 @@ export default function FocusZoneScreen({ navigation }: any) {
                 <Pressable
                   onPress={() => setShowSettingsSheet(true)}
                   style={({ pressed }) => [
-                    styles.iconPill,
+                    styles.smallIconPill,
                     { opacity: pressed ? 0.85 : 1 },
                   ]}
                 >
-                  <Ionicons name="options-outline" size={s(18)} color="#fff" />
-                  <Text style={styles.pillText}>Timer</Text>
+                  <Ionicons name="options-outline" size={s(16)} color="#fff" />
+                  <Text style={styles.smallPillText}>Settings</Text>
                 </Pressable>
               </View>
             </View>
@@ -566,32 +512,57 @@ export default function FocusZoneScreen({ navigation }: any) {
             </View>
 
             <View style={styles.center}>
-              <Pressable
-                onPress={toggleRun}
-                style={({ pressed }) => [
-                  styles.timerCard,
-                  {
-                    borderColor: "rgba(255,255,255,0.16)",
-                    backgroundColor: "rgba(255,255,255,0.10)",
-                    opacity: pressed ? 0.92 : 1,
-                  },
-                ]}
-              >
-                <Text style={styles.phaseTag}>{phaseLabel}</Text>
-                <Text style={styles.timerText}>
-                  {displayTime ? getCurrentTime() : formatTime()}
-                </Text>
-                <View style={styles.timerSubRow}>
-                  <View style={styles.dot} />
-                  <Text style={styles.timerSub}>{subLabel}</Text>
-                </View>
-              </Pressable>
+              <View style={styles.timerContainer}>
+                {!hideTimer && (
+                  <Pressable
+                    onPress={toggleRun}
+                    style={({ pressed }) => [
+                      styles.timerCard,
+                      {
+                        borderColor: "rgba(255,255,255,0.16)",
+                        backgroundColor: "rgba(255,255,255,0.10)",
+                        opacity: pressed ? 0.92 : 1,
+                      },
+                    ]}
+                  >
+                    <Text style={styles.phaseTag}>{phaseLabel}</Text>
+                    <Text style={[styles.timerText, displayTime && styles.timerTextClockDisplay]}>
+                      {displayTime ? getCurrentTime() : formatTime()}
+                    </Text>
+                    <View style={styles.timerSubRow}>
+                      <View style={styles.dot} />
+                      <Text style={styles.timerSub}>{subLabel}</Text>
+                    </View>
+                  </Pressable>
+                )}
+              </View>
 
               <View style={styles.actionRow}>
                 <Pressable
-                  onPress={toggleMusic}
+                  onPress={toggleMute}
+                  disabled={loading}
                   style={({ pressed }) => [
-                    styles.smallPill,
+                    styles.actionPill,
+                    {
+                      backgroundColor: "rgba(255,255,255,0.12)",
+                      opacity: pressed || loading ? 0.88 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={isMuted ? "volume-mute" : "musical-notes"}
+                    size={s(18)}
+                    color="#fff"
+                  />
+                  <Text style={styles.actionPillText}>
+                    {loading ? "Loading..." : isMuted ? "Disable" : "Enable"} Music
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setHideTimer((v) => !v)}
+                  style={({ pressed }) => [
+                    styles.actionPill,
                     {
                       backgroundColor: "rgba(255,255,255,0.12)",
                       opacity: pressed ? 0.88 : 1,
@@ -599,30 +570,32 @@ export default function FocusZoneScreen({ navigation }: any) {
                   ]}
                 >
                   <Ionicons
-                    name={musicEnabled ? "pause" : "play"}
+                    name={hideTimer ? "eye" : "eye-off"}
                     size={s(18)}
                     color="#fff"
                   />
-                  <Text style={styles.smallPillText}>
-                    {musicEnabled ? "Pause" : "Play"} Music
+                  <Text style={styles.actionPillText}>
+                    {hideTimer ? "Show" : "Hide"} 
                   </Text>
                 </Pressable>
               </View>
 
-              <Pressable
-                onPress={resetTimer}
-                style={({ pressed }) => [
-                  styles.resetLink,
-                  { opacity: pressed ? 0.75 : 1 },
-                ]}
-              >
-                <Ionicons
-                  name="refresh"
-                  size={s(16)}
-                  color="rgba(255,255,255,0.85)"
-                />
-                <Text style={styles.resetText}>Reset session</Text>
-              </Pressable>
+              {!hideTimer && (
+                <Pressable
+                  onPress={resetTimer}
+                  style={({ pressed }) => [
+                    styles.resetLink,
+                    { opacity: pressed ? 0.75 : 1 },
+                  ]}
+                >
+                  <Ionicons
+                    name="refresh"
+                    size={s(16)}
+                    color="rgba(255,255,255,0.85)"
+                  />
+                  <Text style={styles.resetText}>Reset session</Text>
+                </Pressable>
+              )}
             </View>
           </ScrollView>
         </SafeAreaView>
@@ -954,15 +927,27 @@ const styles = StyleSheet.create({
   iconPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: s(4),
-    paddingVertical: s(10),
-    paddingHorizontal: s(12),
+    gap: s(6),
+    paddingVertical: s(11),
+    paddingHorizontal: s(14),
     borderRadius: s(999),
     backgroundColor: "rgba(255,255,255,0.10)",
     borderWidth: s(1),
     borderColor: "rgba(255,255,255,0.14)",
   },
-  pillText: { color: "#fff", fontWeight: "900", fontSize: s(12) },
+  pillText: { color: "#fff", fontWeight: "900", fontSize: s(13) },
+  smallIconPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: s(5),
+    paddingVertical: s(8),
+    paddingHorizontal: s(10),
+    borderRadius: s(999),
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderWidth: s(1),
+    borderColor: "rgba(255,255,255,0.14)",
+  },
+  smallPillText: { color: "#fff", fontWeight: "900", fontSize: s(11) },
 
   roomSelectionContainer: {
     flex: 1,
@@ -1103,6 +1088,13 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
+  timerContainer: {
+    width: "100%",
+    minHeight: s(200),
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
   timerCard: {
     width: "100%",
     borderRadius: s(22),
@@ -1120,8 +1112,14 @@ const styles = StyleSheet.create({
   timerText: {
     color: "#fff",
     fontSize: s(64),
-    fontWeight: "900",
-    letterSpacing: s(0.6),
+    fontWeight: "600",
+    letterSpacing: s(-0.5),
+    fontFamily: "System",
+  },
+  timerTextClockDisplay: {
+    fontFamily: "SF Pro Display",
+    fontWeight: "400",
+    letterSpacing: s(1),
   },
   timerSubRow: {
     flexDirection: "row",
@@ -1141,18 +1139,24 @@ const styles = StyleSheet.create({
     fontSize: s(12),
   },
 
-  actionRow: { flexDirection: "row", gap: s(10), marginTop: s(14) },
-  smallPill: {
+  actionRow: { 
+    flexDirection: "row", 
+    gap: s(12), 
+    marginTop: s(16),
+    justifyContent: "center",
+    paddingHorizontal: s(16),
+  },
+  actionPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: s(8),
-    paddingVertical: s(10),
-    paddingHorizontal: s(14),
+    paddingVertical: s(12),
+    paddingHorizontal: s(16),
     borderRadius: s(999),
     borderWidth: s(1),
     borderColor: "rgba(255,255,255,0.14)",
   },
-  smallPillText: { color: "#fff", fontWeight: "900", fontSize: s(12) },
+  actionPillText: { color: "#fff", fontWeight: "900", fontSize: s(13) },
 
   resetLink: {
     marginTop: s(14),

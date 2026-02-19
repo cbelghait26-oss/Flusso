@@ -162,9 +162,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const colors = useMemo(() => buildColors(isDark, accent), [isDark, accent]);
 
-  const radius = useMemo(() => ({ sm: s(12), md: s(16), lg: s(20), xl: s(26) }), []);
-  const spacing = useMemo(() => ({ xs: s(6), sm: s(10), md: s(14), lg: s(18), xl: s(24) }), []);
+  // Design tokens
+  const radius = useMemo(() => ({ xs: s(4), sm: s(8), md: s(14), lg: s(18), xl: s(22) }), []);
+  const spacing = useMemo(() => ({ xs: s(4), sm: s(8), md: s(16), lg: s(24), xl: s(32) }), []);
   const space = spacing;
+
+  // Card type hierarchy
+  const cardTypes = useMemo(() => ({
+    primary: { bg: colors.surface, elevation: 3, padding: spacing.lg },
+    secondary: { bg: colors.card, elevation: 1, padding: spacing.md },
+    destructive: { bg: colors.card, elevation: 0, padding: spacing.md },
+  }), [colors, spacing]);
 
   const setThemeMode = (m: ThemeMode) => {
     setThemeModeState(m);
@@ -182,6 +190,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     radius,
     spacing,
     space,
+    cardTypes,
     themeMode,
     setThemeMode,
     accent,

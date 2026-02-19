@@ -62,22 +62,48 @@ function patchObjC(appDelegate) {
     return appDelegate;
   }
 
-  // Insert method before @end of AppDelegate implementation
-  const method = `
+  // Insert methods before @end of AppDelegate implementation
+  const methods = `
+// Spotify OAuth callback - fan-out to both RN Linking and Spotify SDK
 - (BOOL)application:(UIApplication *)application
             openURL:(NSURL *)url
             options:(NSDictionary<UIApplicationOpenURLOptionsKey,id> *)options
 {
+  NSLog(@"[SPOTIFY_OAUTH] openURL called: %@", url);
+  
+  // Both handlers must receive the URL (fan-out pattern)
+  BOOL handledByRN = [RCTLinkingManager application:application openURL:url options:options];
   BOOL handledBySpotify = [[RNSpotifyRemoteAuth sharedInstance] application:application openURL:url options:options];
-  if (handledBySpotify) {
-    return YES;
-  }
+  
+  NSLog(@"[SPOTIFY_OAUTH] Handled by RN: %d, Spotify: %d", handledByRN, handledBySpotify);
+  return handledByRN || handledBySpotify;
+}
 
-  return [RCTLinkingManager application:application openURL:url options:options];
+// Universal Links support for Spotify OAuth
+- (BOOL)application:(UIApplication *)application
+continueUserActivity:(NSUserActivity *)userActivity
+ restorationHandler:(void (^)(NSArray<id<UIUserActivityRestoring>> * _Nullable))restorationHandler
+{
+  if ([userActivity.activityType isEqualToString:NSUserActivityTypeBrowsingWeb]) {
+    NSLog(@"[SPOTIFY_OAUTH] continueUserActivity: %@", userActivity.webpageURL);
+  }
+  
+  BOOL handledByRN = [RCTLinkingManager application:application
+                                  continueUserActivity:userActivity
+                                    restorationHandler:restorationHandler];
+  
+  BOOL handledBySpotify = NO;
+  if ([[RNSpotifyRemoteAuth sharedInstance] respondsToSelector:@selector(application:continueUserActivity:restorationHandler:)]) {
+    handledBySpotify = [[RNSpotifyRemoteAuth sharedInstance] application:application
+                                                     continueUserActivity:userActivity
+                                                       restorationHandler:restorationHandler];
+  }
+  
+  return handledByRN || handledBySpotify;
 }
 `;
 
-  return appDelegate.replace(/@end\s*$/m, `${method}\n@end`);
+  return appDelegate.replace(/@end\s*$/m, `${methods}\n@end`);
 }
 
 function patchSwift(appDelegate) {
@@ -86,35 +112,73 @@ function patchSwift(appDelegate) {
     appDelegate = appDelegate.replace(/import UIKit\s*\n/, (m) => `${m}import React\n`);
   }
 
-  // Avoid duplicate injection
-  if (appDelegate.includes('NSClassFromString("RNSpotifyRemoteAuth")') && appDelegate.includes("RCTLinkingManager.application")) {
+  // Avoid duplicate injection - check for our marker comment or the method signature
+  if (appDelegate.includes('[SPOTIFY_OAUTH]') || 
+      appDelegate.includes('func application(_ application: UIApplication, open url: URL')) {
     return appDelegate;
   }
 
-  const method = `
-  // Spotify Auth callback - handles deep link from Spotify OAuth
+  let methods = `
+  // Spotify OAuth callback - fan-out to both RN Linking and Spotify SDK
   func application(
     _ application: UIApplication,
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey : Any] = [:]
   ) -> Bool {
-
-    // Try Spotify SDK handler first (dynamic call to avoid compile errors)
-    if let cls: AnyObject = NSClassFromString("RNSpotifyRemoteAuth") {
+    print("[SPOTIFY_OAUTH] openURL called: \\(url)")
+    
+    // Both handlers must receive the URL (fan-out pattern)
+    let handledByRN = RCTLinkingManager.application(application, open: url, options: options)
+    var handledBySpotify = false
+    
+    if let cls = NSClassFromString("RNSpotifyRemoteAuth") as AnyObject? {
       let sharedSel = NSSelectorFromString("sharedInstance")
       if cls.responds(to: sharedSel),
          let shared = cls.perform(sharedSel)?.takeUnretainedValue() as AnyObject? {
-
+        
         let handleSel = NSSelectorFromString("application:openURL:options:")
         if shared.responds(to: handleSel) {
-          let res = shared.perform(handleSel, with: application, with: url)?.takeUnretainedValue()
-          if let handled = res as? Bool, handled { return true }
+          let res = shared.perform(handleSel, with: application, with: url)
+          handledBySpotify = (res?.takeUnretainedValue() as? Bool) ?? false
         }
       }
     }
-
-    // Fall back to React Native Linking for other deep links
-    return RCTLinkingManager.application(application, open: url, options: options)
+    
+    print("[SPOTIFY_OAUTH] Handled by RN: \\(handledByRN), Spotify: \\(handledBySpotify)")
+    return handledByRN || handledBySpotify
+  }
+  
+  // Universal Links support for Spotify OAuth
+  func application(
+    _ application: UIApplication,
+    continue userActivity: NSUserActivity,
+    restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
+  ) -> Bool {
+    if userActivity.activityType == NSUserActivityTypeBrowsingWeb {
+      print("[SPOTIFY_OAUTH] continueUserActivity: \\(userActivity.webpageURL?.absoluteString ?? \"nil\")")
+    }
+    
+    let handledByRN = RCTLinkingManager.application(
+      application,
+      continue: userActivity,
+      restorationHandler: restorationHandler
+    )
+    
+    var handledBySpotify = false
+    if let cls = NSClassFromString("RNSpotifyRemoteAuth") as AnyObject? {
+      let sharedSel = NSSelectorFromString("sharedInstance")
+      if cls.responds(to: sharedSel),
+         let shared = cls.perform(sharedSel)?.takeUnretainedValue() as AnyObject? {
+        
+        let continueSel = NSSelectorFromString("application:continueUserActivity:restorationHandler:")
+        if shared.responds(to: continueSel) {
+          let res = shared.perform(continueSel, with: application, with: userActivity)
+          handledBySpotify = (res?.takeUnretainedValue() as? Bool) ?? false
+        }
+      }
+    }
+    
+    return handledByRN || handledBySpotify
   }
 `;
 
@@ -122,7 +186,7 @@ function patchSwift(appDelegate) {
   const lastBrace = appDelegate.lastIndexOf("}");
   if (lastBrace === -1) return appDelegate;
 
-  return appDelegate.slice(0, lastBrace) + method + "\n" + appDelegate.slice(lastBrace);
+  return appDelegate.slice(0, lastBrace) + methods + "\n" + appDelegate.slice(lastBrace);
 }
 
 function patchSceneDelegateIfExists(iosRoot) {
@@ -143,19 +207,48 @@ function patchSceneDelegateIfExists(iosRoot) {
     src = src.replace(/import UIKit\s*\n/, (m) => `${m}import React\n`);
   }
 
-  const handler = `
-  // Spotify Auth callback (UIScene lifecycle)
+  const handlers = `
+  // Spotify Auth callback (UIScene lifecycle) - fan-out pattern
   func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
     guard let url = URLContexts.first?.url else { return }
-
-    if let cls: AnyObject = NSClassFromString("RNSpotifyRemoteAuth") {
+    print("[SPOTIFY_OAUTH] SceneDelegate openURLContexts: \\(url)")
+    
+    // Fan-out to both RN and Spotify
+    _ = RCTLinkingManager.application(UIApplication.shared, open: url, options: [:])
+    
+    if let cls = NSClassFromString("RNSpotifyRemoteAuth") as AnyObject? {
       let sharedSel = NSSelectorFromString("sharedInstance")
       if cls.responds(to: sharedSel),
          let shared = cls.perform(sharedSel)?.takeUnretainedValue() as AnyObject? {
-
+        
         let handleSel = NSSelectorFromString("application:openURL:options:")
         if shared.responds(to: handleSel) {
           _ = shared.perform(handleSel, with: UIApplication.shared, with: url)
+        }
+      }
+    }
+  }
+  
+  // Universal Links in SceneDelegate
+  func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+    if userActivity.activityType == NSUserActivityTypeBrowsingWeb {
+      print("[SPOTIFY_OAUTH] SceneDelegate continueUserActivity: \\(userActivity.webpageURL?.absoluteString ?? \"nil\")")
+    }
+    
+    _ = RCTLinkingManager.application(
+      UIApplication.shared,
+      continue: userActivity,
+      restorationHandler: { _ in }
+    )
+    
+    if let cls = NSClassFromString("RNSpotifyRemoteAuth") as AnyObject? {
+      let sharedSel = NSSelectorFromString("sharedInstance")
+      if cls.responds(to: sharedSel),
+         let shared = cls.perform(sharedSel)?.takeUnretainedValue() as AnyObject? {
+        
+        let continueSel = NSSelectorFromString("application:continueUserActivity:restorationHandler:")
+        if shared.responds(to: continueSel) {
+          _ = shared.perform(continueSel, with: UIApplication.shared, with: userActivity)
         }
       }
     }
@@ -165,7 +258,7 @@ function patchSceneDelegateIfExists(iosRoot) {
   const lastBrace = src.lastIndexOf("}");
   if (lastBrace === -1) return;
 
-  src = src.slice(0, lastBrace) + handler + "\n" + src.slice(lastBrace);
+  src = src.slice(0, lastBrace) + handlers + "\n" + src.slice(lastBrace);
   fs.writeFileSync(found, src);
 }
 

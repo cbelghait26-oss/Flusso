@@ -6,6 +6,7 @@ import { ActivityIndicator, View } from "react-native";
 import Constants from "expo-constants";
 
 import { ThemeProvider } from "./src/components/theme/theme";
+import { GlobalMusicProvider } from "./src/services/GlobalMusicPlayer";
 import { getCurrentUser, setCurrentUser, loadSetupComplete } from "./src/data/storage";
 import { auth } from "./src/services/firebase";
 
@@ -100,27 +101,29 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <NavigationContainer>
-        <Stack.Navigator 
-          id="RootStack" 
-          initialRouteName={initialRoute}
-          screenOptions={{ headerShown: false, gestureEnabled: false }}
-        >
-          <Stack.Screen name="SignIn" component={SignInScreen} />
-          <Stack.Screen name="EmailLogin" component={EmailLoginScreen} />
-          <Stack.Screen name="Q1NameScreen" component={Q1NameScreen} />
-          <Stack.Screen name="Q2OrganizeScreen" component={Q2OrganizeScreen} />
-          <Stack.Screen name="Q4QuoteScreen" component={Q4QuoteScreen} />
-          <Stack.Screen name="Q3FocusScreen" component={Q3FocusScreen} />
-          <Stack.Screen name="Q5TargetScreen" component={Q5TargetScreen} />
-          <Stack.Screen name="FocusZoneScreen" component={FocusZoneScreen} />
+      <GlobalMusicProvider>
+        <NavigationContainer>
+          <Stack.Navigator 
+            id="RootStack" 
+            initialRouteName={initialRoute}
+            screenOptions={{ headerShown: false, gestureEnabled: false }}
+          >
+            <Stack.Screen name="SignIn" component={SignInScreen} />
+            <Stack.Screen name="EmailLogin" component={EmailLoginScreen} />
+            <Stack.Screen name="Q1NameScreen" component={Q1NameScreen} />
+            <Stack.Screen name="Q2OrganizeScreen" component={Q2OrganizeScreen} />
+            <Stack.Screen name="Q4QuoteScreen" component={Q4QuoteScreen} />
+            <Stack.Screen name="Q3FocusScreen" component={Q3FocusScreen} />
+            <Stack.Screen name="Q5TargetScreen" component={Q5TargetScreen} />
+            <Stack.Screen name="FocusZoneScreen" component={FocusZoneScreen} />
 
-          <Stack.Screen name="MainTabs" component={AppTabs} />
+            <Stack.Screen name="MainTabs" component={AppTabs} />
 
-          {/* Search overlays tabs */}
-          <Stack.Screen name="Search" component={SearchScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
+            {/* Search overlays tabs */}
+            <Stack.Screen name="Search" component={SearchScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </GlobalMusicProvider>
     </ThemeProvider>
   );
 }

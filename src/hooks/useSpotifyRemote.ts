@@ -125,25 +125,36 @@ export function useSpotifyRemote() {
     };
   }, []);
 
-  // Listen for deep links as diagnostic
+  // Listen for deep links as diagnostic (guide OAuth Spotify: event + initialURL)
   useEffect(() => {
+    console.log("[DL_DIAG] Installing Linking listeners (both 'url' event + initialURL)");
+    
     const handleDeepLink = (event: { url: string }) => {
-      console.log("🔗 Deep link received:", event.url);
-      if (event.url.includes("spotify-auth")) {
-        console.log("✅ Spotify auth redirect caught by Linking listener!");
+      console.log("[DL_DIAG] ✅ url event caught:", event.url);
+      if (event.url.includes("spotify-auth") || event.url.includes("spotify")) {
+        console.log("[DL_DIAG] ✅ Spotify redirect caught by Linking listener!");
+        console.log("[DL_DIAG] This confirms iOS delivered URL to RCTLinkingManager correctly");
       }
     };
 
     const subscription = Linking.addEventListener("url", handleDeepLink);
 
-    // Check for initial URL
+    // Check for initial URL (app killed then opened by deep link)
+    // ⚠️ Guide warning: getInitialURL can return null if Remote JS Debugging is active
     Linking.getInitialURL().then((url) => {
       if (url) {
-        console.log("🔗 Initial URL:", url);
+        console.log("[DL_DIAG] ✅ initialURL (app was killed):", url);
+        if (url.includes("spotify-auth") || url.includes("spotify")) {
+          console.log("[DL_DIAG] ✅ Spotify redirect from killed state!");
+        }
+      } else {
+        console.log("[DL_DIAG] initialURL is null");
+        console.log("[DL_DIAG] ⚠️ If Remote JS Debugging is on, getInitialURL always returns null");
       }
     });
 
     return () => {
+      console.log("[DL_DIAG] Removing Linking listeners");
       subscription.remove();
     };
   }, []);

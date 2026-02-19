@@ -260,8 +260,7 @@ export default function HomeScreen({ navigation, route }: any) {
           <View>
             <Text style={[styles.title, { color: colors.text }]}>Home</Text>
             <Text style={[styles.subtitle, { color: colors.muted }]}>
-              {greeting}
-              {name ? `, ${name}` : ""}.
+              {greeting}{name ? `, ${name}` : ""}
             </Text>
           </View>
 
@@ -275,219 +274,154 @@ export default function HomeScreen({ navigation, route }: any) {
           </View>
         </View>
 
-        {/* Hero: Today */}
-        <Card style={{ padding: s(16) }}>
-          <View style={styles.heroTopRow}>
-            <View>
-              <Text style={[styles.heroHeadline, { color: colors.text }]}>Today</Text>
-            </View>
-
-            <Pressable
-              onPress={goFocus}
-              style={({ pressed }) => [
-                styles.miniPill,
-                {
-                  borderRadius: s(999),
-                  borderColor: colors.border,
-                  backgroundColor: colors.overlay,
-                  opacity: pressed ? 0.86 : 1,
-                },
-              ]}
-            >
-              <Ionicons name="play" size={s(18)} color={colors.text} />
-              <Text style={[styles.miniPillText, { color: colors.text }]}>Focus</Text>
-            </Pressable>
-          </View>
-
-          <Text style={[styles.heroLine, { color: colors.muted }]}>
-            "{quote.text}" — <Text style={{ fontStyle: "italic" }}>{quote.author}</Text>
+        {/* Quote of the day */}
+        <View style={{ paddingVertical: s(4) }}>
+          <Text style={[styles.quote, { color: colors.text }]} numberOfLines={3}>
+            "{quote.text}"
           </Text>
+          <Text style={[styles.quoteAuthor, { color: colors.muted }]}>
+            — {quote.author}
+          </Text>
+        </View>
 
-          {/* KPIs */}
-          <View style={{ flexDirection: "row", gap: s(10), marginTop: s(14) }}>
+        {/* Stats */}
+        <View style={{ gap: s(10) }}>
+          <View style={{ flexDirection: "row", gap: s(10) }}>
             <View
               style={[
-                styles.kpiCard,
+                styles.statCardLarge,
                 {
-                  borderRadius: radius.lg,
-                  backgroundColor: colors.overlay,
+                  borderRadius: 30,
+                  backgroundColor: colors.card,
                   borderColor: colors.border,
                 },
               ]}
             >
-              <Text style={[styles.kpiLabel, { color: colors.muted }]}>STREAK</Text>
-              <View style={styles.kpiValueRow}>
-                <Text style={[styles.kpiValue, { color: colors.text }]}>{dayStreak}</Text>
-                <View
-                  style={[
-                    styles.kpiIcon,
-                    { borderColor: colors.border, backgroundColor: "rgba(255,255,255,0.10)" },
-                  ]}
-                >
-                  <Ionicons name="flame" size={s(20)} color="orange" />
-                </View>
+              <View style={[styles.statIcon, { backgroundColor: "rgba(255,159,64,0.15)" }]}>
+                <Ionicons name="flame" size={s(22)} color="#FF9F40" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.statValue, { color: colors.text }]}>{dayStreak}</Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>{dayStreak === 1 ? "day" : "days"} streak</Text>
               </View>
             </View>
 
             <Pressable
               onPress={goFocus}
               style={({ pressed }) => [
-                styles.kpiCard,
+                styles.statCardLarge,
                 {
-                  borderRadius: radius.lg,
-                  backgroundColor: colors.overlay,
+                  borderRadius: 30,
+                  backgroundColor: colors.card,
                   borderColor: colors.border,
-                  opacity: pressed ? 0.88 : 1,
+                  opacity: pressed ? 0.9 : 1,
                 },
               ]}
             >
-              <Text style={[styles.kpiLabel, { color: colors.muted }]}>FOCUSED</Text>
-              <View style={styles.kpiValueRow}>
-                <Text style={[styles.kpiValue, { color: colors.text }]}>{focusedMinutesToday} min</Text>
-                <View
-                  style={[
-                    styles.kpiIcon,
-                    { borderColor: colors.border, backgroundColor: "rgba(255,255,255,0.10)" },
-                  ]}
-                >
-                  <Ionicons name="timer" size={s(20)} color={colors.text} />
-                </View>
-              </View>
-            </Pressable>
-          </View>
-
-          {/* Primary action */}
-          <PrimaryButton
-            title="Start Focus"
-            onPress={goFocus}
-            leftIcon={<Ionicons name="flash" size={s(18)} color={colors.bg} />}
-            style={{ marginTop: s(14), borderRadius: radius.xl }}
-          />
-        </Card>
-
-        {/* Priority Task */}
-        <Card style={{ padding: s(16), backgroundColor: colors.card }}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Priority Focus</Text>
-              <Text style={[styles.sectionSub, { color: colors.muted }]}>Your most important task</Text>
-            </View>
-            <Pressable onPress={goTasksToday}>
-              <Text style={[styles.viewAllLink, { color: colors.accent }]}>View all</Text>
-            </Pressable>
-          </View>
-
-          {nextTask ? (
-            <Pressable
-              onPress={goTasksToday}
-              style={({ pressed }) => [
-                styles.priorityTaskCard,
-                {
-                  borderRadius: radius.lg,
-                  borderColor: colors.border,
-                  backgroundColor: colors.overlay,
-                  opacity: pressed ? 0.88 : 1,
-                },
-              ]}
-            >
-              <View style={styles.taskCheckbox}>
-                <View style={[styles.checkbox, { borderColor: colors.accent }]} />
+              <View style={[styles.statIcon, { backgroundColor: colors.accent + "15" }]}>
+                <Ionicons name="timer-outline" size={s(22)} color={colors.accent} />
               </View>
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: s(6), flexWrap: "wrap", marginBottom: s(4) }}>
-                  <Text style={[styles.priorityTaskTitle, { color: colors.text }]}>
-                    {nextTask.title}
-                  </Text>
-                  {nextTask.deadline === todayKey() && (
-                    <View style={[styles.taskBadge, { backgroundColor: colors.accent + "20" }]}>
-                      <Ionicons name="calendar" size={s(10)} color={colors.accent} />
-                      <Text style={[styles.badgeText, { color: colors.accent }]}>Due today</Text>
-                    </View>
-                  )}
-                  {nextTask.importance >= 3 && nextTask.deadline !== todayKey() && (
-                    <View style={[styles.taskBadge, { backgroundColor: "#F59E0B20" }]}>
-                      <Ionicons name="flag" size={s(10)} color="#F59E0B" />
-                      <Text style={[styles.badgeText, { color: "#F59E0B" }]}>Important</Text>
-                    </View>
-                  )}
-                </View>
-                {nextTask.description && (
-                  <Text style={[styles.priorityTaskDesc, { color: colors.muted }]} numberOfLines={2}>
-                    {nextTask.description}
-                  </Text>
-                )}
-              </View>
-              <Ionicons name="chevron-forward" size={s(20)} color={colors.muted} />
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={openAddTask}
-              style={({ pressed }) => [
-                styles.priorityTaskCard,
-                styles.emptyTaskCard,
-                {
-                  borderRadius: radius.lg,
-                  borderColor: colors.border,
-                  backgroundColor: colors.overlay,
-                  opacity: pressed ? 0.88 : 1,
-                },
-              ]}
-            >
-              <View style={[styles.emptyTaskIcon, { backgroundColor: colors.accent + "20" }]}>
-                <Ionicons name="add" size={s(24)} color={colors.accent} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.priorityTaskTitle, { color: colors.text }]}>Add your first task</Text>
-                <Text style={[styles.priorityTaskDesc, { color: colors.muted }]}>
-                  Create momentum for today
-                </Text>
+                <Text style={[styles.statValue, { color: colors.text }]}>{focusedMinutesToday}</Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>minutes focused</Text>
               </View>
             </Pressable>
-          )}
-        </Card>
-
-        {/* Today progress: tap-through */}
-        <Pressable
-          onPress={goTasksToday}
-          style={({ pressed }) => [
-            styles.progressShell,
-            {
-              borderRadius: radius.xl,
-              borderColor: colors.border,
-              backgroundColor: colors.card,
-              opacity: pressed ? 0.9 : 1,
-            },
-          ]}
-        >
-          <View style={styles.progressTop}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: s(10) }}>
-              <View
-                style={[
-                  styles.progressIcon,
-                  { borderColor: colors.border, backgroundColor: colors.overlay },
-                ]}
-              >
-                <Ionicons name="checkbox-outline" size={s(18)} color={colors.text} />
-              </View>
-              <View>
-                <Text style={[styles.progressTitle, { color: colors.text }]}>Today progress</Text>
-                <Text style={[styles.progressSub, { color: colors.muted }]}>
-                  {tasksDoneToday} done • {tasksDueToday} due today
-                </Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={s(18)} color={colors.text} />
           </View>
 
-          <View
-            style={[
-              styles.track,
-              { borderColor: colors.border, backgroundColor: "rgba(255,255,255,0.10)" },
+          <Pressable
+            onPress={goTasksToday}
+            style={({ pressed }) => [
+              {
+                flexDirection: "row",
+                alignItems: "center",
+                padding: s(14),
+                gap: s(12),
+                borderRadius: 30,
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderWidth: s(1),
+                opacity: pressed ? 0.9 : 1,
+              },
             ]}
           >
-            <View style={{ width: `${progressPct}%`, height: "100%", backgroundColor: colors.accent }} />
+            <View style={[styles.statIcon, { backgroundColor: "rgba(75,192,192,0.15)" }]}>
+              <Ionicons name="checkmark-circle" size={s(22)} color="#4BC0C0" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {tasksDoneToday} / {tasksDueToday}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.muted }]}>tasks completed today</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={s(18)} color={colors.muted} />
+          </Pressable>
+        </View>
+
+        {/* Primary action */}
+        <PrimaryButton
+          title="Start Focus Session"
+          onPress={goFocus}
+          leftIcon={<Ionicons name="flash" size={s(18)} color={colors.bg} />}
+          style={{ borderRadius: radius.xl }}
+        />
+
+        {/* Next Up */}
+        <Card style={{ padding: s(16), backgroundColor: colors.card }}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Next Up</Text>
+            <Pressable onPress={goTasksToday}>
+              <Text style={[styles.viewAllLink, { color: colors.accent }]}>All tasks</Text>
+            </Pressable>
           </View>
-        </Pressable>
+            {nextTask ? (
+              <Pressable
+                onPress={goTasksToday}
+                style={({ pressed }) => [
+                  styles.taskRow,
+                  { opacity: pressed ? 0.7 : 1 },
+                ]}
+              >
+                <View style={styles.taskCheckbox}>
+                  <View style={[styles.checkbox, { borderColor: colors.accent }]} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.taskTitle, { color: colors.text }]}>
+                    {nextTask.title}
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: s(6), marginTop: s(4), flexWrap: "wrap" }}>
+                    {nextTask.deadline === todayKey() && (
+                      <View style={[styles.taskBadge, { backgroundColor: colors.accent + "15" }]}>
+                        <Ionicons name="calendar" size={s(12)} color={colors.accent} />
+                        <Text style={[styles.badgeText, { color: colors.accent }]}>Today</Text>
+                      </View>
+                    )}
+                    {nextTask.importance >= 3 && nextTask.deadline !== todayKey() && (
+                      <View style={[styles.taskBadge, { backgroundColor: "#F59E0B15" }]}>
+                        <Ionicons name="flag" size={s(12)} color="#F59E0B" />
+                      </View>
+                    )}
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={s(18)} color={colors.muted} />
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={openAddTask}
+                style={({ pressed }) => [
+                  styles.taskRow,
+                  { opacity: pressed ? 0.7 : 1 },
+                ]}
+              >
+                <View style={[styles.emptyIconCircle, { backgroundColor: colors.accent + "15" }]}>
+                  <Ionicons name="add" size={s(20)} color={colors.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.taskTitle, { color: colors.text }]}>Add your first task</Text>
+                  <Text style={[styles.taskSubtitle, { color: colors.muted }]}>Get started today</Text>
+                </View>
+              </Pressable>
+            )}
+        </Card>
 
       </ScrollView>
 
@@ -930,58 +864,58 @@ function MiniCalendar({ theme, value, onChange }: { theme: any; value: string; o
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  header: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    justifyContent: "space-between",
+  },
   headerActions: { flexDirection: "row", gap: s(10) },
+  title: { fontSize: s(28), fontWeight: "700" },
+  subtitle: { marginTop: s(2), fontSize: s(14), fontWeight: "500" },
 
-  title: { fontSize: s(30), fontWeight: "700" },
-  subtitle: { marginTop: s(4), fontSize: s(13), fontWeight: "800" },
+  quote: { 
+    fontSize: s(16), 
+    fontWeight: "500", 
+    lineHeight: s(24),
+    fontStyle: "italic",
+  },
+  quoteAuthor: { 
+    fontSize: s(13), 
+    fontWeight: "500", 
+    marginTop: s(4),
+  },
 
-  heroTopRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: s(12) },
-  heroHeadline: { fontSize: s(30), fontWeight: "700" },
-  heroLine: { marginTop: s(10), fontSize: s(17), fontWeight: "500", lineHeight: s(18) },
-
-  miniPill: {
+  statCardLarge: { 
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: s(8),
-    paddingVertical: s(8),
-    paddingHorizontal: s(10),
+    padding: s(14),
+    gap: s(12),
     borderWidth: s(1),
   },
-  miniPillText: { fontWeight: "700", fontSize: s(14) },
-
-  kpiCard: { flex: 1, padding: s(10), borderWidth: s(1) },
-  kpiLabel: { fontSize: s(12), fontWeight: "700", letterSpacing: s(0.3) },
-  kpiValueRow: { marginTop: s(8), flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  kpiValue: { fontSize: s(22), fontWeight: "600" },
-  kpiIcon: {
-    width: s(35),
-    height: s(35),
-    borderRadius: s(20),
-    borderWidth: s(1),
+  statIcon: {
+    width: s(44),
+    height: s(44),
+    borderRadius: s(22),
     alignItems: "center",
     justifyContent: "center",
   },
+  statValue: { fontSize: s(24), fontWeight: "700" },
+  statLabel: { fontSize: s(12), fontWeight: "600", marginTop: s(2) },
 
   sectionHeader: { 
     flexDirection: "row", 
-    alignItems: "flex-start", 
+    alignItems: "center", 
     justifyContent: "space-between",
     marginBottom: s(12),
   },
-  sectionTitle: { fontSize: s(20), fontWeight: "700" },
-  sectionSub: { marginTop: s(3), fontSize: s(12), fontWeight: "600" },
-  viewAllLink: { fontSize: s(13), fontWeight: "700", marginTop: s(2) },
+  sectionTitle: { fontSize: s(18), fontWeight: "700" },
+  viewAllLink: { fontSize: s(14), fontWeight: "600" },
 
-  priorityTaskCard: {
-    padding: s(14),
-    borderWidth: s(1),
+  taskRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: s(12),
-  },
-  emptyTaskCard: {
-    borderStyle: "dashed",
   },
   taskCheckbox: {
     width: s(40),
@@ -995,47 +929,33 @@ const styles = StyleSheet.create({
     borderRadius: s(11),
     borderWidth: s(2),
   },
-  emptyTaskIcon: {
+  emptyIconCircle: {
     width: s(40),
     height: s(40),
     borderRadius: s(20),
     alignItems: "center",
     justifyContent: "center",
   },
-  priorityTaskTitle: { fontSize: s(16), fontWeight: "700" },
-  priorityTaskDesc: { fontSize: s(13), fontWeight: "500", lineHeight: s(18) },
+  taskTitle: { fontSize: s(16), fontWeight: "600", lineHeight: s(22) },
+  taskSubtitle: { fontSize: s(13), fontWeight: "500", marginTop: s(2) },
   taskBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: s(3),
-    paddingHorizontal: s(6),
-    paddingVertical: s(3),
-    borderRadius: s(6),
+    gap: s(4),
+    paddingHorizontal: s(8),
+    paddingVertical: s(4),
+    borderRadius: s(8),
   },
   badgeText: {
-    fontSize: s(10),
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: s(0.5),
+    fontSize: s(11),
+    fontWeight: "600",
   },
 
-  progressShell: { borderWidth: s(1), padding: s(16) },
-  progressTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  progressIcon: {
-    width: s(38),
-    height: s(38),
-    borderRadius: s(19),
-    borderWidth: s(1),
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  progressTitle: { fontSize: s(17), fontWeight: "700" },
-  progressSub: { marginTop: s(3), fontSize: s(12), fontWeight: "600" },
-  track: {
-    marginTop: s(12),
-    height: s(10),
+  progressValue: { fontSize: s(20), fontWeight: "700" },
+  progressLabel: { fontSize: s(13), fontWeight: "500", marginTop: s(2) },
+  progressTrack: {
+    height: s(6),
     borderRadius: s(999),
-    borderWidth: s(1),
     overflow: "hidden",
   },
 

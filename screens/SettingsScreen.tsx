@@ -799,43 +799,7 @@ export default function SettingsScreen() {
               />
             </Section>
 
-            <Section title="Data management" C={C}>
-              <Row
-                label="Export data"
-                value=""
-                icon="download-outline"
-                C={C}
-                onPress={() => onComingSoon("Export")}
-              />
-              <Row
-                label="Import data"
-                value=""
-                icon="cloud-upload-outline"
-                C={C}
-                onPress={() => onComingSoon("Import")}
-              />
-              <Row
-                label="Clear local cache"
-                value=""
-                icon="trash-outline"
-                C={C}
-                onPress={() =>
-                  Alert.alert(
-                    "Clear cache",
-                    "Remove cached files on this device?",
-                    [
-                      { text: "Cancel", style: "cancel" },
-                      {
-                        text: "Clear",
-                        style: "destructive",
-                        onPress: () =>
-                          Alert.alert("Done", "Cache cleared (stub)."),
-                      },
-                    ],
-                  )
-                }
-              />
-            </Section>
+
 
             <Section title="About" C={C}>
               <Row
