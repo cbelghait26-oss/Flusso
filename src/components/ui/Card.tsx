@@ -25,7 +25,7 @@ export function Card({
         {
           backgroundColor: card.bg,
           borderColor: colors.border,
-          borderRadius: radius.l,
+          borderRadius: radius.lg,
           padding: card.padding,
           // Elevation for Android, shadow for iOS
           elevation: card.elevation,

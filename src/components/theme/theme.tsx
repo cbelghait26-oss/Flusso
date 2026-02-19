@@ -62,6 +62,11 @@ export type Theme = {
   radius: { sm: number; md: number; lg: number; xl: number };
   spacing: { xs: number; sm: number; md: number; lg: number; xl: number };
   space: { xs: number; sm: number; md: number; lg: number; xl: number };
+  cardTypes: {
+    primary: { bg: string; elevation: number; padding: number };
+    secondary: { bg: string; elevation: number; padding: number };
+    destructive: { bg: string; elevation: number; padding: number };
+  };
   // settings controls
   themeMode: ThemeMode;
   setThemeMode: (m: ThemeMode) => void;
@@ -205,12 +210,19 @@ export function useTheme(): Theme {
   if (!ctx) {
     // fallback if provider not mounted yet
     const isDark = (useColorScheme() ?? "dark") !== "light";
+    const colors = buildColors(isDark, BRAND.ACCENT);
+    const spacing = { xs: s(6), sm: s(10), md: s(14), lg: s(18), xl: s(24) };
     return {
       isDark,
-      colors: buildColors(isDark, BRAND.ACCENT),
+      colors,
       radius: { sm: s(12), md: s(16), lg: s(20), xl: s(26) },
-      spacing: { xs: s(6), sm: s(10), md: s(14), lg: s(18), xl: s(24) },
-      space: { xs: s(6), sm: s(10), md: s(14), lg: s(18), xl: s(24) },
+      spacing,
+      space: spacing,
+      cardTypes: {
+        primary: { bg: colors.surface, elevation: 3, padding: spacing.lg },
+        secondary: { bg: colors.card, elevation: 1, padding: spacing.md },
+        destructive: { bg: colors.card, elevation: 0, padding: spacing.md },
+      },
       themeMode: "system",
       setThemeMode: () => {},
       accent: BRAND.ACCENT,
