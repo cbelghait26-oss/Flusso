@@ -1,5 +1,7 @@
 // src/services/flussoStore.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { auth } from "./firebase";
+import { cloudAutoPushNow } from "./CloudAutoPush";
 
 export type ObjectiveStatus = "active" | "paused" | "completed";
 export type ObjectiveTimeRange = "short" | "medium" | "long";
@@ -48,6 +50,16 @@ export type StorageSchema = {
 
 const KEY = "flusso:data:v1";
 const MISC_ID = "obj_miscellaneous";
+
+function getUserKey() {
+  const uid = auth.currentUser?.uid ?? "anonymous";
+  return `flusso:data:v1:${uid}`;
+}
+
+function getSyncKey() {
+  const uid = auth.currentUser?.uid ?? "anonymous";
+  return `flusso:sync:lastPull:${uid}`;
+}
 
 function nowISO() {
   return new Date().toISOString();
@@ -143,7 +155,7 @@ function ensureMiscObjective(schema: StorageSchema): StorageSchema {
 }
 
 export async function loadData(): Promise<StorageSchema> {
-  const raw = await AsyncStorage.getItem(KEY);
+  const raw = await AsyncStorage.getItem(getUserKey());
 
   let schema: StorageSchema;
   if (!raw) {
@@ -177,7 +189,7 @@ export async function loadData(): Promise<StorageSchema> {
 }
 
 export async function saveData(data: StorageSchema) {
-  await AsyncStorage.setItem(KEY, JSON.stringify(data));
+  await AsyncStorage.setItem(getUserKey(), JSON.stringify(data));
 }
 
 export function validateObjective(input: Partial<Objective>) {
@@ -230,6 +242,7 @@ export async function createObjective(payload: {
   const settings: Settings = { ...data.settings };
 
   await saveData({ ...data, objectives, settings });
+  await cloudAutoPushNow();
   return { ok: true as const, objective };
 }
 
@@ -249,6 +262,7 @@ export async function deleteObjective(objectiveId: string) {
   }
 
   await saveData({ objectives: recomputeObjectives(objectives, tasks), tasks, settings });
+  await cloudAutoPushNow();
   return { ok: true as const };
 }
 
@@ -259,6 +273,7 @@ export async function setActiveObjective(objectiveId: string) {
 
   const settings = { ...data.settings, activeObjectiveId: objectiveId };
   await saveData({ ...data, settings });
+  await cloudAutoPushNow();
   return { ok: true as const };
 }
 
@@ -328,6 +343,7 @@ export async function createTask(payload: {
   const tasks = [...data.tasks, task];
   const objectives = recomputeObjectives(data.objectives, tasks);
   await saveData({ ...data, tasks, objectives });
+  await cloudAutoPushNow();
   return { ok: true as const, task };
 }
 
@@ -354,6 +370,7 @@ export async function toggleTaskCompletion(taskId: string) {
 
   const objectives = recomputeObjectives(data.objectives, tasks);
   await saveData({ ...data, tasks, objectives, settings });
+  await cloudAutoPushNow();
   return { ok: true as const, task: next };
 }
 

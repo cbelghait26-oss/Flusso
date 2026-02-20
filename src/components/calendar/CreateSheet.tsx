@@ -143,7 +143,7 @@ export function CreateSheet(props: {
         // Editing a birthday
         setMode("birthday");
         setTitle(editingEvent.title);
-        setColor(editingEvent.color || "blue");
+        setColor("birthday");
         setReminder(editingEvent.reminder || "10min");
         setRecurrence("yearly"); // birthdays always repeat yearly
         
@@ -152,7 +152,7 @@ export function CreateSheet(props: {
         // Create a bdayDate with current year (just for display in the picker)
         const currentYear = new Date().getFullYear();
         setBdayDate(toYMD(currentYear, m, d));
-        setBirthYear(y);
+        setBirthYear(editingEvent.birthYear ?? y);
       } else {
         // Editing a regular event
         setMode("event");
@@ -197,8 +197,11 @@ export function CreateSheet(props: {
   useEffect(() => {
     if (mode === "birthday") {
       setRecurrence("yearly");
+      setColor("birthday");
+    } else if (color === "birthday") {
+      setColor("blue");
     }
-  }, [mode]);
+  }, [mode, color]);
 
   const error = useMemo(() => {
     if (mode === "birthday") {
@@ -312,13 +315,14 @@ export function CreateSheet(props: {
         startTime: "00:00",
         endDate: start,
         endTime: "23:59",
-        color,
+        color: "birthday",
         reminder,
         recurrence: "yearly", // birthdays always repeat yearly
         calendarSource: "local",
         notes: undefined,
         location: undefined,
         eventType: "birthday",
+        birthYear,
       };
 
       // Generate recurring birthday events and save all at once
@@ -674,28 +678,6 @@ export function CreateSheet(props: {
 
                 <RowCard
                   theme={theme}
-                  icon="repeat-outline"
-                  title="Repeat"
-                  right={
-                    <View
-                      style={{
-                        paddingHorizontal: s(12),
-                        paddingVertical: s(6),
-                        borderRadius: s(10),
-                        backgroundColor: theme.colors.card2,
-                        borderWidth: s(1),
-                        borderColor: theme.colors.border,
-                      }}
-                    >
-                      <Text style={{ color: theme.colors.muted, fontWeight: "800", fontSize: s(12) }}>
-                        Every year
-                      </Text>
-                    </View>
-                  }
-                />
-
-                <RowCard
-                  theme={theme}
                   icon="notifications-outline"
                   title="Notifications"
                   right={
@@ -712,7 +694,6 @@ export function CreateSheet(props: {
                   }
                 />
 
-                <ColorSection theme={theme} color={color} setColor={setColor} />
               </>
             )}
           </ScrollView>

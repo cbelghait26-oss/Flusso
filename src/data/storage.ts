@@ -1,4 +1,22 @@
+export const STORAGE_MODULE_ID = "storage.ts::A_2026-02-19_1";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+// --- Local types for user data ---
+export type StreakData = {
+  days: number;
+  lastLoginDate: string | null;
+};
+
+export type FocusDailyData = {
+  minutesToday: number;
+  lastDate: string | null;
+};
+
+export type FocusSettingsData = {
+  background: string | null;
+  focusMinutes: number;
+  breakMinutes: number;
+};
 import { doc, setDoc, getDoc, collection, getDocs, writeBatch, deleteDoc } from "firebase/firestore";
 import { db } from "../services/firebase";
 import type { Objective, Task, CalendarEvent } from "./models";
@@ -28,232 +46,319 @@ const KEYS = {
   BREAK_MINUTES: () => `${currentUserId}:break:minutes`,
 };
 
-// ========== Cloud Sync Helpers ==========
+const memoryStore = new Map<string, string>();
+const pendingCloudWrites = new Map<string, any>();
 
-/**
- * Sync data to Firestore cloud storage (silent, non-blocking)
- */
-async function syncToCloud(collection: string, data: any) {
-  if (!currentUserId) return;
-  
-  // Add timeout to prevent hanging
-  const timeout = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error('Cloud sync timeout')), 10000)
-  );
-  
-  const syncOp = (async () => {
-    const docRef = doc(db, "users", currentUserId, collection, "data");
-    await setDoc(docRef, { content: data, updatedAt: new Date().toISOString() });
-  })();
-  
-  try {
-    await Promise.race([syncOp, timeout]);
-  } catch (error) {
-    // Silently fail - app works offline
-    console.log(`syncToCloud: ${collection} sync failed (non-blocking)`);
+function requireUserId() {
+  if (!currentUserId) {
+    throw new Error("No current user ID");
   }
-}
-
-/**
- * Load data from Firestore cloud storage (with timeout)
- */
-async function loadFromCloud(collection: string): Promise<any | null> {
-  if (!currentUserId) return null;
-  
-  // Add timeout to prevent hanging (5 seconds for reads)
-  const timeout = new Promise<null>((resolve) => 
-    setTimeout(() => resolve(null), 5000)
-  );
-  
-  const loadOp = (async () => {
-    const docRef = doc(db, "users", currentUserId, collection, "data");
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      return docSnap.data().content;
-    }
-    return null;
-  })();
-  
-  try {
-    return await Promise.race([loadOp, timeout]);
-  } catch (error) {
-    // Silently fail - app works offline
-    console.log(`loadFromCloud: ${collection} load failed (non-blocking)`);
-    return null;
-  }
-}
-
-/**
- * Sync all user data from cloud to local storage on login
- */
-export async function syncFromCloud() {
-  if (!currentUserId) return;
-  
-  try {
-    // Load all collections from cloud
-    const [
-      objectives,
-      tasks,
-      events,
-      localEvents,
-      setup,
-      focusSessions,
-      streak,
-      dailyGoal
-    ] = await Promise.all([
-      loadFromCloud("objectives"),
-      loadFromCloud("tasks"),
-      loadFromCloud("calendarEvents"),
-      loadFromCloud("localEvents"),
-      loadFromCloud("setup"),
-      loadFromCloud("focusSessions"),
-      loadFromCloud("streak"),
-      loadFromCloud("dailyGoal"),
-    ]);
-
-    // Save to local storage
-    if (objectives) await AsyncStorage.setItem(KEYS.OBJECTIVES(), JSON.stringify(objectives));
-    if (tasks) await AsyncStorage.setItem(KEYS.TASKS(), JSON.stringify(tasks));
-    if (events) await AsyncStorage.setItem(KEYS.CAL_EVENTS(), JSON.stringify(events));
-    if (localEvents) await AsyncStorage.setItem(KEYS.LOCAL_EVENTS(), JSON.stringify(localEvents));
-    if (setup) await AsyncStorage.setItem(KEYS.SETUP(), JSON.stringify(setup));
-    if (focusSessions) await AsyncStorage.setItem(KEYS.FOCUS_SESSIONS(), JSON.stringify(focusSessions));
-    if (streak?.days) await AsyncStorage.setItem(KEYS.STREAK_DAYS(), String(streak.days));
-    if (dailyGoal?.goal) await AsyncStorage.setItem(KEYS.DAILY_GOAL(), String(dailyGoal.goal));
-  } catch (error) {
-    // Silently fail - app works with local data
-  }
-}
-
-/**
- * Set the current user ID for storage isolation
- */
-export async function setCurrentUser(userId: string) {
-  currentUserId = userId;
-  await AsyncStorage.setItem(STATIC_KEYS.CURRENT_USER, userId);
-  // Sync data from cloud (blocking to ensure data is ready)
-  console.log("setCurrentUser: Starting cloud sync...");
-  try {
-    await syncFromCloud();
-    console.log("setCurrentUser: Cloud sync completed");
-  } catch (error) {
-    console.log("setCurrentUser: Cloud sync failed (non-blocking)", error);
-  }
-}
-
-/**
- * Get the current user ID
- */
-export async function getCurrentUser(): Promise<string | null> {
-  if (currentUserId) return currentUserId;
-  currentUserId = await AsyncStorage.getItem(STATIC_KEYS.CURRENT_USER);
   return currentUserId;
 }
 
-/**
- * Clear all user data and sign out
- */
-export async function clearUserData() {
-  if (!currentUserId) return;
-  
-  const userKeys = [
-    KEYS.SETUP(),
-    KEYS.OBJECTIVES(),
-    KEYS.TASKS(),
-    KEYS.CAL_EVENTS(),
-    KEYS.LOCAL_EVENTS(),
-    KEYS.FOCUS_MIN_TODAY(),
-    KEYS.FOCUS_DATE(),
-    KEYS.FOCUS_SESSIONS(),
-    KEYS.STREAK_DAYS(),
-    KEYS.LAST_LOGIN_DATE(),
-    KEYS.DAILY_GOAL(),
-    KEYS.THEME_MODE(),
-    KEYS.THEME_ACCENT(),
-    KEYS.FOCUS_BG(),
-    KEYS.FOCUS_MINUTES(),
-    KEYS.BREAK_MINUTES(),
-  ];
-  
-  await AsyncStorage.multiRemove(userKeys);
-  await AsyncStorage.removeItem(STATIC_KEYS.CURRENT_USER);
-  currentUserId = null;
+function getMemoryItem(key: string): string | null {
+  return memoryStore.has(key) ? (memoryStore.get(key) as string) : null;
 }
 
-/**
- * Delete all user data from Firestore cloud (for account deletion)
- * Deletes all collections in parallel for faster performance
- */
-export async function deleteAllCloudData() {
+function setMemoryItem(key: string, value: string) {
+  memoryStore.set(key, value);
+}
+
+function removeMemoryItem(key: string) {
+  memoryStore.delete(key);
+}
+
+function clearUserMemory() {
   if (!currentUserId) {
-    console.error("deleteAllCloudData: No current user ID");
+    memoryStore.clear();
     return;
   }
-  
-  console.log("deleteAllCloudData: Deleting all cloud data for user:", currentUserId);
-  
-  try {
-    // List of all collections to delete
-    const collections = [
-      "objectives",
-      "tasks",
-      "calendarEvents",
-      "localEvents",
-      "setup",
-      "focusSessions",
-      "streak",
-      "dailyGoal",
-    ];
-    
-    // Delete all collections in parallel for faster performance
-    const deletePromises = collections.map(async (collectionName) => {
-      try {
-        const docRef = doc(db, "users", currentUserId, collectionName, "data");
-        await deleteDoc(docRef);
-        console.log(`deleteAllCloudData: Deleted ${collectionName}`);
-      } catch (error) {
-        // Log but don't fail if collection doesn't exist
-        console.log(`deleteAllCloudData: Error deleting ${collectionName}:`, error);
-      }
-    });
-    
-    await Promise.all(deletePromises);
-    console.log("deleteAllCloudData: All cloud data deleted successfully");
-  } catch (error) {
-    console.error("deleteAllCloudData: Error deleting cloud data:", error);
-    throw error;
+  const prefix = `${currentUserId}:`;
+  for (const key of memoryStore.keys()) {
+    if (key.startsWith(prefix)) {
+      memoryStore.delete(key);
+    }
   }
 }
 
-function uid(prefix: string) {
-  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+function getMemoryJson<T>(key: string): T | null {
+  const raw = getMemoryItem(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
 }
 
-export function todayKey(d = new Date()) {
-  const y = d.getFullYear();
-  const m = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function setMemoryJson(key: string, value: unknown) {
+  setMemoryItem(key, JSON.stringify(value));
+}
+
+async function loadLegacyJson<T>(key: string): Promise<T | null> {
+  const raw = await AsyncStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function loadLegacyNumber(key: string): Promise<number | null> {
+  const raw = await AsyncStorage.getItem(key);
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// --- Helper to sanitize undefined values ---
+function stripUndefinedDeep(value: any): any {
+  if (value === undefined) return null;
+  if (Array.isArray(value)) {
+    return value.map(stripUndefinedDeep);
+  }
+  if (value && typeof value === "object") {
+    const out: any = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (v === undefined) {
+        out[k] = null;
+      } else {
+        out[k] = stripUndefinedDeep(v);
+      }
+    }
+    return out;
+  }
+  return value;
+}
+
+// --- Cloud Sync with Retry ---
+let flushTimer: any = null;
+
+async function syncToCloud(collection: string, data: any) {
+  if (!currentUserId) return;
+
+  // Always store latest payload to retry later
+  pendingCloudWrites.set(collection, data);
+
+  const success = await attemptCloudWrite(collection, data);
+  if (success) {
+    pendingCloudWrites.delete(collection);
+    return;
+  }
+
+  // Schedule a retry (non-blocking)
+  scheduleCloudFlush();
+}
+
+function scheduleCloudFlush() {
+  if (flushTimer) return;
+  flushTimer = setTimeout(async () => {
+    flushTimer = null;
+    await flushPendingCloudWrites();
+    // If still pending, schedule again
+    if (pendingCloudWrites.size > 0) scheduleCloudFlush();
+  }, 4000);
+}
+
+export async function flushPendingCloudWrites() {
+  if (!currentUserId || pendingCloudWrites.size === 0) return;
+
+  const entries = Array.from(pendingCloudWrites.entries());
+  for (const [collection, data] of entries) {
+    const success = await attemptCloudWrite(collection, data);
+    if (success) pendingCloudWrites.delete(collection);
+  }
+}
+
+async function attemptCloudWrite(collection: string, data: any): Promise<boolean> {
+  if (!currentUserId) return false;
+
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("Cloud sync timeout")), 10000)
+  );
+
+  const syncOp = (async () => {
+    const docRef = doc(db, "users", currentUserId, collection, "data");
+    const safe = stripUndefinedDeep(data);
+    await setDoc(docRef, { content: safe, updatedAt: new Date().toISOString() }, { merge: true });
+  })();
+
+  try {
+    await Promise.race([syncOp, timeout]);
+    console.log("✅ Cloud write OK:", collection, "uid=", currentUserId);
+    return true;
+  } catch (e) {
+    console.log("❌ Cloud write FAIL:", collection, "uid=", currentUserId, "err=", String(e));
+    return false;
+  }
+}
+
+async function loadSetupPayload(): Promise<any> {
+  requireUserId();
+  const cached = getMemoryJson<any>(KEYS.SETUP());
+  if (cached) return cached;
+  const cloud = await loadFromCloud("setup");
+  if (cloud) {
+    setMemoryJson(KEYS.SETUP(), cloud);
+    return cloud;
+  }
+  return {};
+}
+
+async function loadStreakData(): Promise<StreakData> {
+  requireUserId();
+  const cachedDays = getMemoryItem(KEYS.STREAK_DAYS());
+  const cachedDate = getMemoryItem(KEYS.LAST_LOGIN_DATE());
+  if (cachedDays !== null || cachedDate !== null) {
+    return {
+      days: cachedDays ? Number(cachedDays) || 0 : 0,
+      lastLoginDate: cachedDate || null,
+    };
+  }
+  const cloud = await loadFromCloud("streak");
+  if (cloud) {
+    const days = Number(cloud.days) || 0;
+    const lastLoginDate = cloud.lastLoginDate || null;
+    setMemoryItem(KEYS.STREAK_DAYS(), String(days));
+    if (lastLoginDate) setMemoryItem(KEYS.LAST_LOGIN_DATE(), lastLoginDate);
+    return { days, lastLoginDate };
+  }
+  return { days: 0, lastLoginDate: null };
+}
+
+async function saveStreakData(data: StreakData) {
+  requireUserId();
+  const next = {
+    days: Number(data.days) || 0,
+    lastLoginDate: data.lastLoginDate || null,
+  };
+  setMemoryItem(KEYS.STREAK_DAYS(), String(next.days));
+  if (next.lastLoginDate) setMemoryItem(KEYS.LAST_LOGIN_DATE(), next.lastLoginDate);
+  else removeMemoryItem(KEYS.LAST_LOGIN_DATE());
+  await syncToCloud("streak", next);
+}
+
+async function loadFocusDailyData(): Promise<FocusDailyData> {
+  requireUserId();
+  const cachedMinutes = getMemoryItem(KEYS.FOCUS_MIN_TODAY());
+  const cachedDate = getMemoryItem(KEYS.FOCUS_DATE());
+  if (cachedMinutes !== null || cachedDate !== null) {
+    return {
+      minutesToday: cachedMinutes ? Number(cachedMinutes) || 0 : 0,
+      lastDate: cachedDate || null,
+    };
+  }
+  const cloud = await loadFromCloud("focusDaily");
+  if (cloud) {
+    const minutesToday = Number(cloud.minutesToday) || 0;
+    const lastDate = cloud.lastDate || null;
+    setMemoryItem(KEYS.FOCUS_MIN_TODAY(), String(minutesToday));
+    if (lastDate) setMemoryItem(KEYS.FOCUS_DATE(), lastDate);
+    return { minutesToday, lastDate };
+  }
+  return { minutesToday: 0, lastDate: null };
+}
+
+async function saveFocusDailyData(data: FocusDailyData) {
+  requireUserId();
+  const payload = {
+    minutesToday: Number(data.minutesToday) || 0,
+    lastDate: data.lastDate || null,
+  };
+  setMemoryItem(KEYS.FOCUS_MIN_TODAY(), String(payload.minutesToday));
+  if (payload.lastDate) setMemoryItem(KEYS.FOCUS_DATE(), payload.lastDate);
+  else removeMemoryItem(KEYS.FOCUS_DATE());
+  await syncToCloud("focusDaily", payload);
+}
+
+async function loadFocusSettingsData(): Promise<FocusSettingsData> {
+  requireUserId();
+  const cachedBg = getMemoryItem(KEYS.FOCUS_BG());
+  const cachedFocus = getMemoryItem(KEYS.FOCUS_MINUTES());
+  const cachedBreak = getMemoryItem(KEYS.BREAK_MINUTES());
+  const hasFocus = cachedFocus !== null;
+  const hasBreak = cachedBreak !== null;
+
+  if (hasFocus && hasBreak) {
+    return {
+      background: cachedBg || null,
+      focusMinutes: Number(cachedFocus) || 25,
+      breakMinutes: Number(cachedBreak) || 5,
+    };
+  }
+
+  const cloud = await loadFromCloud("focusSettings");
+  if (cloud) {
+    const background = cloud.background ?? null;
+    const focusMinutes = Number(cloud.focusMinutes) || 25;
+    const breakMinutes = Number(cloud.breakMinutes) || 5;
+    if (background != null) setMemoryItem(KEYS.FOCUS_BG(), background);
+    setMemoryItem(KEYS.FOCUS_MINUTES(), String(focusMinutes));
+    setMemoryItem(KEYS.BREAK_MINUTES(), String(breakMinutes));
+    return { background, focusMinutes, breakMinutes };
+  }
+
+  return {
+    background: cachedBg || null,
+    focusMinutes: cachedFocus ? Number(cachedFocus) || 25 : 25,
+    breakMinutes: cachedBreak ? Number(cachedBreak) || 5 : 5,
+  };
+}
+
+async function saveFocusSettingsData(data: FocusSettingsData) {
+  requireUserId();
+  const payload = {
+    background: data.background ?? null,
+    focusMinutes: Number(data.focusMinutes) || 25,
+    breakMinutes: Number(data.breakMinutes) || 5,
+  };
+  if (payload.background != null) setMemoryItem(KEYS.FOCUS_BG(), payload.background);
+  else removeMemoryItem(KEYS.FOCUS_BG());
+  setMemoryItem(KEYS.FOCUS_MINUTES(), String(payload.focusMinutes));
+  setMemoryItem(KEYS.BREAK_MINUTES(), String(payload.breakMinutes));
+  await syncToCloud("focusSettings", payload);
 }
 
 export async function loadObjectives(): Promise<Objective[]> {
-  if (!currentUserId) return [];
-  const raw = await AsyncStorage.getItem(KEYS.OBJECTIVES());
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw) as Objective[];
-  } catch {
-    return [];
+  requireUserId();
+  const cached = getMemoryJson<Objective[]>(KEYS.OBJECTIVES());
+  if (cached !== null) return cached;
+
+  // local fallback first
+  const localRaw = await AsyncStorage.getItem(KEYS.OBJECTIVES());
+  if (localRaw) {
+    try {
+      const local = JSON.parse(localRaw) as Objective[];
+      setMemoryJson(KEYS.OBJECTIVES(), Array.isArray(local) ? local : []);
+      return Array.isArray(local) ? local : [];
+    } catch {}
   }
+
+  const cloud = await loadFromCloud("objectives");
+  if (cloud) {
+    setMemoryJson(KEYS.OBJECTIVES(), cloud);
+    await AsyncStorage.setItem(KEYS.OBJECTIVES(), JSON.stringify(cloud));
+    return cloud as Objective[];
+  }
+
+  setMemoryJson(KEYS.OBJECTIVES(), []);
+  await AsyncStorage.setItem(KEYS.OBJECTIVES(), JSON.stringify([]));
+  return [];
 }
 
 export async function saveObjectives(objs: Objective[]) {
-  if (!currentUserId) return;
+  requireUserId();
+  if (!Array.isArray(objs)) throw new Error("saveObjectives: invalid array");
+  for (const o of objs) {
+    if (!o.id) {
+      console.error("Objective without ID:", o);
+    }
+  }
+  setMemoryJson(KEYS.OBJECTIVES(), objs);
   await AsyncStorage.setItem(KEYS.OBJECTIVES(), JSON.stringify(objs));
-  // Fire and forget - don't block on cloud sync
-  syncToCloud("objectives", objs).catch((e) => {
-    console.log("saveObjectives: Cloud sync failed (non-blocking)");
-  });
+  // Non-blocking cloud write
+  syncToCloud("objectives", objs).catch(() => {});
 }
 
 export async function ensureDefaultObjective(): Promise<Objective> {
@@ -276,23 +381,43 @@ export async function ensureDefaultObjective(): Promise<Objective> {
 }
 
 export async function loadTasks(): Promise<Task[]> {
-  if (!currentUserId) return [];
-  const raw = await AsyncStorage.getItem(KEYS.TASKS());
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw) as Task[];
-  } catch {
-    return [];
+  requireUserId();
+  const cached = getMemoryJson<Task[]>(KEYS.TASKS());
+  if (cached !== null) return cached;
+
+  const localRaw = await AsyncStorage.getItem(KEYS.TASKS());
+  if (localRaw) {
+    try {
+      const local = JSON.parse(localRaw) as Task[];
+      setMemoryJson(KEYS.TASKS(), Array.isArray(local) ? local : []);
+      return Array.isArray(local) ? local : [];
+    } catch {}
   }
+
+  const cloud = await loadFromCloud("tasks");
+  if (cloud) {
+    setMemoryJson(KEYS.TASKS(), cloud);
+    await AsyncStorage.setItem(KEYS.TASKS(), JSON.stringify(cloud));
+    return cloud as Task[];
+  }
+
+  setMemoryJson(KEYS.TASKS(), []);
+  await AsyncStorage.setItem(KEYS.TASKS(), JSON.stringify([]));
+  return [];
 }
 
 export async function saveTasks(tasks: Task[]) {
-  if (!currentUserId) return;
+  requireUserId();
+  if (!Array.isArray(tasks)) throw new Error("saveTasks: invalid array");
+  for (const t of tasks) {
+    if (!t.id) {
+      console.error("Task without ID:", t);
+    }
+  }
+  setMemoryJson(KEYS.TASKS(), tasks);
   await AsyncStorage.setItem(KEYS.TASKS(), JSON.stringify(tasks));
-  // Fire and forget - don't block on cloud sync
-  syncToCloud("tasks", tasks).catch((e) => {
-    console.log("saveTasks: Cloud sync failed (non-blocking)");
-  });
+  // Non-blocking cloud write
+  syncToCloud("tasks", tasks).catch(() => {});
 }
 
 export async function addTask(input: {
@@ -303,13 +428,14 @@ export async function addTask(input: {
   importance: Task["importance"];
   status: Task["status"];
 }) {
+  console.log("addTask() CALLED uid=", currentUserId, "title=", input.title);
   const tasks = await loadTasks();
   const t: Task = {
     id: uid("task"),
     title: input.title.trim(),
     objectiveId: input.objectiveId,
-    description: input.description?.trim() || undefined,
-    deadline: input.deadline,
+    description: input.description?.trim() || null,
+    deadline: input.deadline ?? null,
     importance: input.importance,
     status: input.status,
     createdAt: new Date().toISOString(),
@@ -361,10 +487,10 @@ export async function addObjective(input: {
   const o: Objective = {
     id: uid("obj"),
     title: input.title.trim(),
-    description: input.description?.trim() || undefined,
+    description: input.description?.trim() || null,
     category: input.category,
     color: input.color,
-    deadline: input.deadline,
+    deadline: input.deadline ?? null,
     createdAt: new Date().toISOString(),
     status: "active",
   };
@@ -396,20 +522,25 @@ export async function setObjectiveCompleted(objectiveId: string, completed: bool
 }
 
 export async function loadCalendarEvents(): Promise<CalendarEvent[]> {
-  if (!currentUserId) return [];
-  const raw = await AsyncStorage.getItem(KEYS.CAL_EVENTS());
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw) as CalendarEvent[];
-  } catch {
-    return [];
+  requireUserId();
+  const cached = getMemoryJson<CalendarEvent[]>(KEYS.CAL_EVENTS());
+  if (cached !== null) return cached;
+  const cloud = await loadFromCloud("calendarEvents");
+  if (cloud) {
+    setMemoryJson(KEYS.CAL_EVENTS(), cloud);
+    return cloud as CalendarEvent[];
   }
+  setMemoryJson(KEYS.CAL_EVENTS(), []);
+  return [];
 }
 
 export async function saveCalendarEvents(events: CalendarEvent[]) {
-  if (!currentUserId) return;
+  requireUserId();
+  console.log("saveCalendarEvents() uid=", currentUserId, "count=", events.length);
+  setMemoryJson(KEYS.CAL_EVENTS(), events);
   await AsyncStorage.setItem(KEYS.CAL_EVENTS(), JSON.stringify(events));
-  syncToCloud("calendarEvents", events).catch(() => {});
+  const ok = await attemptCloudWrite("calendarEvents", events);
+  console.log("saveCalendarEvents cloud ok =", ok);
 }
 
 export async function syncCalendarFromTasks() {
@@ -435,79 +566,29 @@ export async function syncCalendarFromTasks() {
   await saveCalendarEvents([...events, ...keep]);
 }
 export async function saveSetupName(name: string) {
-  // Ensure currentUserId is loaded
-  if (!currentUserId) {
-    await getCurrentUser();
-  }
-  if (!currentUserId) {
-    console.error("saveSetupName: No current user ID");
-    return;
-  }
-  
+  requireUserId();
   console.log("saveSetupName: Saving for user:", currentUserId);
-  const raw = await AsyncStorage.getItem(KEYS.SETUP());
-  let parsed: any = {};
-  try {
-    parsed = raw ? JSON.parse(raw) : {};
-  } catch {
-    parsed = {};
-  }
+  const parsed = await loadSetupPayload();
   parsed.name = name.trim();
-  console.log("saveSetupName: About to save to AsyncStorage");
-  await AsyncStorage.setItem(KEYS.SETUP(), JSON.stringify(parsed));
-  console.log("saveSetupName: Saved to AsyncStorage, syncing to cloud");
-  
-  // Fire and forget - don't block on cloud sync
-  syncToCloud("setup", parsed).catch((e) => {
-    console.error("saveSetupName: Cloud sync failed (non-blocking):", e);
-  });
-  
+  await saveSetupData(parsed);
   console.log("saveSetupName: Complete");
 }
 
 export async function loadSetupName(): Promise<string | null> {
-  if (!currentUserId) return null;
-  const raw = await AsyncStorage.getItem(KEYS.SETUP());
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed.name || null;
-  } catch {
-    return null;
-  }
+  requireUserId();
+  const parsed = await loadSetupPayload();
+  return parsed.name || null;
 }
 
 /**
  * Save setup completion status to cloud and local storage
  */
 export async function saveSetupComplete(isComplete: boolean) {
-  // Ensure currentUserId is loaded
-  if (!currentUserId) {
-    await getCurrentUser();
-  }
-  if (!currentUserId) {
-    console.error("saveSetupComplete: No current user ID");
-    return;
-  }
-  
+  requireUserId();
   console.log("saveSetupComplete: Saving for user:", currentUserId);
-  const raw = await AsyncStorage.getItem(KEYS.SETUP());
-  let parsed: any = {};
-  try {
-    parsed = raw ? JSON.parse(raw) : {};
-  } catch {
-    parsed = {};
-  }
+  const parsed = await loadSetupPayload();
   parsed.setupComplete = isComplete;
-  console.log("saveSetupComplete: About to save to AsyncStorage");
-  await AsyncStorage.setItem(KEYS.SETUP(), JSON.stringify(parsed));
-  console.log("saveSetupComplete: Saved to AsyncStorage, syncing to cloud");
-  
-  // Fire and forget - don't block on cloud sync
-  syncToCloud("setup", parsed).catch((e) => {
-    console.error("saveSetupComplete: Cloud sync failed (non-blocking):", e);
-  });
-  
+  await saveSetupData(parsed);
   console.log("saveSetupComplete: Complete");
 }
 
@@ -515,24 +596,13 @@ export async function saveSetupComplete(isComplete: boolean) {
  * Save complete setup data (name, targetLevel, targetMinutesPerDay, etc.)
  */
 export async function saveSetupData(setupData: any) {
-  // Ensure currentUserId is loaded
-  if (!currentUserId) {
-    await getCurrentUser();
-  }
-  if (!currentUserId) {
-    console.error("saveSetupData: No current user ID");
-    return;
-  }
-  
+  requireUserId();
   console.log("saveSetupData: Saving for user:", currentUserId, setupData);
-  await AsyncStorage.setItem(KEYS.SETUP(), JSON.stringify(setupData));
-  console.log("saveSetupData: Saved to AsyncStorage, syncing to cloud");
-  
+  setMemoryJson(KEYS.SETUP(), setupData);
   // Fire and forget - don't block on cloud sync
   syncToCloud("setup", setupData).catch((e) => {
     console.error("saveSetupData: Cloud sync failed (non-blocking):", e);
   });
-  
   console.log("saveSetupData: Complete");
 }
 
@@ -540,35 +610,20 @@ export async function saveSetupData(setupData: any) {
  * Load complete setup data from cloud or local storage
  */
 export async function loadSetupData(): Promise<any | null> {
-  // Ensure currentUserId is loaded
-  if (!currentUserId) {
-    await getCurrentUser();
-  }
-  if (!currentUserId) return null;
-  
-  // Try to load from cloud first for multi-device sync
+  requireUserId();
   try {
+    const cached = getMemoryJson<any>(KEYS.SETUP());
+    if (cached) return cached;
     const cloudData = await loadFromCloud("setup");
     if (cloudData) {
       console.log("loadSetupData: Loaded from cloud:", cloudData);
-      // Save to local storage for offline access
-      await AsyncStorage.setItem(KEYS.SETUP(), JSON.stringify(cloudData));
+      setMemoryJson(KEYS.SETUP(), cloudData);
       return cloudData;
     }
   } catch (error) {
-    console.log("loadSetupData: Cloud load failed, falling back to local");
+    console.log("loadSetupData: Cloud load failed");
   }
-  
-  // Fallback to local storage
-  const raw = await AsyncStorage.getItem(KEYS.SETUP());
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    console.log("loadSetupData: Loaded from local:", parsed);
-    return parsed;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 /**
@@ -576,77 +631,61 @@ export async function loadSetupData(): Promise<any | null> {
  * Cloud sync happens in setCurrentUser(), so data is already local
  */
 export async function loadSetupComplete(): Promise<boolean> {
-  // Ensure currentUserId is loaded
-  if (!currentUserId) {
-    await getCurrentUser();
-  }
-  if (!currentUserId) return false;
-  
-  // Read from local storage (instant - cloud sync already happened in setCurrentUser)
-  const raw = await AsyncStorage.getItem(KEYS.SETUP());
-  if (!raw) return false;
-  try {
-    const parsed = JSON.parse(raw);
-    const setupComplete = parsed.setupComplete ?? false;
-    console.log("loadSetupComplete: Loaded from local storage (instant):", setupComplete);
-    return setupComplete;
-  } catch {
-    return false;
-  }
+  requireUserId();
+  const parsed = await loadSetupPayload();
+  const setupComplete = parsed.setupComplete ?? false;
+  console.log("loadSetupComplete: Loaded from cloud cache:", setupComplete);
+  return setupComplete;
 }
 
 export async function loadFocusMinutesToday(): Promise<number> {
-  if (!currentUserId) return 0;
+  requireUserId();
   const today = todayKey();
-  const lastDate = await AsyncStorage.getItem(KEYS.FOCUS_DATE());
-  
+  const { minutesToday, lastDate } = await loadFocusDailyData();
+
   // Reset if new day
   if (lastDate !== today) {
-    await AsyncStorage.setItem(KEYS.FOCUS_MIN_TODAY(), "0");
-    await AsyncStorage.setItem(KEYS.FOCUS_DATE(), today);
+    await saveFocusDailyData({ minutesToday: 0, lastDate: today });
     return 0;
   }
-  
-  const raw = await AsyncStorage.getItem(KEYS.FOCUS_MIN_TODAY());
-  return raw ? Number(raw) || 0 : 0;
+
+  return minutesToday;
 }
 
 export async function addFocusMinutes(minutes: number) {
-  if (!currentUserId) return 0;
-  const current = await loadFocusMinutesToday();
-  const newTotal = current + minutes;
+  requireUserId();
   const today = todayKey();
-  
-  
-  await AsyncStorage.setItem(KEYS.FOCUS_MIN_TODAY(), String(newTotal));
-  await AsyncStorage.setItem(KEYS.FOCUS_DATE(), today);
-  
+  const { minutesToday, lastDate } = await loadFocusDailyData();
+  const base = lastDate === today ? minutesToday : 0;
+  const newTotal = base + minutes;
+
+  await saveFocusDailyData({ minutesToday: newTotal, lastDate: today });
   return newTotal;
 }
 
 export async function loadStreakDays(): Promise<number> {
-  if (!currentUserId) return 0;
-  const raw = await AsyncStorage.getItem(KEYS.STREAK_DAYS());
-  return raw ? Number(raw) || 0 : 0;
+  requireUserId();
+  const streak = await loadStreakData();
+  return streak.days;
 }
 
 export async function saveStreakDays(days: number) {
-  if (!currentUserId) return;
-  await AsyncStorage.setItem(KEYS.STREAK_DAYS(), String(days));
-  syncToCloud("streak", { days }).catch(() => {});
+  requireUserId();
+  const streak = await loadStreakData();
+  await saveStreakData({ days, lastLoginDate: streak.lastLoginDate });
 }
 
 // Update streak based on login dates
 export async function updateLoginStreak(): Promise<number> {
-  if (!currentUserId) return 0;
+  requireUserId();
   const today = todayKey();
-  const lastLogin = await AsyncStorage.getItem(KEYS.LAST_LOGIN_DATE());
-  const currentStreak = await loadStreakDays();
+  const streak = await loadStreakData();
+  const lastLogin = streak.lastLoginDate;
+  const currentStreak = streak.days;
 
   if (!lastLogin) {
     // First login
-    await AsyncStorage.setItem(KEYS.LAST_LOGIN_DATE(), today);
-    await saveStreakDays(1);
+    await saveStreakData({ days: 1, lastLoginDate: today });
     return 1;
   }
 
@@ -673,8 +712,7 @@ export async function updateLoginStreak(): Promise<number> {
     newStreak = currentStreak;
   }
 
-  await AsyncStorage.setItem(KEYS.LAST_LOGIN_DATE(), today);
-  await saveStreakDays(newStreak);
+  await saveStreakData({ days: newStreak, lastLoginDate: today });
   return newStreak;
 }
 
@@ -685,38 +723,64 @@ type FocusSession = {
   taskId?: string;
 };
 
-export async function saveFocusSession(session: FocusSession) {
-  if (!currentUserId) return [];
-  const raw = await AsyncStorage.getItem(KEYS.FOCUS_SESSIONS());
-  let sessions: FocusSession[] = [];
-  
-  try {
-    sessions = raw ? JSON.parse(raw) : [];
-  } catch {
-    sessions = [];
-  }
-  
+type ThemeData = { mode: string; accent: string };
 
+async function loadThemeData(): Promise<ThemeData> {
+  requireUserId();
+
+  const cachedMode = getMemoryItem(KEYS.THEME_MODE());
+  const cachedAccent = getMemoryItem(KEYS.THEME_ACCENT());
+  if (cachedMode !== null && cachedAccent !== null) {
+    return { mode: cachedMode || "light", accent: cachedAccent || "#1C7ED6" };
+  }
+
+  const cloud = await loadFromCloud("theme");
+  if (cloud) {
+    const mode = cloud.mode || "light";
+    const accent = cloud.accent || "#1C7ED6";
+    setMemoryItem(KEYS.THEME_MODE(), mode);
+    setMemoryItem(KEYS.THEME_ACCENT(), accent);
+    return { mode, accent };
+  }
+
+  // fallback to AsyncStorage if you want, otherwise default
+  return { mode: "light", accent: "#1C7ED6" };
+}
+
+async function saveThemeData(next: ThemeData) {
+  requireUserId();
+  const payload = { mode: next.mode || "light", accent: next.accent || "#1C7ED6" };
+  setMemoryItem(KEYS.THEME_MODE(), payload.mode);
+  setMemoryItem(KEYS.THEME_ACCENT(), payload.accent);
+  syncToCloud("theme", payload).catch(() => {});
+}
+
+export async function saveFocusSession(session: FocusSession) {
+  requireUserId();
+  const cached = getMemoryJson<FocusSession[]>(KEYS.FOCUS_SESSIONS());
+  const sessions = cached ? [...cached] : [];
   sessions.push(session);
-  
-  await AsyncStorage.setItem(KEYS.FOCUS_SESSIONS(), JSON.stringify(sessions));
+
+  setMemoryJson(KEYS.FOCUS_SESSIONS(), sessions);
   syncToCloud("focusSessions", sessions).catch(() => {});
-  
+
   // Add to daily total
   await addFocusMinutes(session.minutes);
-  
+
   return sessions;
 }
 
 export async function loadFocusSessions(): Promise<FocusSession[]> {
-  if (!currentUserId) return [];
-  const raw = await AsyncStorage.getItem(KEYS.FOCUS_SESSIONS());
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw) as FocusSession[];
-  } catch {
-    return [];
+  requireUserId();
+  const cached = getMemoryJson<FocusSession[]>(KEYS.FOCUS_SESSIONS());
+  if (cached !== null) return cached;
+  const cloud = await loadFromCloud("focusSessions");
+  if (cloud) {
+    setMemoryJson(KEYS.FOCUS_SESSIONS(), cloud);
+    return cloud as FocusSession[];
   }
+  setMemoryJson(KEYS.FOCUS_SESSIONS(), []);
+  return [];
 }
 
 // ========== Daily Goal Tracking ==========
@@ -725,17 +789,23 @@ export async function loadFocusSessions(): Promise<FocusSession[]> {
  * Load the user's custom daily goal target (default 5 tasks)
  */
 export async function loadDailyGoal(): Promise<number> {
-  if (!currentUserId) return 5;
-  const raw = await AsyncStorage.getItem(KEYS.DAILY_GOAL());
-  return raw ? Number(raw) || 5 : 5;
+  requireUserId();
+  const cached = getMemoryItem(KEYS.DAILY_GOAL());
+  if (cached) return Number(cached) || 5;
+  const cloud = await loadFromCloud("dailyGoal");
+  if (cloud?.goal != null) {
+    setMemoryItem(KEYS.DAILY_GOAL(), String(cloud.goal));
+    return Number(cloud.goal) || 5;
+  }
+  return 5;
 }
 
 /**
  * Save the user's custom daily goal target
  */
 export async function saveDailyGoal(goal: number) {
-  if (!currentUserId) return;
-  await AsyncStorage.setItem(KEYS.DAILY_GOAL(), String(goal));
+  requireUserId();
+  setMemoryItem(KEYS.DAILY_GOAL(), String(goal));
   syncToCloud("dailyGoal", { goal }).catch(() => {});
 }
 
@@ -791,79 +861,192 @@ export async function loadTasksCompletedDueToday(): Promise<number> {
   return completedDueToday.length;
 }
 
-// ========== Theme Settings (User-Specific) ==========
+// ========== Theme Settings (User-Specific, Cloud-Backed) ==========
 
-export async function loadThemeMode(): Promise<string | null> {
-  if (!currentUserId) return "light";
-  const mode = await AsyncStorage.getItem(KEYS.THEME_MODE());
-  return mode || "light";
+export async function loadThemeMode(): Promise<string> {
+  const t = await loadThemeData();
+  return t.mode;
 }
 
 export async function saveThemeMode(mode: string) {
-  if (!currentUserId) return;
-  await AsyncStorage.setItem(KEYS.THEME_MODE(), mode);
+  const t = await loadThemeData();
+  await saveThemeData({ ...t, mode });
 }
 
 export async function loadThemeAccent(): Promise<string> {
-  if (!currentUserId) return "#1C7ED6";
-  const accent = await AsyncStorage.getItem(KEYS.THEME_ACCENT());
-  return accent || "#1C7ED6";
+  const t = await loadThemeData();
+  return t.accent;
 }
 
 export async function saveThemeAccent(accent: string) {
-  if (!currentUserId) return;
-  await AsyncStorage.setItem(KEYS.THEME_ACCENT(), accent);
+  const t = await loadThemeData();
+  await saveThemeData({ ...t, accent });
 }
 
 // ========== Focus Timer Settings (User-Specific) ==========
 
 export async function loadFocusBackground(): Promise<string | null> {
-  if (!currentUserId) return null;
-  return await AsyncStorage.getItem(KEYS.FOCUS_BG());
+  requireUserId();
+  const settings = await loadFocusSettingsData();
+  return settings.background;
 }
 
 export async function saveFocusBackground(bgId: string) {
-  if (!currentUserId) return;
-  await AsyncStorage.setItem(KEYS.FOCUS_BG(), bgId);
+  requireUserId();
+  const settings = await loadFocusSettingsData();
+  await saveFocusSettingsData({ ...settings, background: bgId });
 }
 
 export async function loadFocusMinutes(): Promise<number> {
-  if (!currentUserId) return 25;
-  const raw = await AsyncStorage.getItem(KEYS.FOCUS_MINUTES());
-  return raw ? Number(raw) : 25;
+  requireUserId();
+  const settings = await loadFocusSettingsData();
+  return settings.focusMinutes;
 }
 
 export async function saveFocusMinutes(minutes: number) {
-  if (!currentUserId) return;
-  await AsyncStorage.setItem(KEYS.FOCUS_MINUTES(), String(minutes));
+  requireUserId();
+  const settings = await loadFocusSettingsData();
+  await saveFocusSettingsData({ ...settings, focusMinutes: minutes });
 }
 
 export async function loadBreakMinutes(): Promise<number> {
-  if (!currentUserId) return 5;
-  const raw = await AsyncStorage.getItem(KEYS.BREAK_MINUTES());
-  return raw ? Number(raw) : 5;
+  requireUserId();
+  const settings = await loadFocusSettingsData();
+  return settings.breakMinutes;
 }
 
 export async function saveBreakMinutes(minutes: number) {
-  if (!currentUserId) return;
-  await AsyncStorage.setItem(KEYS.BREAK_MINUTES(), String(minutes));
+  requireUserId();
+  const settings = await loadFocusSettingsData();
+  await saveFocusSettingsData({ ...settings, breakMinutes: minutes });
 }
 
 // ========== Local Calendar Events (User-Created) ==========
 
 export async function loadLocalEvents(): Promise<any[]> {
-  if (!currentUserId) return [];
-  const raw = await AsyncStorage.getItem(KEYS.LOCAL_EVENTS());
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return [];
+  requireUserId();
+  const cached = getMemoryJson<any[]>(KEYS.LOCAL_EVENTS());
+  if (cached !== null) return cached;
+  const cloud = await loadFromCloud("localEvents");
+  if (cloud) {
+    setMemoryJson(KEYS.LOCAL_EVENTS(), cloud);
+    return cloud as any[];
   }
+  setMemoryJson(KEYS.LOCAL_EVENTS(), []);
+  return [];
 }
 
 export async function saveLocalEvents(events: any[]) {
-  if (!currentUserId) return;
+  requireUserId();
+  setMemoryJson(KEYS.LOCAL_EVENTS(), events);
   await AsyncStorage.setItem(KEYS.LOCAL_EVENTS(), JSON.stringify(events));
   syncToCloud("localEvents", events).catch(() => {});
 }
+
+// Migrates legacy local data to the new per-user key format (stub)
+export async function migrateLegacyLocalDataToCloud() {
+  // Implement migration logic if needed
+  // For now, this is a no-op stub
+  return;
+}
+
+// Syncs all relevant data from cloud to local (stub)
+export async function syncFromCloud() {
+  // Implement full cloud-to-local sync logic if needed
+  // For now, this is a no-op stub
+  return;
+}
+
+export async function setCurrentUser(userId: string) {
+  currentUserId = userId;
+  await AsyncStorage.setItem(STATIC_KEYS.CURRENT_USER, userId);
+  clearUserMemory();
+  pendingCloudWrites.clear();
+  // Migrate legacy local data once, then sync from cloud
+  console.log("setCurrentUser: Starting cloud sync...");
+  try {
+    await migrateLegacyLocalDataToCloud();
+    await syncFromCloud();
+    console.log("setCurrentUser: Cloud sync completed");
+  } catch (error) {
+    console.log("setCurrentUser: Cloud sync failed (non-blocking)", error);
+  }
+}
+
+export async function getCurrentUser(): Promise<string | null> {
+  if (currentUserId) return currentUserId;
+  currentUserId = await AsyncStorage.getItem(STATIC_KEYS.CURRENT_USER);
+  return currentUserId;
+}
+
+export async function clearUserData() {
+  if (!currentUserId) return;
+  
+  const userKeys = [
+    KEYS.SETUP(),
+    KEYS.OBJECTIVES(),
+    KEYS.TASKS(),
+    KEYS.CAL_EVENTS(),
+    KEYS.LOCAL_EVENTS(),
+    KEYS.FOCUS_MIN_TODAY(),
+    KEYS.FOCUS_DATE(),
+    KEYS.FOCUS_SESSIONS(),
+    KEYS.STREAK_DAYS(),
+    KEYS.LAST_LOGIN_DATE(),
+    KEYS.DAILY_GOAL(),
+    KEYS.THEME_MODE(),
+    KEYS.THEME_ACCENT(),
+    KEYS.FOCUS_BG(),
+    KEYS.FOCUS_MINUTES(),
+    KEYS.BREAK_MINUTES(),
+  ];
+
+  await AsyncStorage.multiRemove(userKeys);
+  clearUserMemory();
+  pendingCloudWrites.clear();
+  await AsyncStorage.removeItem(STATIC_KEYS.CURRENT_USER);
+  currentUserId = null;
+}
+
+async function loadFromCloud(collection: string): Promise<any | null> {
+  if (!currentUserId) return null;
+  
+  // Add timeout to prevent hanging (5 seconds for reads)
+  const timeout = new Promise<null>((resolve) => 
+    setTimeout(() => resolve(null), 5000)
+  );
+  
+  const loadOp = (async () => {
+    const docRef = doc(db, "users", currentUserId, collection, "data");
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data().content;
+    }
+    return null;
+  })();
+  
+  try {
+    return await Promise.race([loadOp, timeout]);
+  } catch (error) {
+    // Silently fail - app works offline
+    console.log(`loadFromCloud: ${collection} load failed (non-blocking)`);
+    return null;
+  }
+}
+
+export { loadFromCloud };
+
+function uid(prefix: string) {
+  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+}
+
+export { uid };
+
+function todayKey(d = new Date()) {
+  const y = d.getFullYear();
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export { todayKey };

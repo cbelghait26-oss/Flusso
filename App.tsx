@@ -4,11 +4,13 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { ActivityIndicator, View } from "react-native";
 import Constants from "expo-constants";
+import { onAuthStateChanged } from "firebase/auth";
 
 import { ThemeProvider } from "./src/components/theme/theme";
 import { GlobalMusicProvider } from "./src/services/GlobalMusicPlayer";
-import { getCurrentUser, setCurrentUser, loadSetupComplete } from "./src/data/storage";
+import { getCurrentUser, setCurrentUser, clearUserData, flushPendingCloudWrites, loadSetupComplete } from "./src/data/storage";
 import { auth } from "./src/services/firebase";
+import { bootstrapCloudForUser } from "./src/services/CloudBootstrap";
 
 // Build verification - this proves you're on the NEW build with Spotify deep link handler
 console.log("🏗️ BUILD INFO:");
@@ -89,6 +91,29 @@ export default function App() {
     };
 
     checkAuth();
+  }, []);
+
+  // Auth listener for bootstrapping cloud sync
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        await setCurrentUser(user.uid);
+        if (typeof flushPendingCloudWrites === "function") {
+          await flushPendingCloudWrites();
+        }
+        // Name source:
+        // - Google user.displayName
+        // - fallback to empty string
+        const name = user.displayName ?? "";
+        const email = user.email ?? "";
+        await bootstrapCloudForUser({ name, email });
+      } else {
+        if (typeof clearUserData === "function") {
+          await clearUserData();
+        }
+      }
+    });
+    return () => unsub();
   }, []);
 
   if (initializing) {

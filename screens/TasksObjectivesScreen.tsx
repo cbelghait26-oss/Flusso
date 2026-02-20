@@ -36,7 +36,9 @@ import {
   todayKey,
   updateObjective,
   updateTask,
+  STORAGE_MODULE_ID
 } from "../src/data/storage";
+
 
 type Mode = "tasks" | "objectives";
 type SortMode = "my-day" | "important" | "planned" | "tasks";
@@ -58,8 +60,8 @@ const OBJECTIVE_COLORS: Array<{ value: Objective["color"]; label: string; hex: s
   { value: "yellow", label: "Yellow", hex: "#FFCC00" },
   { value: "orange", label: "Orange", hex: "#FF9500" },
   { value: "red", label: "Red", hex: "#FF3B30" },
-  { value: "purple", label: "Purple", hex: "#AF52DE" },
   { value: "gray", label: "Gray", hex: "#8E8E93" },
+  { value: "pink", label: "Pink", hex: "#FFC0CB" },
 ];
 
 const IMPORTANCE: Array<{ v: Task["importance"]; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
@@ -319,6 +321,9 @@ const TaskRow = React.memo(function TaskRow(props: TaskRowProps) {
 });
 
 export default function TasksObjectivesScreen() {
+  useEffect(() => {
+    console.log("USING STORAGE MODULE:", STORAGE_MODULE_ID);
+  }, []);
   const { colors, radius, spacing } = useTheme();
 
   const [mode, setMode] = useState<Mode>("tasks");

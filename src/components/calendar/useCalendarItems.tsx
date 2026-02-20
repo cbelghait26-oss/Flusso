@@ -40,6 +40,20 @@ export function useCalendarItems(params: Params) {
   const items = useMemo(() => {
     const out: CalItem[] = [];
 
+    const birthdayBaseYear = new Map<string, number>();
+    for (const e of events) {
+      if (e.eventType !== "birthday") continue;
+      const baseId = e.id?.split("_r")[0] ?? e.id;
+      if (!baseId || birthdayBaseYear.has(baseId)) continue;
+      if (typeof e.birthYear === "number" && Number.isFinite(e.birthYear)) {
+        birthdayBaseYear.set(baseId, e.birthYear);
+        continue;
+      }
+      const [yearStr] = (e.startDate || "").split("-");
+      const yearNum = Number(yearStr);
+      if (Number.isFinite(yearNum)) birthdayBaseYear.set(baseId, yearNum);
+    }
+
     if (showEvents) {
       for (const e of events) {
         // Skip birthdays if we're only showing events
@@ -66,16 +80,26 @@ export function useCalendarItems(params: Params) {
       for (const e of events) {
         // Only show birthdays
         if (e.eventType !== "birthday") continue;
+
+        const baseId = e.id?.split("_r")[0] ?? e.id;
+        const [eventYearStr] = (e.startDate || "").split("-");
+        const eventYear = Number(eventYearStr);
+        const birthYear = baseId ? birthdayBaseYear.get(baseId) : undefined;
+        const age = Number.isFinite(eventYear) && Number.isFinite(birthYear)
+          ? Math.max(0, eventYear - (birthYear as number))
+          : null;
+        const titleBase = e.title || "Birthday";
+        const titleWithAge = age != null ? `${titleBase} (${age})` : titleBase;
         
         out.push({
           id: `event:${e.id}`,
           type: "event",
-          title: e.title || "Birthday",
+          title: titleWithAge,
           date: e.startDate,
           allDay: e.allDay,
           startTime: e.allDay ? undefined : e.startTime,
           endTime: e.allDay ? undefined : e.endTime,
-          colorKey: e.color,
+          colorKey: "birthday",
           location: e.location,
         });
       }

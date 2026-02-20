@@ -11,7 +11,8 @@ export type EventColorKey =
   | "orange"
   | "red"
   | "purple"
-  | "gray";
+  | "gray"
+  | "birthday";
 
 export type LocalEvent = {
   id: string;
@@ -35,6 +36,7 @@ export type LocalEvent = {
   googleCalendarId?: string; // placeholder
   
   eventType?: "event" | "birthday"; // distinguish birthdays from regular events
+  birthYear?: number; // only for birthday events
 };
 
 export type CalItem = {

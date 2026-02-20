@@ -1,3 +1,4 @@
+// CalendarScreen.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,7 +12,8 @@ import { useTheme } from "../src/components/theme/theme";
 import { monthLabel, parseYMD, startOfMonth, ymd } from "../src/components/calendar/date";
 import type { YMD } from "../src/components/calendar/types";
 import { useCalendarItems } from "../src/components/calendar/useCalendarItems";
-import { loadLocalEvents, saveLocalEvents } from "../src/data/storage";
+import { loadLocalEvents, saveLocalEvents, STORAGE_MODULE_ID } from "../src/data/storage";
+
 
 import { TopAppBar } from "../src/components/calendar/TopAppBar";
 import { MonthStrip } from "../src/components/calendar/MonthStrip";
@@ -21,6 +23,9 @@ import { SideDrawer } from "../src/components/calendar/SideDrawer";
 import { generateDefaultHolidays } from "../src/data/holidays";
 
 export default function CalendarScreenV2() {
+  useEffect(() => {
+    console.log("USING STORAGE MODULE (calendar):", STORAGE_MODULE_ID);
+  }, []);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<any>();
@@ -219,7 +224,22 @@ export default function CalendarScreenV2() {
             const eventId = event.id.substring(6); // Remove "event:" prefix
             const fullEvent = events.find((e) => e.id === eventId);
             if (fullEvent) {
-              setEditingEvent(fullEvent);
+              if (fullEvent.eventType === "birthday") {
+                const baseId = fullEvent.id?.split("_r")[0] ?? fullEvent.id;
+                const baseEvent = baseId ? events.find((e) => e.id === baseId) : undefined;
+                const [yearStr] = (baseEvent?.startDate || fullEvent.startDate || "").split("-");
+                const inferredBirthYear = Number(yearStr);
+                const birthYear = Number.isFinite(fullEvent.birthYear)
+                  ? fullEvent.birthYear
+                  : Number.isFinite(baseEvent?.birthYear)
+                    ? baseEvent?.birthYear
+                    : Number.isFinite(inferredBirthYear)
+                      ? inferredBirthYear
+                      : undefined;
+                setEditingEvent({ ...fullEvent, birthYear });
+              } else {
+                setEditingEvent(fullEvent);
+              }
               setCreateOpen(true);
             }
           }

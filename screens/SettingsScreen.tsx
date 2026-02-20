@@ -494,19 +494,7 @@ export default function SettingsScreen() {
           { width: segmentWidth, backgroundColor: C.card, borderColor: C.line },
         ]}
       >
-        <Animated.View
-          style={[
-            styles.segmentIndicator,
-            {
-              width: segItemW,
-              backgroundColor: isDark
-                ? "rgba(255,255,255,0.06)"
-                : "rgba(10,22,48,0.06)",
-              transform: [{ translateX: indicatorTranslateX }],
-            },
-          ]}
-        />
-        {tabs.map((t) => {
+        {tabs.map((t, idx) => {
           const active = t.key === tab;
           return (
             <Pressable
@@ -514,18 +502,25 @@ export default function SettingsScreen() {
               onPress={() => setTab(t.key)}
               style={({ pressed }) => [
                 styles.segmentItem,
-                { width: segItemW, opacity: pressed ? 0.86 : 1 },
+                { 
+                  width: segItemW, 
+                  opacity: pressed ? 0.9 : 1,
+                  backgroundColor: active 
+                    ? `${C.accent}14` // accent with 8% opacity
+                    : "transparent",
+                  borderRadius: s(16),
+                },
               ]}
             >
               <Ionicons
                 name={t.icon}
-                size={16}
-                color={active ? C.text : C.muted}
+                size={s(18)}
+                color={active ? C.accent : C.muted}
               />
               <Text
                 style={[
                   styles.segmentText,
-                  { color: active ? C.text : C.muted },
+                  { color: active ? C.accent : C.muted },
                 ]}
                 numberOfLines={1}
               >

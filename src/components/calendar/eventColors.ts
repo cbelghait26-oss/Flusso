@@ -10,7 +10,10 @@ const EVENT_COLORS = {
   red: "#FF3B30",
   purple: "#AF52DE",
   gray: "#8E8E93",
+  birthday: "#FF6B2C",
 };
+
+export const BIRTHDAY_COLOR = EVENT_COLORS.birthday;
 
 export function eventColor(theme: any, key: EventColorKey | undefined) {
   // Return BRAND colors directly for consistency
@@ -29,6 +32,8 @@ export function eventColor(theme: any, key: EventColorKey | undefined) {
       return EVENT_COLORS.purple;
     case "gray":
       return EVENT_COLORS.gray;
+    case "birthday":
+      return EVENT_COLORS.birthday;
     case "blue":
     default:
       return EVENT_COLORS.blue;

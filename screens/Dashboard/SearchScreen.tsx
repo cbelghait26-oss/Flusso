@@ -19,6 +19,7 @@ import { s } from "react-native-size-matters";
 import { loadTasks, loadObjectives, todayKey } from "../../src/data/storage";
 import type { Task, Objective } from "../../src/data/models";
 import type { LocalEvent } from "../../src/components/calendar/types";
+import { BIRTHDAY_COLOR } from "../../src/components/calendar/eventColors";
 
 type Kind = "task" | "objective" | "event" | "birthday" | "action";
 type Item = { 
@@ -532,7 +533,7 @@ export default function SearchScreen({ navigation }: any) {
             const event = item.data as LocalEvent;
             bgColor = `rgba(33, 150, 243, 0.2)`; // Blue for events
           } else if (item.kind === "birthday") {
-            bgColor = `rgba(233, 30, 99, 0.2)`; // Pink for birthdays
+            bgColor = `${BIRTHDAY_COLOR}33`; // Birthday-only color with alpha
           } else if (item.kind === "action") {
             bgColor = `rgba(156, 39, 176, 0.2)`; // Purple for actions
           }
