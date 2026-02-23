@@ -21,7 +21,7 @@ export function useSpotifyRemote() {
   // - Redirect URI must match EXACTLY what you added there
   //   e.g. "flusso://spotify-auth"
   const CLIENT_ID = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ?? "f95c8effcc63427e8b98c6a92a9d0c17";
-  const REDIRECT_URI = process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ?? "flusso://spotify-auth";
+  const REDIRECT_URI = process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ?? "flusso://spotify-auth/";
 
   const connect = useCallback(async () => {
     console.log("🎵 Spotify connect button pressed!");
@@ -53,6 +53,7 @@ export function useSpotifyRemote() {
       if (!REDIRECT_URI) throw new Error("Missing EXPO_PUBLIC_SPOTIFY_REDIRECT_URI");
 
       console.log("🎵 Starting Spotify authorization with:", { CLIENT_ID, REDIRECT_URI });
+      console.log("SPOTIFY redirectUri =", REDIRECT_URI);
 
       const config: ApiConfig = {
         clientID: CLIENT_ID,
@@ -93,7 +94,7 @@ export function useSpotifyRemote() {
       if (errorMsg.includes("timeout")) {
         Alert.alert(
           "Deep Link Handler Missing", 
-          "The Spotify redirect worked, but your app couldn't catch it.\n\nYou need to install the LATEST build from EAS that includes the deep link handler.\n\n1. Download the new build from EAS\n2. Install it (replace current build)\n3. Verify flusso://spotify-auth is in Spotify Dashboard\n4. Try connecting again",
+          "The Spotify redirect worked, but your app couldn't catch it.\n\nYou need to install the LATEST build from EAS that includes the deep link handler.\n\n1. Download the new build from EAS\n2. Install it (replace current build)\n3. Verify flusso://spotify-auth/ is in Spotify Dashboard\n4. Try connecting again",
           [{ text: "OK" }]
         );
       } else {
@@ -125,36 +126,25 @@ export function useSpotifyRemote() {
     };
   }, []);
 
-  // Listen for deep links as diagnostic (guide OAuth Spotify: event + initialURL)
+  // Listen for deep links as diagnostic
   useEffect(() => {
-    console.log("[DL_DIAG] Installing Linking listeners (both 'url' event + initialURL)");
-    
     const handleDeepLink = (event: { url: string }) => {
-      console.log("[DL_DIAG] ✅ url event caught:", event.url);
-      if (event.url.includes("spotify-auth") || event.url.includes("spotify")) {
-        console.log("[DL_DIAG] ✅ Spotify redirect caught by Linking listener!");
-        console.log("[DL_DIAG] This confirms iOS delivered URL to RCTLinkingManager correctly");
+      console.log("🔗 Deep link received:", event.url);
+      if (event.url.includes("spotify-auth")) {
+        console.log("✅ Spotify auth redirect caught by Linking listener!");
       }
     };
 
     const subscription = Linking.addEventListener("url", handleDeepLink);
 
-    // Check for initial URL (app killed then opened by deep link)
-    // ⚠️ Guide warning: getInitialURL can return null if Remote JS Debugging is active
+    // Check for initial URL
     Linking.getInitialURL().then((url) => {
       if (url) {
-        console.log("[DL_DIAG] ✅ initialURL (app was killed):", url);
-        if (url.includes("spotify-auth") || url.includes("spotify")) {
-          console.log("[DL_DIAG] ✅ Spotify redirect from killed state!");
-        }
-      } else {
-        console.log("[DL_DIAG] initialURL is null");
-        console.log("[DL_DIAG] ⚠️ If Remote JS Debugging is on, getInitialURL always returns null");
+        console.log("🔗 Initial URL:", url);
       }
     });
 
     return () => {
-      console.log("[DL_DIAG] Removing Linking listeners");
       subscription.remove();
     };
   }, []);

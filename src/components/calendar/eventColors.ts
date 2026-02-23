@@ -4,13 +4,14 @@ import type { EventColorKey } from "./types";
 const EVENT_COLORS = {
   blue: "#007AFF",
   teal: "#21afa1",
-  green: "#34C759",
+  green: "#1c9139",
   yellow: "#FFCC00",
   orange: "#FF9500",
   red: "#FF3B30",
   purple: "#AF52DE",
   gray: "#8E8E93",
-  birthday: "#FF6B2C",
+  pink: "#FF6E89",
+  birthday: "#64ff2c",
 };
 
 export const BIRTHDAY_COLOR = EVENT_COLORS.birthday;

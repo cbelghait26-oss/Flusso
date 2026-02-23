@@ -17,7 +17,7 @@ export function useCalendarItems(params: Params) {
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<any[]>([]);
   const [objectives, setObjectives] = useState<any[]>([]);
-  const [events, setEvents] = useState<LocalEvent[]>([]); // local for now
+  const [events, setEvents] = useState<LocalEvent[]>([]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -56,12 +56,11 @@ export function useCalendarItems(params: Params) {
 
     if (showEvents) {
       for (const e of events) {
-        // Skip birthdays if we're only showing events
         if (e.eventType === "birthday") continue;
-        
-        // Skip holidays if holidays are disabled
-        if (!showHolidays && e.id?.startsWith('holiday_')) continue;
-        
+
+        const isHoliday = !!e.id?.startsWith("holiday_");
+        if (!showHolidays && isHoliday) continue;
+
         out.push({
           id: `event:${e.id}`,
           type: "event",
@@ -70,7 +69,8 @@ export function useCalendarItems(params: Params) {
           allDay: e.allDay,
           startTime: e.allDay ? undefined : e.startTime,
           endTime: e.allDay ? undefined : e.endTime,
-          colorKey: e.color,
+          // FIX: holidays always get "purple"; user events use their chosen color key
+          colorKey: isHoliday ? "purple" : (e.color ?? "blue"),
           location: e.location,
         });
       }
@@ -78,19 +78,19 @@ export function useCalendarItems(params: Params) {
 
     if (showBirthdays) {
       for (const e of events) {
-        // Only show birthdays
         if (e.eventType !== "birthday") continue;
 
         const baseId = e.id?.split("_r")[0] ?? e.id;
         const [eventYearStr] = (e.startDate || "").split("-");
         const eventYear = Number(eventYearStr);
         const birthYear = baseId ? birthdayBaseYear.get(baseId) : undefined;
-        const age = Number.isFinite(eventYear) && Number.isFinite(birthYear)
-          ? Math.max(0, eventYear - (birthYear as number))
-          : null;
+        const age =
+          Number.isFinite(eventYear) && Number.isFinite(birthYear)
+            ? Math.max(0, eventYear - (birthYear as number))
+            : null;
         const titleBase = e.title || "Birthday";
         const titleWithAge = age != null ? `${titleBase} (${age})` : titleBase;
-        
+
         out.push({
           id: `event:${e.id}`,
           type: "event",
@@ -99,6 +99,7 @@ export function useCalendarItems(params: Params) {
           allDay: e.allDay,
           startTime: e.allDay ? undefined : e.startTime,
           endTime: e.allDay ? undefined : e.endTime,
+          // FIX: birthdays always use the "birthday" color key (#FF6B2C orange)
           colorKey: "birthday",
           location: e.location,
         });
@@ -106,24 +107,57 @@ export function useCalendarItems(params: Params) {
     }
 
     if (showTasks) {
+      // Build a quick lookup map — coerce both sides to string to survive
+      // numeric vs string ID mismatches (storage sometimes returns numeric IDs).
+      const objectiveById = new Map<string, any>();
+      for (const o of objectives) {
+        if (o.id != null) objectiveById.set(String(o.id), o);
+      }
+
+      // Reverse map: hex color value → EventColorKey name.
+      // Objectives whose `color` field is stored as a raw hex (e.g. "#22C55E")
+      // still resolve to the right key that eventColor() understands.
+      const HEX_TO_KEY: Record<string, string> = {
+        "#007aff": "blue",  "#1c7ed6": "blue",
+        "#21afa1": "teal",  "#2ec4b6": "teal",
+        "#34c759": "green", "#22c55e": "green",
+        "#ffcc00": "yellow","#facc15": "yellow",
+        "#ff9500": "orange","#f97316": "orange",
+        "#ff3b30": "red",   "#f43f5e": "red",
+        "#af52de": "purple","#a855f7": "purple",
+        "#8e8e93": "gray",
+        "#ff6b2c": "birthday",
+      };
+
+      const NAMED_KEYS = new Set(["blue","teal","green","yellow","orange","red","purple","gray","birthday"]);
+
+      const resolveColorKey = (raw: string | undefined): string => {
+        if (!raw) return "blue";
+        const lower = raw.toLowerCase();
+        if (NAMED_KEYS.has(lower)) return lower;        // already a key name
+        return HEX_TO_KEY[lower] ?? "blue";            // hex → key, or fallback
+      };
+
       for (const t of tasks) {
-        // Skip completed tasks
         if ((t as any).status === "completed") continue;
-        
+
         const d = (t as any).deadline ?? (t as any).date ?? null;
         if (!d) continue;
         const date: YMD = typeof d === "string" ? d : `${d}`;
-        
-        // Get objective color for this task
-        const objective = objectives.find((o) => o.id === (t as any).objectiveId);
-        const colorKey = objective?.color ?? "blue";
-        
+
+        const taskObjId = (t as any).objectiveId;
+        const objective = taskObjId != null
+          ? objectiveById.get(String(taskObjId))
+          : undefined;
+
+        const colorKey = resolveColorKey(objective?.color);
+
         out.push({
           id: `task:${(t as any).id ?? (t as any).title ?? Math.random()}`,
           type: "task",
           title: (t as any).title ?? "Task",
           date,
-          completed: false, // Only showing non-completed tasks
+          completed: false,
           colorKey,
         });
       }
@@ -154,7 +188,6 @@ export function useCalendarItems(params: Params) {
         const r = rank(a.type) - rank(b.type);
         if (r !== 0) return r;
 
-        // events: all-day first, then time
         if (a.type === "event" && b.type === "event") {
           const aAll = !!a.allDay;
           const bAll = !!b.allDay;
@@ -173,8 +206,7 @@ export function useCalendarItems(params: Params) {
   }, [items]);
 
   const dayKeysSorted = useMemo(() => {
-    const keys = Array.from(itemsByDay.keys()).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-    return keys;
+    return Array.from(itemsByDay.keys()).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   }, [itemsByDay]);
 
   return {

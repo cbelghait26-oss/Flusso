@@ -1,3 +1,4 @@
+// screens/FocusZoneScreen.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -13,48 +14,33 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Audio } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import Entypo from "@expo/vector-icons/Entypo";
+import { s } from "react-native-size-matters";
+
 import { useTheme } from "../src/components/theme/theme";
 import { useGlobalMusic } from "../src/services/GlobalMusicPlayer";
-import { s } from "react-native-size-matters";
+import { SpotifyMiniPlayer } from "../src/components/SpotifyMiniPlayer";
+import { useSpotifyRemote } from "../src/hooks/useSpotifyRemote";
+
 import {
   loadTasks,
   loadObjectives,
   saveFocusSession,
   todayKey,
   loadFocusBackground,
-  saveFocusBackground,
   loadFocusMinutes,
   saveFocusMinutes,
   loadBreakMinutes,
   saveBreakMinutes,
 } from "../src/data/storage";
 import type { Task, Objective } from "../src/data/models";
-import Entypo from '@expo/vector-icons/Entypo';
-import { SpotifyMiniPlayer } from "../src/components/SpotifyMiniPlayer";
-import { useSpotifyRemote } from "../src/hooks/useSpotifyRemote";
 
 const BACKGROUNDS = [
-  {
-    id: "mountain",
-    label: "Mountain",
-    source: require("../assets/focus/mountainMOB.png"),
-  },
-  {
-    id: "forest",
-    label: "Forest",
-    source: require("../assets/focus/forest1.png"),
-  },
-  {
-    id: "ocean",
-    label: "Ocean",
-    source: require("../assets/focus/Ocean1.png"),
-  },
+  { id: "mountain", label: "Mountain", source: require("../assets/focus/mountainMOB.png") },
+  { id: "forest", label: "Forest", source: require("../assets/focus/forest1.png") },
+  { id: "ocean", label: "Ocean", source: require("../assets/focus/Ocean1.png") },
   { id: "space", label: "Space", source: require("../assets/focus/space.png") },
-  {
-    id: "skyline",
-    label: "Skyline",
-    source: require("../assets/focus/skylineMOB.png"),
-  },
+  { id: "skyline", label: "Skyline", source: require("../assets/focus/skylineMOB.png") },
 ];
 
 function clampInt(n: number, min: number, max: number) {
@@ -63,6 +49,8 @@ function clampInt(n: number, min: number, max: number) {
 }
 
 type Phase = "work" | "break";
+type TimerMode = "pomodoro" | "timer";
+type TimerView = "timer" | "hidden" | "clock";
 
 export default function FocusZoneScreen({ navigation }: any) {
   const { colors } = useTheme();
@@ -79,24 +67,30 @@ export default function FocusZoneScreen({ navigation }: any) {
   // Room navigation
   const [isInRoom, setIsInRoom] = useState(false);
   const [currentRoom, setCurrentRoom] = useState(BACKGROUNDS[0]);
+
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
 
   const [background, setBackground] = useState(BACKGROUNDS[0]);
+
+  // Pomodoro config
   const [focusMinutes, setFocusMinutes] = useState(25);
   const [breakMinutes, setBreakMinutes] = useState(5);
-  const [displayTime, setDisplayTime] = useState(false);
-  const [hideTimer, setHideTimer] = useState(false);
 
-  // Tasks & Objectives
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [objectives, setObjectives] = useState<Objective[]>([]);
+  // Timer mode + view
+  const [timerMode, setTimerMode] = useState<TimerMode>("pomodoro");
+  const [timerView, setTimerView] = useState<TimerView>("timer");
 
+  // Pomodoro runtime
   const [phase, setPhase] = useState<Phase>("work");
   const [secondsLeft, setSecondsLeft] = useState(25 * 60);
+
+  // Timer (stopwatch) runtime
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Shared runtime
   const [isRunning, setIsRunning] = useState(false);
 
   const cueRef = useRef<Audio.Sound | null>(null);
-
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const transitioningRef = useRef(false);
   const sessionStartTimeRef = useRef<string | null>(null);
@@ -104,6 +98,10 @@ export default function FocusZoneScreen({ navigation }: any) {
   // sheets
   const [showSettingsSheet, setShowSettingsSheet] = useState(false);
   const [showTaskSheet, setShowTaskSheet] = useState(false);
+
+  // Tasks & Objectives
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [objectives, setObjectives] = useState<Objective[]>([]);
 
   // task selection
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -194,28 +192,35 @@ export default function FocusZoneScreen({ navigation }: any) {
     cueRef.current = null;
   };
 
-  /* ------------------ TIMER ------------------ */
+  /* ------------------ CLOCK TICK (only for clock view) ------------------ */
+  const [, forceClockTick] = useState(0);
+  useEffect(() => {
+    if (timerView !== "clock") return;
+    const interval = setInterval(() => forceClockTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [timerView]);
+
+  /* ------------------ MAIN INTERVAL ------------------ */
   useEffect(() => {
     if (!isRunning) return;
 
     timerRef.current = setInterval(() => {
-      setSecondsLeft((prev) => (prev <= 0 ? 0 : prev - 1));
+      if (timerMode === "timer") {
+        setElapsedSeconds((prev) => prev + 1);
+      } else {
+        setSecondsLeft((prev) => (prev <= 0 ? 0 : prev - 1));
+      }
     }, 1000);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = null;
     };
-  }, [isRunning]);
+  }, [isRunning, timerMode]);
 
-  const [, setTick] = useState(0);
+  /* ------------------ POMODORO PHASE TRANSITION ------------------ */
   useEffect(() => {
-    if (!displayTime) return;
-    const interval = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(interval);
-  }, [displayTime]);
-
-  useEffect(() => {
+    if (timerMode !== "pomodoro") return;
     if (!isRunning) return;
     if (secondsLeft > 0) return;
     if (transitioningRef.current) return;
@@ -227,6 +232,7 @@ export default function FocusZoneScreen({ navigation }: any) {
         await playCueTwice();
       } catch {}
 
+      // Save completed focus session (pomodoro only)
       if (phase === "work" && sessionStartTimeRef.current) {
         await saveFocusSession({
           date: todayKey(),
@@ -237,24 +243,56 @@ export default function FocusZoneScreen({ navigation }: any) {
       }
 
       const nextPhase: Phase = phase === "work" ? "break" : "work";
-      const nextSeconds =
-        (nextPhase === "work" ? focusMinutes : breakMinutes) * 60;
+      const nextSeconds = (nextPhase === "work" ? focusMinutes : breakMinutes) * 60;
 
       if (nextPhase === "work") {
         const now = new Date();
-        sessionStartTimeRef.current = `${now
-          .getHours()
+        sessionStartTimeRef.current = `${now.getHours().toString().padStart(2, "0")}:${now
+          .getMinutes()
           .toString()
-          .padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+          .padStart(2, "0")}`;
       }
 
       setPhase(nextPhase);
       setSecondsLeft(nextSeconds);
       transitioningRef.current = false;
     })();
-  }, [secondsLeft, isRunning, phase, focusMinutes, breakMinutes, selectedTaskId]);
+  }, [secondsLeft, isRunning, phase, focusMinutes, breakMinutes, selectedTaskId, timerMode]);
 
+  /* ------------------ ACTIONS ------------------ */
   const toggleRun = () => {
+    // TIMER (Stopwatch)
+    if (timerMode === "timer") {
+      if (!isRunning) {
+        if (!sessionStartTimeRef.current) {
+          const now = new Date();
+          sessionStartTimeRef.current = `${now.getHours().toString().padStart(2, "0")}:${now
+            .getMinutes()
+            .toString()
+            .padStart(2, "0")}`;
+        }
+        setIsRunning(true);
+        return;
+      }
+
+      // Stop: log minutes (rounded down)
+      setIsRunning(false);
+      const mins = Math.floor(elapsedSeconds / 60);
+      if (mins > 0 && sessionStartTimeRef.current) {
+        void saveFocusSession({
+          date: todayKey(),
+          startTime: sessionStartTimeRef.current,
+          minutes: mins, // round down: 3:45 -> 3
+          taskId: selectedTaskId || undefined,
+        });
+      }
+
+      // New stopwatch run = new session start time
+      sessionStartTimeRef.current = null;
+      return;
+    }
+
+    // POMODORO
     if (secondsLeft <= 0) {
       const snap = (phase === "work" ? focusMinutes : breakMinutes) * 60;
       setSecondsLeft(snap);
@@ -262,10 +300,10 @@ export default function FocusZoneScreen({ navigation }: any) {
 
     if (!isRunning && phase === "work" && !sessionStartTimeRef.current) {
       const now = new Date();
-      sessionStartTimeRef.current = `${now
-        .getHours()
+      sessionStartTimeRef.current = `${now.getHours().toString().padStart(2, "0")}:${now
+        .getMinutes()
         .toString()
-        .padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+        .padStart(2, "0")}`;
     }
 
     setIsRunning((v) => !v);
@@ -273,50 +311,91 @@ export default function FocusZoneScreen({ navigation }: any) {
 
   const resetTimer = () => {
     setIsRunning(false);
+    sessionStartTimeRef.current = null;
+
+    if (timerMode === "timer") {
+      setElapsedSeconds(0);
+      return;
+    }
+
     setPhase("work");
     setSecondsLeft(focusMinutes * 60);
-    sessionStartTimeRef.current = null;
   };
 
-  const formatTime = () => {
+  const cycleTimerView = () => {
+    setTimerView((v) => {
+      if (v === "timer") return "hidden";
+      if (v === "hidden") return "clock";
+      return "timer";
+    });
+  };
+
+  /* ------------------ FORMATTERS ------------------ */
+  const formatCountdown = () => {
     const m = Math.floor(secondsLeft / 60);
     const sLeft = secondsLeft % 60;
     return `${m}:${String(sLeft).padStart(2, "0")}`;
   };
 
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      void unloadCue();
-    };
-  }, []);
+  const formatStopwatch = () => {
+    const h = Math.floor(elapsedSeconds / 3600);
+    const m = Math.floor((elapsedSeconds % 3600) / 60);
+    const sLeft = elapsedSeconds % 60;
+    return `${h}:${String(m).padStart(2, "0")}:${String(sLeft).padStart(2, "0")}`; // 0:00:00
+  };
+
+  const getCurrentTime = () => {
+    const now = new Date();
+    return `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+  };
 
   /* ------------------ SETTINGS SAVE ------------------ */
   const saveSettings = async () => {
-    const fm = clampInt(focusMinutes, 5, 240);
-    const bm = clampInt(breakMinutes, 1, 60);
+    // Persist only pomodoro settings
+    if (timerMode === "pomodoro") {
+      const fm = clampInt(focusMinutes, 5, 240);
+      const bm = clampInt(breakMinutes, 1, 60);
 
-    await saveFocusMinutes(fm);
-    await saveBreakMinutes(bm);
+      await saveFocusMinutes(fm);
+      await saveBreakMinutes(bm);
 
-    if (!isRunning) {
-      setSecondsLeft((phase === "work" ? fm : bm) * 60);
+      if (!isRunning) {
+        setSecondsLeft((phase === "work" ? fm : bm) * 60);
+      }
     }
 
     setShowSettingsSheet(false);
   };
 
+  /* ------------------ LABELS ------------------ */
   const taskLabel = selectedTask ? selectedTask.title : "Link a task";
 
-  const phaseLabel =
-    phase === "work" ? (selectedTask ? selectedTask.title : "Work") : "Break";
-  const subLabel = isRunning
-    ? phase === "work"
-      ? "Focusing…"
-      : "Recovering…"
-    : secondsLeft <= 0
-      ? "Session ended. Tap to restart"
-      : "Tap to start";
+  const mainLabel =
+    timerMode === "timer"
+      ? (selectedTask ? selectedTask.title : "Stopwatch")
+      : phase === "work"
+        ? (selectedTask ? selectedTask.title : "Work")
+        : "Break";
+
+  const subLabel =
+    timerMode === "timer"
+      ? isRunning
+        ? "Timing…"
+        : "Tap to start"
+      : isRunning
+        ? phase === "work"
+          ? "Focusing…"
+          : "Recovering…"
+        : secondsLeft <= 0
+          ? "Session ended. Tap to restart"
+          : "Tap to start";
+
+  const mainValue =
+    timerView === "clock"
+      ? getCurrentTime()
+      : timerMode === "timer"
+        ? formatStopwatch()
+        : formatCountdown();
 
   /* ------------------ ROOM NAVIGATION ------------------ */
   const enterRoom = (room: typeof BACKGROUNDS[0]) => {
@@ -326,11 +405,13 @@ export default function FocusZoneScreen({ navigation }: any) {
   };
 
   const attemptLeaveRoom = () => {
-    if (
-      isRunning ||
-      secondsLeft <
-        (phase === "work" ? focusMinutes * 60 : breakMinutes * 60)
-    ) {
+    const pomodoroProgressed =
+      timerMode === "pomodoro" &&
+      (isRunning || secondsLeft < (phase === "work" ? focusMinutes * 60 : breakMinutes * 60));
+
+    const stopwatchProgressed = timerMode === "timer" && (isRunning || elapsedSeconds > 0);
+
+    if (pomodoroProgressed || stopwatchProgressed) {
       setShowLeaveConfirm(true);
     } else {
       leaveRoom();
@@ -340,37 +421,32 @@ export default function FocusZoneScreen({ navigation }: any) {
   const leaveRoom = () => {
     setIsInRoom(false);
     setShowLeaveConfirm(false);
-    resetTimer();
+    // reset everything for safety
+    setIsRunning(false);
+    setPhase("work");
+    setSecondsLeft(focusMinutes * 60);
+    setElapsedSeconds(0);
+    sessionStartTimeRef.current = null;
+    setTimerView("timer");
   };
 
-  const getCurrentTime = () => {
-    const now = new Date();
-    return `${now.getHours().toString().padStart(2, "0")}:${now
-      .getMinutes()
-      .toString()
-      .padStart(2, "0")}`;
-  };
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      void unloadCue();
+    };
+  }, []);
 
   /* ------------------ RENDER ------------------ */
-
   if (!isInRoom) {
     return (
-      <ImageBackground
-        source={require("../assets/focus/mountainMOB.png")}
-        style={{ flex: 1 }}
-      >
-        <LinearGradient
-          colors={["rgba(0,0,0,0.22)", "rgba(0,0,0,0.88)"]}
-          style={{ flex: 1 }}
-        >
+      <ImageBackground source={require("../assets/focus/mountainMOB.png")} style={{ flex: 1 }}>
+        <LinearGradient colors={["rgba(0,0,0,0.22)", "rgba(0,0,0,0.88)"]} style={{ flex: 1 }}>
           <SafeAreaView style={styles.container}>
             <View style={styles.topBar}>
               <Pressable
                 onPress={() => navigation.goBack()}
-                style={({ pressed }) => [
-                  styles.iconPill,
-                  { opacity: pressed ? 0.85 : 1 },
-                ]}
+                style={({ pressed }) => [styles.iconPill, { opacity: pressed ? 0.85 : 1 }]}
               >
                 <Ionicons name="chevron-back" size={s(14)} color="#fff" />
                 <Text style={styles.pillText}>Dashboard</Text>
@@ -379,9 +455,7 @@ export default function FocusZoneScreen({ navigation }: any) {
 
             <View style={styles.roomSelectionContainer}>
               <Text style={styles.roomSelectionTitle}>Choose Your Focus Room</Text>
-              <Text style={styles.roomSelectionSubtitle}>
-                Select an environment to begin your focus session
-              </Text>
+              <Text style={styles.roomSelectionSubtitle}>Select an environment to begin your focus session</Text>
 
               <ScrollView
                 style={styles.roomGrid}
@@ -393,10 +467,7 @@ export default function FocusZoneScreen({ navigation }: any) {
                     <Pressable
                       key={room.id}
                       onPress={() => enterRoom(room)}
-                      style={({ pressed }) => [
-                        styles.roomCard,
-                        { opacity: pressed ? 0.9 : 1 },
-                      ]}
+                      style={({ pressed }) => [styles.roomCard, { opacity: pressed ? 0.9 : 1 }]}
                     >
                       <ImageBackground
                         source={room.source}
@@ -427,10 +498,7 @@ export default function FocusZoneScreen({ navigation }: any) {
 
   return (
     <ImageBackground source={currentRoom.source} style={{ flex: 1 }}>
-      <LinearGradient
-        colors={["rgba(0,0,0,0.22)", "rgba(0,0,0,0.88)"]}
-        style={{ flex: 1 }}
-      >
+      <LinearGradient colors={["rgba(0,0,0,0.22)", "rgba(0,0,0,0.88)"]} style={{ flex: 1 }}>
         <SafeAreaView style={styles.container} edges={["top"]}>
           <ScrollView
             style={{ flex: 1 }}
@@ -440,10 +508,7 @@ export default function FocusZoneScreen({ navigation }: any) {
             <View style={styles.topBar}>
               <Pressable
                 onPress={attemptLeaveRoom}
-                style={({ pressed }) => [
-                  styles.iconPill,
-                  { opacity: pressed ? 0.85 : 1 },
-                ]}
+                style={({ pressed }) => [styles.iconPill, { opacity: pressed ? 0.85 : 1 }]}
               >
                 <Ionicons name="chevron-back" size={s(14)} color="#fff" />
                 <Text style={styles.pillText}>Leave Room</Text>
@@ -457,28 +522,21 @@ export default function FocusZoneScreen({ navigation }: any) {
                     styles.smallIconPill,
                     {
                       opacity: pressed || spotify.connecting ? 0.65 : 1,
-                      backgroundColor: spotify.connected 
-                        ? "rgba(29, 185, 84, 0.25)" 
+                      backgroundColor: spotify.connected
+                        ? "rgba(29, 185, 84, 0.25)"
                         : "rgba(29, 185, 84, 0.18)",
                     },
                   ]}
                 >
                   <Entypo name="spotify" size={s(18)} color="#1DB954" />
                   <Text style={[styles.smallPillText, { color: "#76eea0" }]}>
-                    {spotify.connecting 
-                      ? "Connecting..." 
-                      : spotify.connected 
-                        ? "Spotify On" 
-                        : "Spotify"}
+                    {spotify.connecting ? "Connecting..." : spotify.connected ? "Spotify On" : "Spotify"}
                   </Text>
                 </Pressable>
 
                 <Pressable
                   onPress={() => setShowSettingsSheet(true)}
-                  style={({ pressed }) => [
-                    styles.smallIconPill,
-                    { opacity: pressed ? 0.85 : 1 },
-                  ]}
+                  style={({ pressed }) => [styles.smallIconPill, { opacity: pressed ? 0.85 : 1 }]}
                 >
                   <Ionicons name="options-outline" size={s(16)} color="#fff" />
                   <Text style={styles.smallPillText}>Settings</Text>
@@ -490,21 +548,14 @@ export default function FocusZoneScreen({ navigation }: any) {
               onPress={() => setShowTaskSheet(true)}
               style={({ pressed }) => [
                 styles.taskBadge,
-                {
-                  opacity: pressed ? 0.92 : 1,
-                  borderColor: "rgba(255,255,255,0.14)",
-                },
+                { opacity: pressed ? 0.92 : 1, borderColor: "rgba(255,255,255,0.14)" },
               ]}
             >
               <Ionicons name="list-outline" size={s(18)} color="#fff" />
               <Text style={styles.taskBadgeText} numberOfLines={1}>
                 {taskLabel}
               </Text>
-              <Ionicons
-                name="chevron-down"
-                size={s(16)}
-                color="rgba(255,255,255,0.75)"
-              />
+              <Ionicons name="chevron-down" size={s(16)} color="rgba(255,255,255,0.75)" />
             </Pressable>
 
             <View style={{ marginTop: s(12) }}>
@@ -513,21 +564,21 @@ export default function FocusZoneScreen({ navigation }: any) {
 
             <View style={styles.center}>
               <View style={styles.timerContainer}>
-                {!hideTimer && (
+                {timerView !== "hidden" && (
                   <Pressable
                     onPress={toggleRun}
                     style={({ pressed }) => [
                       styles.timerCard,
                       {
                         borderColor: "rgba(255,255,255,0.16)",
-                        backgroundColor: "rgba(255,255,255,0.10)",
+                        backgroundColor: "rgba(255, 255, 255, 0)",
                         opacity: pressed ? 0.92 : 1,
                       },
                     ]}
                   >
-                    <Text style={styles.phaseTag}>{phaseLabel}</Text>
-                    <Text style={[styles.timerText, displayTime && styles.timerTextClockDisplay]}>
-                      {displayTime ? getCurrentTime() : formatTime()}
+                    <Text style={styles.phaseTag}>{mainLabel}</Text>
+                    <Text style={[styles.timerText, timerView === "clock" && styles.timerTextClockDisplay]}>
+                      {mainValue}
                     </Text>
                     <View style={styles.timerSubRow}>
                       <View style={styles.dot} />
@@ -549,18 +600,14 @@ export default function FocusZoneScreen({ navigation }: any) {
                     },
                   ]}
                 >
-                  <Ionicons
-                    name={isMuted ? "volume-mute" : "musical-notes"}
-                    size={s(18)}
-                    color="#fff"
-                  />
+                  <Ionicons name={isMuted ? "volume-mute" : "musical-notes"} size={s(18)} color="#fff" />
                   <Text style={styles.actionPillText}>
                     {loading ? "Loading..." : isMuted ? "Disable" : "Enable"} Music
                   </Text>
                 </Pressable>
 
                 <Pressable
-                  onPress={() => setHideTimer((v) => !v)}
+                  onPress={cycleTimerView}
                   style={({ pressed }) => [
                     styles.actionPill,
                     {
@@ -570,36 +617,32 @@ export default function FocusZoneScreen({ navigation }: any) {
                   ]}
                 >
                   <Ionicons
-                    name={hideTimer ? "eye" : "eye-off"}
+                    name={timerView === "hidden" ? "eye" : timerView === "clock" ? "time-outline" : "eye-off"}
                     size={s(18)}
                     color="#fff"
                   />
                   <Text style={styles.actionPillText}>
-                    {hideTimer ? "Show" : "Hide"} 
+                    {timerView === "timer" ? "Hide" : timerView === "hidden" ? "Show Time" : "Show Timer"}
                   </Text>
                 </Pressable>
               </View>
 
-              {!hideTimer && (
+              {timerView !== "hidden" && (
                 <Pressable
                   onPress={resetTimer}
-                  style={({ pressed }) => [
-                    styles.resetLink,
-                    { opacity: pressed ? 0.75 : 1 },
-                  ]}
+                  style={({ pressed }) => [styles.resetLink, { opacity: pressed ? 0.75 : 1 }]}
                 >
-                  <Ionicons
-                    name="refresh"
-                    size={s(16)}
-                    color="rgba(255,255,255,0.85)"
-                  />
-                  <Text style={styles.resetText}>Reset session</Text>
+                  <Ionicons name="refresh" size={s(16)} color="rgba(255,255,255,0.85)" />
+                  <Text style={styles.resetText}>
+                    {timerMode === "timer" ? "Reset timer" : "Reset session"}
+                  </Text>
                 </Pressable>
               )}
             </View>
           </ScrollView>
         </SafeAreaView>
 
+        {/* Leave confirm */}
         <Modal
           visible={showLeaveConfirm}
           transparent
@@ -632,97 +675,130 @@ export default function FocusZoneScreen({ navigation }: any) {
                     { opacity: pressed ? 0.85 : 1 },
                   ]}
                 >
-                  <Text style={[styles.dialogBtnText, { color: "#FF6B6B" }]}>
-                    Leave
-                  </Text>
+                  <Text style={[styles.dialogBtnText, { color: "#FF6B6B" }]}>Leave</Text>
                 </Pressable>
               </View>
             </View>
           </View>
         </Modal>
 
+        {/* Settings sheet */}
         <BottomSheet
           visible={showSettingsSheet}
           onClose={() => setShowSettingsSheet(false)}
           title="Timer settings"
         >
           <View style={{ gap: s(12) }}>
-            <Row label="Focus">
-              <Stepper
-                value={focusMinutes}
-                onDec={() => setFocusMinutes((v) => clampInt(v - 5, 5, 240))}
-                onInc={() => setFocusMinutes((v) => clampInt(v + 5, 5, 240))}
-              />
-            </Row>
-
-            <Row label="Break">
-              <Stepper
-                value={breakMinutes}
-                onDec={() => setBreakMinutes((v) => clampInt(v - 1, 1, 60))}
-                onInc={() => setBreakMinutes((v) => clampInt(v + 1, 1, 60))}
-              />
-            </Row>
-
-            <Row label="Display Time">
+            {/* Mode selector */}
+            <View style={{ flexDirection: "row", gap: s(10) }}>
               <Pressable
-                onPress={() => setDisplayTime((v) => !v)}
+                onPress={() => {
+                  setTimerMode("timer");
+                  setIsRunning(false);
+                  setPhase("work");
+                  setElapsedSeconds(0);
+                  sessionStartTimeRef.current = null;
+                  setTimerView("timer");
+                }}
                 style={({ pressed }) => [
-                  styles.toggleBtn,
+                  styles.chip,
                   {
-                    backgroundColor: displayTime
-                      ? "rgba(255,255,255,0.18)"
-                      : "rgba(255,255,255,0.08)",
+                    flex: 1,
+                    alignItems: "center",
+                    backgroundColor:
+                      timerMode === "timer" ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)",
+                    borderColor: "rgba(255,255,255,0.18)",
                     opacity: pressed ? 0.88 : 1,
                   },
                 ]}
               >
-                <Text style={styles.toggleBtnText}>
-                  {displayTime ? "Clock" : "Timer"}
-                </Text>
-                <Ionicons
-                  name={displayTime ? "time-outline" : "timer-outline"}
-                  size={s(18)}
-                  color="#fff"
-                />
+                <Text style={styles.chipText}>Timer</Text>
               </Pressable>
-            </Row>
 
-            <View
-              style={{
-                flexDirection: "row",
-                gap: s(10),
-                marginTop: s(6),
-                flexWrap: "wrap",
-              }}
-            >
-              {[1, 15, 25, 45, 60].map((p) => (
-                <Pressable
-                  key={p}
-                  onPress={() => setFocusMinutes(p)}
-                  style={({ pressed }) => [
-                    styles.chip,
-                    {
-                      borderColor: "rgba(255,255,255,0.18)",
-                      backgroundColor:
-                        focusMinutes === p
-                          ? "rgba(255,255,255,0.18)"
-                          : "rgba(255,255,255,0.08)",
-                      opacity: pressed ? 0.88 : 1,
-                    },
-                  ]}
-                >
-                  <Text style={styles.chipText}>{p} min</Text>
-                </Pressable>
-              ))}
+              <Pressable
+                onPress={() => {
+                  setTimerMode("pomodoro");
+                  setIsRunning(false);
+                  setPhase("work");
+                  setSecondsLeft(focusMinutes * 60);
+                  sessionStartTimeRef.current = null;
+                  setTimerView("timer");
+                }}
+                style={({ pressed }) => [
+                  styles.chip,
+                  {
+                    flex: 1,
+                    alignItems: "center",
+                    backgroundColor:
+                      timerMode === "pomodoro" ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)",
+                    borderColor: "rgba(255,255,255,0.18)",
+                    opacity: pressed ? 0.88 : 1,
+                  },
+                ]}
+              >
+                <Text style={styles.chipText}>Pomodoro</Text>
+              </Pressable>
             </View>
+
+            {/* Pomodoro settings */}
+            {timerMode === "pomodoro" && (
+              <View style={{ gap: s(12) }}>
+                <Row label="Focus">
+                  <Stepper
+                    value={focusMinutes}
+                    onDec={() => setFocusMinutes((v) => clampInt(v - 5, 5, 240))}
+                    onInc={() => setFocusMinutes((v) => clampInt(v + 5, 5, 240))}
+                  />
+                </Row>
+
+                <Row label="Break">
+                  <Stepper
+                    value={breakMinutes}
+                    onDec={() => setBreakMinutes((v) => clampInt(v - 1, 1, 60))}
+                    onInc={() => setBreakMinutes((v) => clampInt(v + 1, 1, 60))}
+                  />
+                </Row>
+
+                <View style={{ flexDirection: "row", gap: s(10), flexWrap: "wrap" }}>
+                  {[
+                    { m: 25, label: "25 min" },
+                    { m: 45, label: "45 min" },
+                    { m: 60, label: "60 min" },
+                    { m: 90, label: "90 min" },
+                  ].map((p) => (
+                    <Pressable
+                      key={p.m}
+                      onPress={() => setFocusMinutes(p.m)}
+                      style={({ pressed }) => [
+                        styles.chip,
+                        {
+                          borderColor: "rgba(255,255,255,0.18)",
+                          backgroundColor:
+                            focusMinutes === p.m ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)",
+                          opacity: pressed ? 0.88 : 1,
+                        },
+                      ]}
+                    >
+                      <Text style={styles.chipText}>{p.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Timer settings */}
+            {timerMode === "timer" && (
+              <View style={{ gap: s(10) }}>
+                
+
+            
+              </View>
+            )}
 
             <View style={styles.sheetFooter}>
               <Pressable
                 onPress={() => setShowSettingsSheet(false)}
-                style={({ pressed }) => [
-                  styles.footerBtn,
-                  { opacity: pressed ? 0.85 : 1 },
-                ]}
+                style={({ pressed }) => [styles.footerBtn, { opacity: pressed ? 0.85 : 1 }]}
               >
                 <Text style={styles.footerBtnText}>Cancel</Text>
               </Pressable>
@@ -731,35 +807,21 @@ export default function FocusZoneScreen({ navigation }: any) {
                 onPress={saveSettings}
                 style={({ pressed }) => [
                   styles.footerBtn,
-                  {
-                    backgroundColor: "rgba(255,255,255,0.16)",
-                    opacity: pressed ? 0.85 : 1,
-                  },
+                  { backgroundColor: "rgba(255,255,255,0.16)", opacity: pressed ? 0.85 : 1 },
                 ]}
               >
-                <Text style={[styles.footerBtnText, { fontWeight: "900" }]}>
-                  Save
-                </Text>
+                <Text style={[styles.footerBtnText, { fontWeight: "900" }]}>Save</Text>
               </Pressable>
             </View>
           </View>
         </BottomSheet>
 
-        <BottomSheet
-          visible={showTaskSheet}
-          onClose={() => setShowTaskSheet(false)}
-          title="Link a task"
-        >
+        {/* Task sheet */}
+        <BottomSheet visible={showTaskSheet} onClose={() => setShowTaskSheet(false)} title="Link a task">
           <ScrollView style={{ maxHeight: s(280) }} showsVerticalScrollIndicator={false}>
             {activeTasks.length === 0 ? (
               <View style={{ paddingVertical: s(20), alignItems: "center" }}>
-                <Text
-                  style={{
-                    color: "rgba(255,255,255,0.65)",
-                    fontWeight: "800",
-                    fontSize: s(13),
-                  }}
-                >
+                <Text style={{ color: "rgba(255,255,255,0.65)", fontWeight: "800", fontSize: s(13) }}>
                   No active tasks found
                 </Text>
                 <Text
@@ -788,12 +850,8 @@ export default function FocusZoneScreen({ navigation }: any) {
                       style={({ pressed }) => [
                         styles.taskRow,
                         {
-                          borderColor: active
-                            ? "rgba(255,255,255,0.55)"
-                            : "rgba(255,255,255,0.14)",
-                          backgroundColor: active
-                            ? "rgba(255,255,255,0.14)"
-                            : "rgba(255,255,255,0.08)",
+                          borderColor: active ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.14)",
+                          backgroundColor: active ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.08)",
                           opacity: pressed ? 0.9 : 1,
                         },
                       ]}
@@ -819,11 +877,7 @@ export default function FocusZoneScreen({ navigation }: any) {
                               marginLeft: s(26),
                             }}
                           >
-                            <Ionicons
-                              name="bookmark-outline"
-                              size={s(12)}
-                              color="rgba(255,255,255,0.55)"
-                            />
+                            <Ionicons name="bookmark-outline" size={s(12)} color="rgba(255,255,255,0.55)" />
                             <Text
                               style={{
                                 color: "rgba(255,255,255,0.55)",
@@ -936,6 +990,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.14)",
   },
   pillText: { color: "#fff", fontWeight: "900", fontSize: s(13) },
+
   smallIconPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -949,10 +1004,7 @@ const styles = StyleSheet.create({
   },
   smallPillText: { color: "#fff", fontWeight: "900", fontSize: s(11) },
 
-  roomSelectionContainer: {
-    flex: 1,
-    paddingTop: s(40),
-  },
+  roomSelectionContainer: { flex: 1, paddingTop: s(40) },
   roomSelectionTitle: {
     color: "#fff",
     fontSize: s(28),
@@ -967,9 +1019,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: s(32),
   },
-  roomGrid: {
-    flex: 1,
-  },
+  roomGrid: { flex: 1 },
+
   roomCard: {
     width: "100%",
     height: s(180),
@@ -978,20 +1029,9 @@ const styles = StyleSheet.create({
     borderWidth: s(1),
     borderColor: "rgba(255,255,255,0.16)",
   },
-  roomCardImage: {
-    flex: 1,
-    width: "100%",
-  },
-  roomCardOverlay: {
-    flex: 1,
-    justifyContent: "space-between",
-    padding: s(20),
-  },
-  roomCardLabel: {
-    color: "#fff",
-    fontSize: s(24),
-    fontWeight: "900",
-  },
+  roomCardImage: { flex: 1, width: "100%" },
+  roomCardOverlay: { flex: 1, justifyContent: "space-between", padding: s(20) },
+  roomCardLabel: { color: "#fff", fontSize: s(24), fontWeight: "900" },
   roomCardEnter: {
     flexDirection: "row",
     alignItems: "center",
@@ -1004,11 +1044,7 @@ const styles = StyleSheet.create({
     borderWidth: s(1),
     borderColor: "rgba(255,255,255,0.25)",
   },
-  roomCardEnterText: {
-    color: "#fff",
-    fontWeight: "900",
-    fontSize: s(13),
-  },
+  roomCardEnterText: { color: "#fff", fontWeight: "900", fontSize: s(13) },
 
   dialogBackdrop: {
     flex: 1,
@@ -1042,11 +1078,7 @@ const styles = StyleSheet.create({
     marginBottom: s(24),
     lineHeight: s(20),
   },
-  dialogButtons: {
-    flexDirection: "row",
-    gap: s(12),
-    width: "100%",
-  },
+  dialogButtons: { flexDirection: "row", gap: s(12), width: "100%" },
   dialogBtn: {
     flex: 1,
     paddingVertical: s(14),
@@ -1062,11 +1094,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,107,107,0.14)",
     borderColor: "rgba(255,107,107,0.25)",
   },
-  dialogBtnText: {
-    color: "#fff",
-    fontSize: s(14),
-    fontWeight: "900",
-  },
+  dialogBtnText: { color: "#fff", fontSize: s(14), fontWeight: "900" },
 
   taskBadge: {
     marginTop: s(14),
@@ -1133,15 +1161,11 @@ const styles = StyleSheet.create({
     borderRadius: s(4),
     backgroundColor: "rgba(255,255,255,0.7)",
   },
-  timerSub: {
-    color: "rgba(255,255,255,0.78)",
-    fontWeight: "800",
-    fontSize: s(12),
-  },
+  timerSub: { color: "rgba(255,255,255,0.78)", fontWeight: "800", fontSize: s(12) },
 
-  actionRow: { 
-    flexDirection: "row", 
-    gap: s(12), 
+  actionRow: {
+    flexDirection: "row",
+    gap: s(12),
     marginTop: s(16),
     justifyContent: "center",
     paddingHorizontal: s(16),
@@ -1164,11 +1188,7 @@ const styles = StyleSheet.create({
     gap: s(8),
     alignItems: "center",
   },
-  resetText: {
-    color: "rgba(255,255,255,0.85)",
-    fontWeight: "800",
-    fontSize: s(12),
-  },
+  resetText: { color: "rgba(255,255,255,0.85)", fontWeight: "800", fontSize: s(12) },
 
   sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
   sheet: {
@@ -1197,28 +1217,8 @@ const styles = StyleSheet.create({
   },
   sheetTitle: { color: "#fff", fontWeight: "900", fontSize: s(16) },
 
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   sheetLabel: { color: "rgba(255,255,255,0.85)", fontWeight: "900" },
-
-  toggleBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: s(10),
-    paddingVertical: s(10),
-    paddingHorizontal: s(14),
-    borderRadius: s(14),
-    borderWidth: s(1),
-    borderColor: "rgba(255,255,255,0.14)",
-  },
-  toggleBtnText: {
-    color: "#fff",
-    fontWeight: "900",
-    fontSize: s(13),
-  },
 
   stepper: {
     flexDirection: "row",

@@ -19,12 +19,7 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "LSApplicationQueriesSchemes": ["spotify"],
-        "CFBundleURLTypes": [
-          {
-            "CFBundleURLSchemes": ["flusso"]
-          }
-        ]
+        "LSApplicationQueriesSchemes": ["spotify"]
       }
     },
     "android": {
