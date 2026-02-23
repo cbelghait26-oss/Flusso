@@ -19,7 +19,7 @@ export function useSpotifyRemote() {
   // IMPORTANT:
   // - Client ID comes from Spotify Dashboard
   // - Redirect URI must match EXACTLY what you added there
-  //   e.g. "flusso://spotify-auth"
+  //   e.g. "flusso://spotify-auth/"
   const CLIENT_ID = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ?? "f95c8effcc63427e8b98c6a92a9d0c17";
   const REDIRECT_URI = process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ?? "flusso://spotify-auth/";
 

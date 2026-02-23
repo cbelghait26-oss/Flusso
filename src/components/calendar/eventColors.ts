@@ -4,7 +4,7 @@ import type { EventColorKey } from "./types";
 const EVENT_COLORS = {
   blue: "#007AFF",
   teal: "#21afa1",
-  green: "#1c9139",
+  green: "#34c759",
   yellow: "#FFCC00",
   orange: "#FF9500",
   red: "#FF3B30",

@@ -12,7 +12,7 @@ const CLIENT_ID =
   (Constants.manifest2?.extra as any)?.spotifyClientId ??
   "f95c8effcc63427e8b98c6a92a9d0c17";
 
-const REDIRECT_URI = "flusso://spotify-auth";
+const REDIRECT_URI = "flusso://spotify-auth/";
 
 const SCOPES: ApiScope[] = [
   ApiScope.AppRemoteControlScope,

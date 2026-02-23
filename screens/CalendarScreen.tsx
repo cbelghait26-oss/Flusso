@@ -299,15 +299,13 @@ export default function CalendarScreenV2() {
     await reload();
   };
 
-  // Agenda window: 1 month before today → 2 months after today.
-  // todayIndex points into sections[] so scrollToToday always lands exactly right.
+  // Agenda window: starts from TODAY, extends 2 months forward
   const todayKey = useMemo(() => ymd(new Date()), []);
   const dayKeysAll = useMemo(() => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    const start = addMonths(now, -1); // 1 month back
-    const end   = addMonths(now,  2); // 2 months forward
-    return buildDayKeysBetweenInclusive(start, end);
+    const end = addMonths(now, 2);
+    return buildDayKeysBetweenInclusive(now, end);
   }, []);
 
   const sections = useMemo(() => {
@@ -323,21 +321,14 @@ export default function CalendarScreenV2() {
 
   const scrollToToday = (animated = true) => {
     InteractionManager.runAfterInteractions(() => {
-      // When today is not section 0, RN needs a tick to render enough cells
-      // before scrollToLocation can reach that index reliably.
-      setTimeout(
-        () => {
-          try {
-            listRef.current?.scrollToLocation({
-              sectionIndex: todayIndex,
-              itemIndex: 0,
-              viewPosition: 0,
-              animated,
-            });
-          } catch {}
-        },
-        animated ? 0 : 100,
-      );
+      try {
+        listRef.current?.scrollToLocation({
+          sectionIndex: todayIndex,
+          itemIndex: 0,
+          viewPosition: 0,
+          animated,
+        });
+      } catch {}
     });
   };
 
@@ -629,14 +620,11 @@ export default function CalendarScreenV2() {
         renderItem={({ item }) => renderDayBody(item as YMD)}
         contentContainerStyle={{ paddingBottom: s(140) + insets.bottom }}
         ListHeaderComponent={<View style={{ height: s(8) }} />}
-        onScrollToIndexFailed={() => {
-          // RN couldn't reach the index yet — wait for more cells and retry
-          setTimeout(() => scrollToToday(false), 200);
-        }}
+        onScrollToIndexFailed={() => scrollToToday(false)}
         removeClippedSubviews
-        windowSize={15}
-        maxToRenderPerBatch={20}
-        initialNumToRender={62} // enough to always cover 1 month back (~31 days) + some forward
+        windowSize={10}
+        maxToRenderPerBatch={12}
+        initialNumToRender={12}
         updateCellsBatchingPeriod={16}
       />
 

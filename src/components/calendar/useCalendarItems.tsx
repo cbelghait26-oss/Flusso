@@ -131,11 +131,11 @@ export function useCalendarItems(params: Params) {
 
       const NAMED_KEYS = new Set(["blue","teal","green","yellow","orange","red","purple","gray","birthday"]);
 
-      const resolveColorKey = (raw: string | undefined): string => {
+      const resolveColorKey = (raw: string | undefined): import("./types").EventColorKey => {
         if (!raw) return "blue";
         const lower = raw.toLowerCase();
-        if (NAMED_KEYS.has(lower)) return lower;        // already a key name
-        return HEX_TO_KEY[lower] ?? "blue";            // hex → key, or fallback
+        if (NAMED_KEYS.has(lower)) return lower as import("./types").EventColorKey;        // already a key name
+        return (HEX_TO_KEY[lower] ?? "blue") as import("./types").EventColorKey;            // hex → key, or fallback
       };
 
       for (const t of tasks) {

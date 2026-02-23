@@ -164,7 +164,7 @@ function patchMainActivity(mainActivity) {
 }
 
 module.exports = function withSpotifyRemote(config) {
-  const redirectUri = process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI || "flusso://spotify-auth";
+  const redirectUri = process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI || "flusso://spotify-auth/";
   const scheme = getRedirectScheme(redirectUri) || "flusso";
 
   config = withInfoPlist(config, (cfg) => {
