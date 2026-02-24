@@ -18,7 +18,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { s } from "react-native-size-matters";
-
+import { useAchievements } from "../src/context/AchievementContext";
 import { useTheme } from "../src/components/theme/theme";
 import { SegmentedControl } from "../src/components/ui/SegmentedControl";
 import { BottomSheet } from "../src/components/ui/BottomSheet";
@@ -36,7 +36,8 @@ import {
   todayKey,
   updateObjective,
   updateTask,
-  STORAGE_MODULE_ID
+  STORAGE_MODULE_ID,
+  getCurrentUser
 } from "../src/data/storage";
 
 
@@ -61,7 +62,9 @@ const OBJECTIVE_COLORS: Array<{ value: Objective["color"]; label: string; hex: s
   { value: "orange", label: "Orange", hex: "#FF9500" },
   { value: "red", label: "Red", hex: "#FF3B30" },
   { value: "gray", label: "Gray", hex: "#8E8E93" },
-  { value: "pink", label: "Pink", hex: "#FF6E89" },
+  { value: "purple", label: "Purple", hex: "#AF52DE" },
+  
+  
 ];
 
 const IMPORTANCE: Array<{ v: Task["importance"]; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
@@ -325,6 +328,7 @@ export default function TasksObjectivesScreen() {
     console.log("USING STORAGE MODULE:", STORAGE_MODULE_ID);
   }, []);
   const { colors, radius, spacing } = useTheme();
+  const { checkAchievements } = useAchievements();
 
   const [mode, setMode] = useState<Mode>("tasks");
 
@@ -591,6 +595,8 @@ export default function TasksObjectivesScreen() {
         await updateTask(t.id, { status: "not-started", completedAt: null });
       } else {
         await updateTask(t.id, { status: "completed", completedAt: new Date().toISOString() });
+          const uid = await getCurrentUser();
+          if (uid) checkAchievements(uid);
       }
       await refresh();
     } finally {

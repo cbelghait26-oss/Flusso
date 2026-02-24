@@ -11,8 +11,8 @@ import { Card } from "../../src/components/ui/Card";
 import { IconCircleButton } from "../../src/components/ui/IconCircleButton";
 import { PrimaryButton } from "../../src/components/ui/PrimaryButton";
 import { BottomSheet } from "../../src/components/ui/BottomSheet";
-import { DatePickerSheet } from "../../src/components/ui/DatePickerSheet";
-import { SelectSheet, SelectItem } from "../../src/components/ui/SelectSheet";
+import { StreakCelebrationModal } from "../../src/components/ui/Streakcelebrationmodal";
+import { useStreakCelebration } from "../../src/hooks/useStreakCelebration";
 import { s } from "react-native-size-matters";
 import {
   loadFocusMinutesToday,
@@ -22,11 +22,12 @@ import {
   addTask,
   ensureDefaultObjective,
   loadObjectives,
+  loadTasks,
+  getCurrentUser,
   todayKey,
   loadSetupName,
 } from "../../src/data/storage";
 import type { Objective } from "../../src/data/models";
-import { Colors } from "react-native/Libraries/NewAppScreen";
 
 type SetupPayload = {
   name?: string;
@@ -48,18 +49,18 @@ function clamp(n: number, min: number, max: number) {
 export default function HomeScreen({ navigation, route }: any) {
   const { colors, radius, spacing } = useTheme();
 
+  // ── Streak celebration hook ──────────────────────────────────────────────
+  const { state: streakState, checkAndShowStreak, dismissStreak } = useStreakCelebration();
+
+  // ── Dashboard state ──────────────────────────────────────────────────────
   const [name, setName] = useState<string>("");
   const [focusedMinutesToday, setFocusedMinutesToday] = useState<number>(0);
   const [dayStreak, setDayStreak] = useState<number>(0);
-
-  // These are still backed by AsyncStorage keys you already use.
   const [tasksDueToday, setTasksDueToday] = useState<number>(0);
   const [tasksDoneToday, setTasksDoneToday] = useState<number>(0);
-  
-  // Priority task preview
   const [nextTask, setNextTask] = useState<any>(null);
 
-  // Task creation sheet state
+  // ── Task creation sheet state ────────────────────────────────────────────
   const [addTaskOpen, setAddTaskOpen] = useState(false);
   const [tTitle, setTTitle] = useState("");
   const [tDesc, setTDesc] = useState("");
@@ -67,13 +68,14 @@ export default function HomeScreen({ navigation, route }: any) {
   const [tDeadline, setTDeadline] = useState<string | undefined>(undefined);
   const [objectives, setObjectives] = useState<Objective[]>([]);
   const [saving, setSaving] = useState(false);
-  
-  // Sub-sheets
+
+  // ── Sub-sheets ───────────────────────────────────────────────────────────
   const [taskObjectiveOpen, setTaskObjectiveOpen] = useState(false);
   const [taskDateOpen, setTaskDateOpen] = useState(false);
 
   const greeting = getGreeting();
   const quote = useMemo(() => quoteOfDay(), []);
+
   const progressPct = useMemo(() => {
     if (tasksDueToday <= 0) return tasksDoneToday > 0 ? 100 : 0;
     return clamp((tasksDoneToday / Math.max(tasksDueToday, 1)) * 100, 0, 100);
@@ -86,27 +88,31 @@ export default function HomeScreen({ navigation, route }: any) {
 
   function fmtShortDay(dateKey: string) {
     const d = new Date(dateKey + "T00:00:00");
-    return new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" }).format(d);
+    return new Intl.DateTimeFormat(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    }).format(d);
   }
 
-  // Load initial setup data from route params
+  // ── Load setup name from route params or storage ─────────────────────────
   useEffect(() => {
     (async () => {
       const setupFromRoute = route?.params?.setupData as SetupPayload | undefined;
       const routeName: string | undefined = setupFromRoute?.name;
-
       const storedName = await loadSetupName();
-
       const finalName = routeName || storedName || "";
       if (finalName) setName(finalName);
     })();
   }, [route?.params]);
 
-  // Load dashboard data (focus minutes, streak, tasks)
+  // ── Main data loader ─────────────────────────────────────────────────────
   const loadData = async () => {
     const fm = await loadFocusMinutesToday();
     setFocusedMinutesToday(fm);
 
+    // Read streak for the dashboard card display.
+    // The celebration hook handles updateLoginStreak() internally.
     const sd = await loadStreakDays();
     setDayStreak(sd);
 
@@ -118,52 +124,49 @@ export default function HomeScreen({ navigation, route }: any) {
 
     const objs = await loadObjectives();
     setObjectives(objs);
-    
-    // Load priority task: 1) due today, 2) important (importance >= 3), 3) any task
-    const { loadTasks } = require("../../src/data/storage");
+
+    // Priority task: 1) due today, 2) important, 3) any not-started
     const allTasks = await loadTasks();
     const today = todayKey();
-    
-    // Filter not-started tasks
     const availableTasks = allTasks.filter((t: any) => t.status === "not-started");
-    
-    // Priority 1: Due today
     const todayTasks = availableTasks.filter((t: any) => t.deadline === today);
-    
+
     if (todayTasks.length > 0) {
       setNextTask(todayTasks[0]);
     } else {
-      // Priority 2: Important tasks
       const importantTasks = availableTasks.filter((t: any) => t.importance >= 3);
-      
       if (importantTasks.length > 0) {
         setNextTask(importantTasks[0]);
       } else {
-        // Priority 3: Any task
         setNextTask(availableTasks.length > 0 ? availableTasks[0] : null);
       }
     }
-    
-    // Set default objective if none selected
+
     if (!tObjectiveId && objs.length > 0) {
       const defaultObj = await ensureDefaultObjective();
       setTObjectiveId(defaultObj.id);
     }
   };
 
-  // Load data on mount
+  // ── On mount: load data then trigger streak celebration ──────────────────
   useEffect(() => {
-    loadData();
+    (async () => {
+      await loadData();
+      const uid = await getCurrentUser();
+      if (uid) {
+        checkAndShowStreak(uid);
+      }
+    })();
   }, []);
 
-  // Reload data when screen comes into focus
+  // ── Reload data when screen comes back into focus ────────────────────────
   useFocusEffect(
     useCallback(() => {
       loadData();
     }, [])
   );
 
-  // Parent stack routes
+  // ── Navigation helpers ───────────────────────────────────────────────────
   const openSearch = () => {
     const parent = navigation.getParent?.();
     if (parent) parent.navigate("Search");
@@ -171,17 +174,13 @@ export default function HomeScreen({ navigation, route }: any) {
   };
 
   const openAddTask = async () => {
-    // Reset form
     setTTitle("");
     setTDesc("");
     setTDeadline(undefined);
-    
-    // Ensure default objective is set
     if (!tObjectiveId) {
       const defaultObj = await ensureDefaultObjective();
       setTObjectiveId(defaultObj.id);
     }
-    
     setAddTaskOpen(true);
   };
 
@@ -198,7 +197,6 @@ export default function HomeScreen({ navigation, route }: any) {
       const title = tTitle.trim();
       if (title.length < 3) return;
       if (!tObjectiveId) return;
-
       await addTask({
         title,
         objectiveId: tObjectiveId,
@@ -207,7 +205,6 @@ export default function HomeScreen({ navigation, route }: any) {
         importance: 2,
         status: "not-started",
       });
-
       closeAllSheets();
       await loadData();
     } finally {
@@ -218,6 +215,7 @@ export default function HomeScreen({ navigation, route }: any) {
   const goTasksToday = () => navigation.navigate("TasksTab");
   const goFocus = () => navigation.navigate("FocusTab");
 
+  // ── Inline style helpers (unchanged from original) ───────────────────────
   const inputWrap = (colors: any, radius: any) => ({
     borderRadius: radius.lg,
     borderWidth: s(1),
@@ -246,6 +244,7 @@ export default function HomeScreen({ navigation, route }: any) {
     height: s(48),
   });
 
+  // ────────────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>
       <ScrollView
@@ -256,16 +255,14 @@ export default function HomeScreen({ navigation, route }: any) {
           gap: spacing.md,
         }}
       >
-        {/* Header */}
+        {/* ── Header ── */}
         <View style={styles.header}>
           <View>
-            <Text style={[styles.title, { color: colors.text }]}>Dashboard
-            </Text>
+            <Text style={[styles.title, { color: colors.text }]}>Dashboard</Text>
             <Text style={[styles.subtitle, { color: colors.muted }]}>
               {greeting}, {name}
             </Text>
           </View>
-
           <View style={styles.headerActions}>
             <IconCircleButton onPress={openSearch}>
               <Ionicons name="search" size={s(20)} color={colors.text} />
@@ -276,7 +273,7 @@ export default function HomeScreen({ navigation, route }: any) {
           </View>
         </View>
 
-        {/* Quote of the day */}
+        {/* ── Quote of the day ── */}
         <View style={{ paddingVertical: s(4) }}>
           <Text style={[styles.quote, { color: colors.text }]} numberOfLines={3}>
             "{quote.text}"
@@ -286,9 +283,10 @@ export default function HomeScreen({ navigation, route }: any) {
           </Text>
         </View>
 
-        {/* Stats */}
+        {/* ── Stats ── */}
         <View style={{ gap: s(10) }}>
           <View style={{ flexDirection: "row", gap: s(10) }}>
+            {/* Streak card */}
             <View
               style={[
                 styles.statCardLarge,
@@ -304,10 +302,13 @@ export default function HomeScreen({ navigation, route }: any) {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.statValue, { color: colors.text }]}>{dayStreak}</Text>
-                <Text style={[styles.statLabel, { color: colors.muted }]}>{dayStreak === 1 ? "day" : "days"} streak</Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>
+                  {dayStreak === 1 ? "day" : "days"} streak
+                </Text>
               </View>
             </View>
 
+            {/* Focus minutes card */}
             <Pressable
               onPress={goFocus}
               style={({ pressed }) => [
@@ -330,6 +331,7 @@ export default function HomeScreen({ navigation, route }: any) {
             </Pressable>
           </View>
 
+          {/* Tasks completed card */}
           <Pressable
             onPress={goTasksToday}
             style={({ pressed }) => [
@@ -350,18 +352,14 @@ export default function HomeScreen({ navigation, route }: any) {
               <Ionicons name="checkmark-circle" size={s(22)} color="#4BC0C0" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.statValue, { color: colors.text }]}>
-                {tasksDoneToday} 
-              </Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>{tasksDoneToday}</Text>
               <Text style={[styles.statLabel, { color: colors.muted }]}>tasks completed today</Text>
             </View>
             <Ionicons name="chevron-forward" size={s(18)} color={colors.muted} />
           </Pressable>
         </View>
 
-     
-
-        {/* Next Up */}
+        {/* ── Up Next ── */}
         <Card style={{ padding: s(16), backgroundColor: colors.card }}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Up Next</Text>
@@ -369,57 +367,60 @@ export default function HomeScreen({ navigation, route }: any) {
               <Text style={[styles.viewAllLink, { color: colors.accent }]}>See More</Text>
             </Pressable>
           </View>
-            {nextTask ? (
-              <Pressable
-                onPress={goTasksToday}
-                style={({ pressed }) => [
-                  styles.taskRow,
-                  { opacity: pressed ? 0.7 : 1 },
-                ]}
-              >
-                <View style={styles.taskCheckbox}>
-                  <View style={[styles.checkbox, { borderColor: colors.accent }]} />
+
+          {nextTask ? (
+            <Pressable
+              onPress={goTasksToday}
+              style={({ pressed }) => [styles.taskRow, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <View style={styles.taskCheckbox}>
+                <View style={[styles.checkbox, { borderColor: colors.accent }]} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.taskTitle, { color: colors.text }]}>
+                  {nextTask.title}
+                </Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: s(6),
+                    marginTop: s(4),
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {nextTask.deadline === todayKey() && (
+                    <View style={[styles.taskBadge, { backgroundColor: colors.accent + "15" }]}>
+                      <Ionicons name="calendar" size={s(12)} color={colors.accent} />
+                      <Text style={[styles.badgeText, { color: colors.accent }]}>Today</Text>
+                    </View>
+                  )}
+                  {nextTask.importance >= 3 && nextTask.deadline !== todayKey() && (
+                    <View style={[styles.taskBadge, { backgroundColor: "#F59E0B15" }]}>
+                      <Ionicons name="flag" size={s(12)} color="#F59E0B" />
+                    </View>
+                  )}
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.taskTitle, { color: colors.text }]}>
-                    {nextTask.title}
-                  </Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: s(6), marginTop: s(4), flexWrap: "wrap" }}>
-                    {nextTask.deadline === todayKey() && (
-                      <View style={[styles.taskBadge, { backgroundColor: colors.accent + "15" }]}>
-                        <Ionicons name="calendar" size={s(12)} color={colors.accent} />
-                        <Text style={[styles.badgeText, { color: colors.accent }]}>Today</Text>
-                      </View>
-                    )}
-                    {nextTask.importance >= 3 && nextTask.deadline !== todayKey() && (
-                      <View style={[styles.taskBadge, { backgroundColor: "#F59E0B15" }]}>
-                        <Ionicons name="flag" size={s(12)} color="#F59E0B" />
-                      </View>
-                    )}
-                  </View>
-                </View>
-                <Ionicons name="chevron-forward" size={s(18)} color={colors.muted} />
-              </Pressable>
-            ) : (
-              <Pressable
-                onPress={openAddTask}
-                style={({ pressed }) => [
-                  styles.taskRow,
-                  { opacity: pressed ? 0.7 : 1 },
-                ]}
-              >
-                <View style={[styles.emptyIconCircle, { backgroundColor: colors.accent + "15" }]}>
-                  <Ionicons name="add" size={s(20)} color={colors.accent} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.taskTitle, { color: colors.text }]}>Add your first task</Text>
-                  <Text style={[styles.taskSubtitle, { color: colors.muted }]}>Get started today</Text>
-                </View>
-              </Pressable>
-            )}
+              </View>
+              <Ionicons name="chevron-forward" size={s(18)} color={colors.muted} />
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={openAddTask}
+              style={({ pressed }) => [styles.taskRow, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <View style={[styles.emptyIconCircle, { backgroundColor: colors.accent + "15" }]}>
+                <Ionicons name="add" size={s(20)} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.taskTitle, { color: colors.text }]}>Add your first task</Text>
+                <Text style={[styles.taskSubtitle, { color: colors.muted }]}>Get started today</Text>
+              </View>
+            </Pressable>
+          )}
         </Card>
 
-        {/* Primary action */}
+        {/* ── Primary CTA ── */}
         <PrimaryButton
           title="Start Focus Session"
           onPress={goFocus}
@@ -428,11 +429,14 @@ export default function HomeScreen({ navigation, route }: any) {
         />
       </ScrollView>
 
-      {/* ADD TASK SHEET */}
+      {/* ── Add Task Sheet ── */}
       <BottomSheet visible={addTaskOpen} onClose={closeAllSheets}>
         <View style={styles.sheetHeader}>
           <Text style={{ color: colors.text, fontWeight: "900", fontSize: s(16) }}>Add task</Text>
-          <Pressable onPress={closeAllSheets} style={({ pressed }) => [{ padding: s(8), opacity: pressed ? 0.8 : 1 }]}>
+          <Pressable
+            onPress={closeAllSheets}
+            style={({ pressed }) => [{ padding: s(8), opacity: pressed ? 0.8 : 1 }]}
+          >
             <Ionicons name="close" size={s(20)} color={colors.text} />
           </Pressable>
         </View>
@@ -452,7 +456,9 @@ export default function HomeScreen({ navigation, route }: any) {
         </View>
 
         <View style={{ marginTop: spacing.md }}>
-          <Text style={{ color: colors.muted, fontWeight: "900", fontSize: s(12) }}>Notes (optional)</Text>
+          <Text style={{ color: colors.muted, fontWeight: "900", fontSize: s(12) }}>
+            Notes (optional)
+          </Text>
           <View style={inputWrap(colors, radius)}>
             <TextInput
               value={tDesc}
@@ -469,7 +475,9 @@ export default function HomeScreen({ navigation, route }: any) {
 
         <View style={{ marginTop: spacing.md, flexDirection: "row", gap: s(10) }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.muted, fontWeight: "900", fontSize: s(12) }}>Objective</Text>
+            <Text style={{ color: colors.muted, fontWeight: "900", fontSize: s(12) }}>
+              Objective
+            </Text>
             <Pressable
               onPress={() => {
                 Keyboard.dismiss();
@@ -480,7 +488,11 @@ export default function HomeScreen({ navigation, route }: any) {
               <Text style={{ color: colors.text, fontWeight: "900" }} numberOfLines={1}>
                 {selectedTaskObjective}
               </Text>
-              <Ionicons name={taskObjectiveOpen ? "chevron-up" : "chevron-down"} size={s(18)} color={colors.text} />
+              <Ionicons
+                name={taskObjectiveOpen ? "chevron-up" : "chevron-down"}
+                size={s(18)}
+                color={colors.text}
+              />
             </Pressable>
           </View>
 
@@ -493,48 +505,75 @@ export default function HomeScreen({ navigation, route }: any) {
               }}
               style={({ pressed }) => [field(colors, radius), { opacity: pressed ? 0.85 : 1 }]}
             >
-              <Text style={{ color: colors.text, fontWeight: "900" }}>{tDeadline ? fmtShortDay(tDeadline) : "No date"}</Text>
-              <Ionicons name={taskDateOpen ? "chevron-up" : "chevron-down"} size={s(18)} color={colors.text} />
+              <Text style={{ color: colors.text, fontWeight: "900" }}>
+                {tDeadline ? fmtShortDay(tDeadline) : "No date"}
+              </Text>
+              <Ionicons
+                name={taskDateOpen ? "chevron-up" : "chevron-down"}
+                size={s(18)}
+                color={colors.text}
+              />
             </Pressable>
           </View>
         </View>
 
-        {/* Inline Objective Picker */}
+        {/* Inline objective picker */}
         {taskObjectiveOpen && (
-          <View style={{ marginTop: spacing.sm, borderRadius: radius.lg, backgroundColor: colors.surface2, borderWidth: s(1), borderColor: colors.border, overflow: "hidden", maxHeight: s(200) }}>
+          <View
+            style={{
+              marginTop: spacing.sm,
+              borderRadius: radius.lg,
+              backgroundColor: colors.surface2,
+              borderWidth: s(1),
+              borderColor: colors.border,
+              overflow: "hidden",
+              maxHeight: s(200),
+            }}
+          >
             <ScrollView>
               {objectives
                 .filter((obj) => obj.status !== "completed")
                 .map((obj) => (
-                <Pressable
-                  key={obj.id}
-                  onPress={() => {
-                    setTObjectiveId(obj.id);
-                    setTaskObjectiveOpen(false);
-                  }}
-                  style={({ pressed }) => ({
-                    padding: s(12),
-                    borderBottomWidth: s(1),
-                    borderBottomColor: colors.border,
-                    backgroundColor: pressed ? colors.card2 : "transparent",
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  })}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                    <Ionicons name="flag-outline" size={s(16)} color={colors.muted} />
-                    <Text style={{ color: colors.text, fontWeight: obj.id === tObjectiveId ? "900" : "600", fontSize: s(14), marginLeft: s(8) }} numberOfLines={1}>
-                      {obj.title}
-                    </Text>
-                  </View>
-                  {obj.id === tObjectiveId && <Ionicons name="checkmark" size={s(20)} color={colors.accent} />}
-                </Pressable>
-              ))}
+                  <Pressable
+                    key={obj.id}
+                    onPress={() => {
+                      setTObjectiveId(obj.id);
+                      setTaskObjectiveOpen(false);
+                    }}
+                    style={({ pressed }) => ({
+                      padding: s(12),
+                      borderBottomWidth: s(1),
+                      borderBottomColor: colors.border,
+                      backgroundColor: pressed ? colors.card2 : "transparent",
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    })}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                      <Ionicons name="flag-outline" size={s(16)} color={colors.muted} />
+                      <Text
+                        style={{
+                          color: colors.text,
+                          fontWeight: obj.id === tObjectiveId ? "900" : "600",
+                          fontSize: s(14),
+                          marginLeft: s(8),
+                        }}
+                        numberOfLines={1}
+                      >
+                        {obj.title}
+                      </Text>
+                    </View>
+                    {obj.id === tObjectiveId && (
+                      <Ionicons name="checkmark" size={s(20)} color={colors.accent} />
+                    )}
+                  </Pressable>
+                ))}
             </ScrollView>
           </View>
         )}
 
+        {/* Save button */}
         <Pressable
           onPress={saveTask}
           disabled={saving}
@@ -558,11 +597,11 @@ export default function HomeScreen({ navigation, route }: any) {
 
         <View style={{ height: s(12) }} />
 
-        {/* Date picker overlay - inside the same modal */}
+        {/* Date picker overlay inside sheet */}
         {taskDateOpen && (
           <View style={[StyleSheet.absoluteFillObject, { zIndex: 1000 }]}>
-            <Pressable 
-              style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.35)" }]} 
+            <Pressable
+              style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.35)" }]}
               onPress={() => setTaskDateOpen(false)}
             />
             <View style={{ position: "absolute", left: s(14), right: s(14), bottom: s(14) }}>
@@ -585,15 +624,23 @@ export default function HomeScreen({ navigation, route }: any) {
                     alignItems: "center",
                   }}
                 >
-                  <Text style={{ flex: 1, color: colors.text, fontWeight: "900", fontSize: s(14) }}>Select date</Text>
-                  <Pressable onPress={() => setTaskDateOpen(false)} hitSlop={s(10)} style={{ padding: s(6) }}>
+                  <Text
+                    style={{ flex: 1, color: colors.text, fontWeight: "900", fontSize: s(14) }}
+                  >
+                    Select date
+                  </Text>
+                  <Pressable
+                    onPress={() => setTaskDateOpen(false)}
+                    hitSlop={s(10)}
+                    style={{ padding: s(6) }}
+                  >
                     <Ionicons name="close" size={s(18)} color={colors.muted} />
                   </Pressable>
                 </View>
                 <View style={{ padding: s(12) }}>
                   <MiniCalendar
                     theme={{ colors, radius }}
-                    value={tDeadline || new Date().toISOString().split('T')[0]}
+                    value={tDeadline || new Date().toISOString().split("T")[0]}
                     onChange={(date) => setTDeadline(date)}
                   />
                 </View>
@@ -624,110 +671,43 @@ export default function HomeScreen({ navigation, route }: any) {
         )}
       </BottomSheet>
 
+      {/* ── Streak Celebration Modal ── */}
+      <StreakCelebrationModal
+        visible={streakState.visible}
+        streakCount={streakState.streakCount}
+        previousStreak={streakState.previousStreak}
+        weekActivity={streakState.weekActivity}
+        onDismiss={dismissStreak}
+      />
     </SafeAreaView>
   );
 }
 
-// OverlayModal component (matches CreateSheet pattern)
-function OverlayModal({
-  visible,
+// ─────────────────────────────────────────────────────────────────────────────
+// MiniCalendar (unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
+function MiniCalendar({
   theme,
-  title,
-  onClose,
-  children,
-  footerRightLabel,
-  onFooterRight,
+  value,
+  onChange,
 }: {
-  visible: boolean;
   theme: any;
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-  footerRightLabel: string;
-  onFooterRight: () => void;
+  value: string;
+  onChange: (date: string) => void;
 }) {
-  return (
-    <Modal visible={visible} transparent animationType="slide" presentationStyle="overFullScreen" onRequestClose={onClose}>
-      <View style={{ flex: 1 }}>
-        <Pressable style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.35)" }]} onPress={onClose} />
-
-        <View style={{ position: "absolute", left: s(14), right: s(14), bottom: s(14) }}>
-          <View
-            style={{
-              borderRadius: s(18),
-              borderWidth: s(1),
-              borderColor: theme.colors.border,
-              backgroundColor: theme.colors.card,
-              overflow: "hidden",
-            }}
-          >
-            <View
-              style={{
-                paddingHorizontal: s(12),
-                paddingVertical: s(10),
-                borderBottomWidth: s(1),
-                borderBottomColor: theme.colors.border,
-                flexDirection: "row",
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ flex: 1, color: theme.colors.text, fontWeight: "900", fontSize: s(14) }}>{title}</Text>
-              <Pressable onPress={onClose} hitSlop={s(10)} style={{ padding: s(6) }}>
-                <Ionicons name="close" size={s(18)} color={theme.colors.muted} />
-              </Pressable>
-            </View>
-
-            <View style={{ padding: s(12) }}>{children}</View>
-
-            <View
-              style={{
-                padding: s(12),
-                borderTopWidth: s(1),
-                borderTopColor: theme.colors.border,
-                flexDirection: "row",
-                justifyContent: "flex-end",
-              }}
-            >
-              <Pressable
-                onPress={onFooterRight}
-                style={{
-                  paddingVertical: s(10),
-                  paddingHorizontal: s(14),
-                  borderRadius: s(12),
-                  backgroundColor: theme.colors.accent,
-                }}
-              >
-                <Text style={{ color: "#fff", fontWeight: "900", fontSize: s(13) }}>{footerRightLabel}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-// MiniCalendar component (matches CreateSheet pattern)
-function MiniCalendar({ theme, value, onChange }: { theme: any; value: string; onChange: (date: string) => void }) {
   const pad2 = (n: number) => `${n < 10 ? "0" : ""}${n}`;
-  
+
   const ymdParts = (ymd: string) => {
     const [y, m, d] = ymd.split("-").map((x) => parseInt(x, 10));
     return { y, m, d };
   };
-  
+
   const toYMD = (y: number, m: number, d: number): string => {
     return `${y}-${pad2(m)}-${pad2(d)}`;
   };
-  
-  const daysInMonth = (y: number, m: number) => {
-    return new Date(y, m, 0).getDate();
-  };
-  
-  const weekdayOf = (y: number, m: number, d: number) => {
-    return new Date(y, m - 1, d).getDay();
-  };
-  
+
+  const daysInMonth = (y: number, m: number) => new Date(y, m, 0).getDate();
+  const weekdayOf = (y: number, m: number, d: number) => new Date(y, m - 1, d).getDay();
   const addMonths = (y: number, m: number, delta: number) => {
     const dt = new Date(y, m - 1 + delta, 1);
     return { y: dt.getFullYear(), m: dt.getMonth() + 1 };
@@ -760,7 +740,10 @@ function MiniCalendar({ theme, value, onChange }: { theme: any; value: string; o
     weeks.push(week);
   }
 
-  const monthLabel = new Date(curY, curM - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
+  const monthLabel = new Date(curY, curM - 1, 1).toLocaleString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
   const weekdays = ["S", "M", "T", "W", "T", "F", "S"];
 
   return (
@@ -786,7 +769,11 @@ function MiniCalendar({ theme, value, onChange }: { theme: any; value: string; o
           <Ionicons name="chevron-back" size={s(18)} color={theme.colors.text} />
         </Pressable>
 
-        <Text style={{ flex: 1, textAlign: "center", color: theme.colors.text, fontWeight: "900" }}>{monthLabel}</Text>
+        <Text
+          style={{ flex: 1, textAlign: "center", color: theme.colors.text, fontWeight: "900" }}
+        >
+          {monthLabel}
+        </Text>
 
         <Pressable
           onPress={() => {
@@ -866,31 +853,32 @@ function MiniCalendar({ theme, value, onChange }: { theme: any; value: string; o
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  header: { 
-    flexDirection: "row", 
-    alignItems: "center", 
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
   },
   headerActions: { flexDirection: "row", gap: s(10) },
   title: { fontSize: s(28), fontWeight: "700" },
   subtitle: { marginTop: s(2), fontSize: s(16), fontWeight: "500" },
 
-  quote: { 
-    fontSize: s(16), 
-    fontWeight: "500", 
+  quote: {
+    fontSize: s(16),
+    fontWeight: "500",
     lineHeight: s(24),
     fontStyle: "italic",
-    
-    
   },
-  quoteAuthor: { 
-    fontSize: s(13), 
-    fontWeight: "500", 
+  quoteAuthor: {
+    fontSize: s(13),
+    fontWeight: "500",
     marginTop: s(4),
   },
 
-  statCardLarge: { 
+  statCardLarge: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
@@ -908,9 +896,9 @@ const styles = StyleSheet.create({
   statValue: { fontSize: s(24), fontWeight: "700" },
   statLabel: { fontSize: s(12), fontWeight: "600", marginTop: s(2) },
 
-  sectionHeader: { 
-    flexDirection: "row", 
-    alignItems: "center", 
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
     marginBottom: s(12),
   },
@@ -954,14 +942,6 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: s(11),
     fontWeight: "600",
-  },
-
-  progressValue: { fontSize: s(20), fontWeight: "700" },
-  progressLabel: { fontSize: s(13), fontWeight: "500", marginTop: s(2) },
-  progressTrack: {
-    height: s(6),
-    borderRadius: s(999),
-    overflow: "hidden",
   },
 
   sheetHeader: {

@@ -5,7 +5,6 @@ import {
   Alert,
   Animated,
   Clipboard,
-  FlatList,
   Modal,
   Platform,
   Pressable,
@@ -28,6 +27,8 @@ import {
 } from "firebase/auth";
 
 import { useTheme } from "../src/components/theme/theme";
+import { ACHIEVEMENT_DEFS } from "../src/context/AchievementContext";
+import { useAchievements } from "../src/context/AchievementContext";
 import {
   loadSetupName,
   saveSetupName,
@@ -40,6 +41,7 @@ import {
   loadTasksCompletedToday,
   clearUserData,
   deleteAllCloudData,
+  getCurrentUser,
 } from "../src/data/storage";
 import { loadTasks, loadObjectives } from "../src/data/storage";
 import type { Objective } from "../src/data/models";
@@ -66,10 +68,23 @@ function formatProgress(p: number, t: number) {
   return `${Math.min(p, t)}/${t}`;
 }
 
-// ─── Initials Avatar ───────────────────────────────────────────────────────
-function InitialsAvatar({ name, accent, size = 46 }: { name: string; accent: string; size?: number }) {
+// ─── Initials Avatar ──────────────────────────────────────────────────────
+function InitialsAvatar({
+  name,
+  accent,
+  size = 46,
+}: {
+  name: string;
+  accent: string;
+  size?: number;
+}) {
   const initials = name
-    ? name.trim().split(" ").slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")
+    ? name
+        .trim()
+        .split(" ")
+        .slice(0, 2)
+        .map((w) => w[0]?.toUpperCase())
+        .join("")
     : "?";
   return (
     <View
@@ -96,6 +111,7 @@ export default function SettingsScreen() {
   const { colors, isDark, themeMode, setThemeMode, accent, setAccent } = theme;
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { width } = useWindowDimensions();
+  const { checkAchievements } = useAchievements();
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const [profileName, setProfileNameState] = useState<string>("");
@@ -126,7 +142,9 @@ export default function SettingsScreen() {
   const [accentSheetVisible, setAccentSheetVisible] = useState(false);
 
   // ── Load data ─────────────────────────────────────────────────────────────
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+  }, []);
   useFocusEffect(useCallback(() => { loadData(); }, []));
 
   const loadData = async () => {
@@ -151,8 +169,12 @@ export default function SettingsScreen() {
     const sessions = await loadFocusSessions();
     setFocusSessionsCount(sessions.length);
 
-    setEarlyBirdCount(sessions.some((s) => parseInt(s.startTime.split(":")[0]) < 8) ? 1 : 0);
-    setNightOwlCount(sessions.some((s) => parseInt(s.startTime.split(":")[0]) >= 20) ? 1 : 0);
+    setEarlyBirdCount(
+      sessions.some((s) => parseInt(s.startTime.split(":")[0]) < 8) ? 1 : 0
+    );
+    setNightOwlCount(
+      sessions.some((s) => parseInt(s.startTime.split(":")[0]) >= 20) ? 1 : 0
+    );
     setMarathonCount(sessions.some((s) => s.minutes >= 120) ? 1 : 0);
 
     const goal = await loadDailyGoal();
@@ -160,6 +182,10 @@ export default function SettingsScreen() {
 
     const completedToday = await loadTasksCompletedToday();
     setTasksCompletedToday(completedToday);
+
+    // Check achievements after every data load
+    const uid = await getCurrentUser();
+    if (uid) checkAchievements(uid);
   };
 
   // ── Delete account ────────────────────────────────────────────────────────
@@ -186,9 +212,11 @@ export default function SettingsScreen() {
       await deleteUser(user);
       setShowDeletionLoading(false);
       setDeletingAccount(false);
-      Alert.alert("Account Deleted", "Your account and all data have been permanently deleted.", [
-        { text: "OK", onPress: () => navigation.navigate("SignIn") },
-      ]);
+      Alert.alert(
+        "Account Deleted",
+        "Your account and all data have been permanently deleted.",
+        [{ text: "OK", onPress: () => navigation.navigate("SignIn") }]
+      );
     } catch (error: any) {
       setShowDeletionLoading(false);
       setDeletingAccount(false);
@@ -209,29 +237,46 @@ export default function SettingsScreen() {
   const toggleDark = () => setThemeMode(darkEnabled ? "light" : "dark");
 
   // ── Accent palette ────────────────────────────────────────────────────────
-  const accentPalette = useMemo(() => [
-    { hex: "#1C7ED6", label: "Ocean" },
-    { hex: "#2EC4B6", label: "Teal" },
-    { hex: "#38BDF8", label: "Sky" },
-    { hex: "#22C55E", label: "Emerald" },
-    { hex: "#A855F7", label: "Violet" },
-    { hex: "#F97316", label: "Amber" },
-    { hex: "#F43F5E", label: "Rose" },
-    { hex: "#FACC15", label: "Gold" },
-  ], []);
+  const accentPalette = useMemo(
+    () => [
+      { hex: "#1C7ED6", label: "Ocean" },
+      { hex: "#2EC4B6", label: "Teal" },
+      { hex: "#38BDF8", label: "Sky" },
+      { hex: "#22C55E", label: "Emerald" },
+      { hex: "#A855F7", label: "Violet" },
+      { hex: "#F97316", label: "Amber" },
+      { hex: "#F43F5E", label: "Rose" },
+      { hex: "#FACC15", label: "Gold" },
+    ],
+    []
+  );
 
-  // ── Achievements ──────────────────────────────────────────────────────────
-  const badges: Badge[] = useMemo(() => [
-    { id: "first_task", title: "First Task", subtitle: "Complete your first task", icon: "checkmark-circle-outline", total: 1, progress: completedCount > 0 ? 1 : 0 },
-    { id: "streak_7", title: "7-Day Streak", subtitle: "Maintain a 7-day login streak", icon: "flame-outline", total: 7, progress: Math.min(streakDays, 7) },
-    { id: "focus_10", title: "Focus Master", subtitle: "Complete 10 focus sessions", icon: "bulb-outline", total: 10, progress: Math.min(focusSessionsCount, 10) },
-    { id: "early", title: "Early Bird", subtitle: "Start a focus session before 8 AM", icon: "sunny-outline", total: 1, progress: earlyBirdCount },
-    { id: "night", title: "Night Owl", subtitle: "Focus session after 8 PM", icon: "moon-outline", total: 1, progress: nightOwlCount },
-    { id: "marathon", title: "Marathon", subtitle: "Complete a 120 min focus session", icon: "walk-outline", total: 1, progress: marathonCount },
-  ], [completedCount, streakDays, focusSessionsCount, earlyBirdCount, nightOwlCount, marathonCount]);
+  // ── Build badges from ACHIEVEMENT_DEFS + live progress ───────────────────
+  // Single source of truth — definitions live in AchievementContext.tsx
+  const badges: Badge[] = useMemo(() => {
+    const progressMap: Record<string, { progress: number; total: number }> = {
+      first_task: { progress: completedCount > 0 ? 1 : 0, total: 1 },
+      streak_7:   { progress: Math.min(streakDays, 7), total: 7 },
+      focus_10:   { progress: Math.min(focusSessionsCount, 10), total: 10 },
+      early:      { progress: earlyBirdCount, total: 1 },
+      night:      { progress: nightOwlCount, total: 1 },
+      marathon:   { progress: marathonCount, total: 1 },
+    };
+
+    return ACHIEVEMENT_DEFS.map((def) => ({
+      id: def.id,
+      title: def.title,
+      subtitle: def.subtitle,
+      icon: def.icon,
+      total: progressMap[def.id]?.total ?? 1,
+      progress: progressMap[def.id]?.progress ?? 0,
+    }));
+  }, [completedCount, streakDays, focusSessionsCount, earlyBirdCount, nightOwlCount, marathonCount]);
 
   const unlockedCount = badges.filter((b) => b.progress >= b.total && b.total > 0).length;
-  const nextToUnlock = badges.filter((b) => !(b.progress >= b.total && b.total > 0) && b.progress > 0);
+  const nextToUnlock = badges.filter(
+    (b) => !(b.progress >= b.total && b.total > 0) && b.progress > 0
+  );
 
   // ── Tabs ──────────────────────────────────────────────────────────────────
   const tabs: { key: TabKey; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -247,14 +292,23 @@ export default function SettingsScreen() {
 
   const openNameEditor = () => {
     if (Platform.OS === "ios" && (Alert as any).prompt) {
-      (Alert as any).prompt("Edit name", "This is shown on your profile.", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Save", onPress: async (value: string) => {
-          const v = (value ?? "").trim();
-          setProfileNameState(v);
-          await saveSetupName(v);
-        }},
-      ], "plain-text", profileName);
+      (Alert as any).prompt(
+        "Edit name",
+        "This is shown on your profile.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Save",
+            onPress: async (value: string) => {
+              const v = (value ?? "").trim();
+              setProfileNameState(v);
+              await saveSetupName(v);
+            },
+          },
+        ],
+        "plain-text",
+        profileName
+      );
       return;
     }
     setNameDraft(profileName);
@@ -274,14 +328,27 @@ export default function SettingsScreen() {
 
   const openGoalEditor = () => {
     if (Platform.OS === "ios" && (Alert as any).prompt) {
-      (Alert as any).prompt("Daily task goal", "How many tasks per day?", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Save", onPress: async (value: string) => {
-          const num = parseInt(value ?? "", 10);
-          if (num > 0 && num <= 100) { setDailyGoal(num); await saveDailyGoal(num); }
-          else Alert.alert("Invalid", "Enter a number between 1 and 100.");
-        }},
-      ], "plain-text", String(dailyGoal));
+      (Alert as any).prompt(
+        "Daily task goal",
+        "How many tasks per day?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Save",
+            onPress: async (value: string) => {
+              const num = parseInt(value ?? "", 10);
+              if (num > 0 && num <= 100) {
+                setDailyGoal(num);
+                await saveDailyGoal(num);
+              } else {
+                Alert.alert("Invalid", "Enter a number between 1 and 100.");
+              }
+            },
+          },
+        ],
+        "plain-text",
+        String(dailyGoal)
+      );
       return;
     }
     setGoalDraft(String(dailyGoal));
@@ -290,23 +357,32 @@ export default function SettingsScreen() {
 
   const saveGoalAndroid = async () => {
     const num = parseInt(goalDraft, 10);
-    if (num > 0 && num <= 100) { setDailyGoal(num); setGoalModal(false); await saveDailyGoal(num); }
-    else Alert.alert("Invalid", "Enter a number between 1 and 100.");
+    if (num > 0 && num <= 100) {
+      setDailyGoal(num);
+      setGoalModal(false);
+      await saveDailyGoal(num);
+    } else {
+      Alert.alert("Invalid", "Enter a number between 1 and 100.");
+    }
   };
 
   // ── Logout ────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
     Alert.alert("Log out", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Log out", style: "destructive", onPress: async () => {
-        try {
-          await clearUserData();
-          await auth.signOut();
-          navigation.reset({ index: 0, routes: [{ name: "SignIn" }] });
-        } catch {
-          Alert.alert("Error", "Failed to log out. Please try again.");
-        }
-      }},
+      {
+        text: "Log out",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await clearUserData();
+            await auth.signOut();
+            navigation.reset({ index: 0, routes: [{ name: "SignIn" }] });
+          } catch {
+            Alert.alert("Error", "Failed to log out. Please try again.");
+          }
+        },
+      },
     ]);
   };
 
@@ -318,20 +394,26 @@ export default function SettingsScreen() {
   };
 
   // ── Color aliases ─────────────────────────────────────────────────────────
-  const C = useMemo(() => ({
-    bg: colors.bg,
-    card: colors.card,
-    card2: (colors as any).card2 ?? (isDark ? "#1a1a2e" : "#f5f5f7"),
-    text: colors.text,
-    muted: colors.muted,
-    line: colors.border,
-    accent: colors.accent,
-    success: (colors as any).success ?? "#2EC4B6",
-    danger: "#FF3B30",
-  }), [colors, isDark]);
+  const C = useMemo(
+    () => ({
+      bg: colors.bg,
+      card: colors.card,
+      card2: (colors as any).card2 ?? (isDark ? "#1a1a2e" : "#f5f5f7"),
+      text: colors.text,
+      muted: colors.muted,
+      line: colors.border,
+      accent: colors.accent,
+      success: (colors as any).success ?? "#2EC4B6",
+      danger: "#FF3B30",
+    }),
+    [colors, isDark]
+  );
 
   // ── Tab bar animation ─────────────────────────────────────────────────────
-  const tabAnim = useRef(new Animated.Value(tabs.findIndex((t) => t.key === tab))).current;
+  const tabAnim = useRef(
+    new Animated.Value(tabs.findIndex((t) => t.key === tab))
+  ).current;
+
   useEffect(() => {
     Animated.spring(tabAnim, {
       toValue: tabs.findIndex((t) => t.key === tab),
@@ -348,7 +430,7 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: C.bg }]} edges={["top", "left", "right"]}>
 
-      {/* ── Page header ─────────────────────────────────────────── */}
+      {/* ── Page header ── */}
       <View style={styles.pageHeader}>
         <View>
           <Text style={[styles.pageTitle, { color: C.text }]}>Account</Text>
@@ -359,24 +441,48 @@ export default function SettingsScreen() {
         <InitialsAvatar name={profileName} accent={C.accent} size={40} />
       </View>
 
-      {/* ── Segmented tabs ──────────────────────────────────────── */}
+      {/* ── Segmented tabs ── */}
       <View style={[styles.tabBar, { backgroundColor: C.card, borderColor: C.line }]}>
-        {/* sliding pill */}
         <Animated.View
           style={[
             styles.tabPill,
-            { backgroundColor: C.accent + "18", width: segItemW - s(6),
-              transform: [{ translateX: tabAnim.interpolate({ inputRange: [0, 1, 2], outputRange: [s(3), segItemW + s(3), segItemW * 2 + s(3)] }) }] }
+            {
+              backgroundColor: C.accent + "18",
+              width: segItemW - s(6),
+              transform: [
+                {
+                  translateX: tabAnim.interpolate({
+                    inputRange: [0, 1, 2],
+                    outputRange: [s(3), segItemW + s(3), segItemW * 2 + s(3)],
+                  }),
+                },
+              ],
+            },
           ]}
         />
         {tabs.map((t) => {
           const active = t.key === tab;
           return (
-            <Pressable key={t.key} onPress={() => setTab(t.key)}
-              style={{ flex: 1, paddingVertical: s(10), alignItems: "center", justifyContent: "center", flexDirection: "row", gap: s(5) }}
+            <Pressable
+              key={t.key}
+              onPress={() => setTab(t.key)}
+              style={{
+                flex: 1,
+                paddingVertical: s(10),
+                alignItems: "center",
+                justifyContent: "center",
+                flexDirection: "row",
+                gap: s(5),
+              }}
             >
               <Ionicons name={t.icon} size={s(15)} color={active ? C.accent : C.muted} />
-              <Text style={{ fontSize: s(12), fontWeight: active ? "800" : "600", color: active ? C.accent : C.muted }}>
+              <Text
+                style={{
+                  fontSize: s(12),
+                  fontWeight: active ? "800" : "600",
+                  color: active ? C.accent : C.muted,
+                }}
+              >
                 {t.label}
               </Text>
             </Pressable>
@@ -388,8 +494,10 @@ export default function SettingsScreen() {
           PROFILE TAB
       ══════════════════════════════════════════════════════════ */}
       {tab === "profile" && (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
           {/* Identity card */}
           <View style={[styles.identityCard, { backgroundColor: C.card, borderColor: C.line }]}>
             <InitialsAvatar name={profileName} accent={C.accent} size={56} />
@@ -397,17 +505,33 @@ export default function SettingsScreen() {
               <Text style={[styles.identityName, { color: C.text }]} numberOfLines={1}>
                 {profileName || "Your name"}
               </Text>
-              <Pressable onPress={copyEmail} onLongPress={copyEmail}
-                style={{ flexDirection: "row", alignItems: "center", gap: s(4), marginTop: s(2) }}
+              <Pressable
+                onPress={copyEmail}
+                onLongPress={copyEmail}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: s(4),
+                  marginTop: s(2),
+                }}
               >
-                <Text style={[styles.identityEmail, { color: C.muted }]} numberOfLines={1}>
+                <Text
+                  style={[styles.identityEmail, { color: C.muted }]}
+                  numberOfLines={1}
+                >
                   {profileEmail || "No email set"}
                 </Text>
-                {!!profileEmail && <Ionicons name="copy-outline" size={s(12)} color={C.muted} />}
+                {!!profileEmail && (
+                  <Ionicons name="copy-outline" size={s(12)} color={C.muted} />
+                )}
               </Pressable>
             </View>
-            <Pressable onPress={openNameEditor}
-              style={[styles.editBtn, { backgroundColor: C.accent + "16", borderColor: C.accent + "30" }]}
+            <Pressable
+              onPress={openNameEditor}
+              style={[
+                styles.editBtn,
+                { backgroundColor: C.accent + "16", borderColor: C.accent + "30" },
+              ]}
             >
               <Ionicons name="pencil" size={s(14)} color={C.accent} />
               <Text style={{ color: C.accent, fontSize: s(12), fontWeight: "800" }}>Edit</Text>
@@ -416,29 +540,69 @@ export default function SettingsScreen() {
 
           {/* Stats row */}
           <View style={styles.statsRow}>
-            <StatCard value={`${tasksCompletedToday}/${dailyGoal}`} label="Today's goal" icon="flag-outline" C={C} iconColor={C.accent} />
-            <StatCard value={`${streakDays}d`} label="Streak" icon="flame-outline" C={C} iconColor="#F97316" />
-            <StatCard value={`${focusMinToday}m`} label="Focus today" icon="time-outline" C={C} iconColor={C.success} />
-            <StatCard value={`${completedCount}`} label="Completed" icon="checkmark-done-outline" C={C} iconColor={C.accent} />
+            <StatCard
+              value={`${tasksCompletedToday}/${dailyGoal}`}
+              label="Today's goal"
+              icon="flag-outline"
+              C={C}
+              iconColor={C.accent}
+            />
+            <StatCard
+              value={`${streakDays}d`}
+              label="Streak"
+              icon="flame-outline"
+              C={C}
+              iconColor="#F97316"
+            />
+            <StatCard
+              value={`${focusMinToday}m`}
+              label="Focus today"
+              icon="time-outline"
+              C={C}
+              iconColor={C.success}
+            />
+            <StatCard
+              value={`${completedCount}`}
+              label="Completed"
+              icon="checkmark-done-outline"
+              C={C}
+              iconColor={C.accent}
+            />
           </View>
 
           {/* Account actions */}
           <SectionHeader title="Account actions" C={C} />
           <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <ActionRow icon="person-outline" label="Edit profile name" C={C} onPress={openNameEditor} />
+            <ActionRow
+              icon="person-outline"
+              label="Edit profile name"
+              C={C}
+              onPress={openNameEditor}
+            />
             <Divider C={C} />
-            <ActionRow icon="mail-outline" label="Email address" value={profileEmail ? "Tap to copy" : "Not set"}
-              C={C} onPress={copyEmail} showChevron={false}
+            <ActionRow
+              icon="mail-outline"
+              label="Email address"
+              value={profileEmail ? "Tap to copy" : "Not set"}
+              C={C}
+              onPress={copyEmail}
+              showChevron={false}
               right={<Ionicons name="copy-outline" size={s(16)} color={C.muted} />}
             />
             <Divider C={C} />
-            <ActionRow icon="notifications-outline" label="Manage notifications" C={C}
-              onPress={() => Alert.alert("Notifications", "Coming soon.")} />
+            <ActionRow
+              icon="notifications-outline"
+              label="Manage notifications"
+              C={C}
+              onPress={() => Alert.alert("Notifications", "Coming soon.")}
+            />
           </View>
 
-          {/* Empty state for activity */}
+          {/* Activity placeholder */}
           <SectionHeader title="This week's activity" C={C} />
-          <View style={[styles.emptyActivityCard, { backgroundColor: C.card, borderColor: C.line }]}>
+          <View
+            style={[styles.emptyActivityCard, { backgroundColor: C.card, borderColor: C.line }]}
+          >
             <Ionicons name="bar-chart-outline" size={s(32)} color={C.muted + "60"} />
             <Text style={[styles.emptyTitle, { color: C.text }]}>No activity yet</Text>
             <Text style={[styles.emptySubtitle, { color: C.muted }]}>
@@ -452,15 +616,28 @@ export default function SettingsScreen() {
           SETTINGS TAB
       ══════════════════════════════════════════════════════════ */}
       {tab === "settings" && (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
           {/* ACCOUNT */}
           <SectionHeader title="Account" C={C} />
           <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <ActionRow icon="person-outline" label="Name" value={profileName || "Set name"} C={C} onPress={openNameEditor} />
+            <ActionRow
+              icon="person-outline"
+              label="Name"
+              value={profileName || "Set name"}
+              C={C}
+              onPress={openNameEditor}
+            />
             <Divider C={C} />
-            <ActionRow icon="mail-outline" label="Email" value={profileEmail ? "Tap to copy" : "Not set"}
-              C={C} onPress={copyEmail} showChevron={false}
+            <ActionRow
+              icon="mail-outline"
+              label="Email"
+              value={profileEmail ? "Tap to copy" : "Not set"}
+              C={C}
+              onPress={copyEmail}
+              showChevron={false}
               right={<Ionicons name="copy-outline" size={s(16)} color={C.muted} />}
             />
             <Divider C={C} />
@@ -471,15 +648,33 @@ export default function SettingsScreen() {
                 </View>
                 <Text style={[styles.rowLabel, { color: C.text }]}>Notifications</Text>
               </View>
-              <Switch value={notifEnabled} onValueChange={setNotifEnabled}
+              <Switch
+                style={{ marginTop: s(12) }}
+                value={notifEnabled}
+                onValueChange={setNotifEnabled}
                 trackColor={{ false: C.line, true: C.accent + "88" }}
                 thumbColor={notifEnabled ? C.accent : C.muted}
               />
             </View>
             {!notifEnabled && (
-              <View style={[styles.notifWarning, { backgroundColor: "#F97316" + "12", borderColor: "#F97316" + "30" }]}>
+              <View
+                style={[
+                  styles.notifWarning,
+                  {
+                    backgroundColor: "#F97316" + "12",
+                    borderColor: "#F97316" + "30",
+                  },
+                ]}
+              >
                 <Ionicons name="warning-outline" size={s(14)} color="#F97316" />
-                <Text style={{ color: "#F97316", fontSize: s(12), fontWeight: "700", flex: 1 }}>
+                <Text
+                  style={{
+                    color: "#F97316",
+                    fontSize: s(12),
+                    fontWeight: "700",
+                    flex: 1,
+                  }}
+                >
                   Notifications are disabled. Enable them in Settings to receive reminders.
                 </Text>
               </View>
@@ -496,13 +691,15 @@ export default function SettingsScreen() {
                 </View>
                 <Text style={[styles.rowLabel, { color: C.text }]}>Dark mode</Text>
               </View>
-              <Switch value={darkEnabled} onValueChange={toggleDark}
+              <Switch
+                style={{ marginTop: s(12) }}
+                value={darkEnabled}
+                onValueChange={toggleDark}
                 trackColor={{ false: C.line, true: C.accent + "88" }}
                 thumbColor={darkEnabled ? C.accent : C.muted}
               />
             </View>
             <Divider C={C} />
-            {/* Accent color — collapsed row that opens sheet */}
             <Pressable onPress={() => setAccentSheetVisible(true)} style={styles.settingsRow}>
               <View style={styles.rowLeft}>
                 <View style={[styles.iconWrap, { backgroundColor: C.muted + "14" }]}>
@@ -511,7 +708,14 @@ export default function SettingsScreen() {
                 <Text style={[styles.rowLabel, { color: C.text }]}>Accent color</Text>
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: s(8) }}>
-                <View style={{ width: s(22), height: s(22), borderRadius: s(8), backgroundColor: C.accent }} />
+                <View
+                  style={{
+                    width: s(22),
+                    height: s(22),
+                    borderRadius: s(8),
+                    backgroundColor: C.accent,
+                  }}
+                />
                 <Ionicons name="chevron-forward" size={s(16)} color={C.muted} />
               </View>
             </Pressable>
@@ -520,20 +724,13 @@ export default function SettingsScreen() {
           {/* PLANNING */}
           <SectionHeader title="Calendar & planning" C={C} />
           <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <ActionRow icon="flag-outline" label="Daily task goal" value={`${dailyGoal} tasks`} C={C} onPress={openGoalEditor} />
-            <Divider C={C} />
-            <View style={styles.settingsRow}>
-              <View style={styles.rowLeft}>
-                <View style={[styles.iconWrap, { backgroundColor: C.muted + "14" }]}>
-                  <Ionicons name="calendar-number-outline" size={s(16)} color={C.muted} />
-                </View>
-                <Text style={[styles.rowLabel, { color: C.text }]}>Week starts Monday</Text>
-              </View>
-              <Switch value={weekStartsMonday} onValueChange={setWeekStartsMonday}
-                trackColor={{ false: C.line, true: C.accent + "88" }}
-                thumbColor={weekStartsMonday ? C.accent : C.muted}
-              />
-            </View>
+            <ActionRow
+              icon="flag-outline"
+              label="Daily task goal"
+              value={`${dailyGoal} tasks`}
+              C={C}
+              onPress={openGoalEditor}
+            />
             <Divider C={C} />
             <View style={styles.settingsRow}>
               <View style={styles.rowLeft}>
@@ -542,41 +739,61 @@ export default function SettingsScreen() {
                 </View>
                 <Text style={[styles.rowLabel, { color: C.text }]}>24-hour time</Text>
               </View>
-              <Switch value={timeFormat24h} onValueChange={setTimeFormat24h}
+              <Switch
+                style={{ marginTop: s(12) }}
+                value={timeFormat24h}
+                onValueChange={setTimeFormat24h}
                 trackColor={{ false: C.line, true: C.accent + "88" }}
                 thumbColor={timeFormat24h ? C.accent : C.muted}
               />
             </View>
             <Divider C={C} />
-            <ActionRow icon="alarm-outline" label="Default reminder" value="None" C={C}
-              onPress={() => Alert.alert("Default reminder", "Coming soon.")} />
+            <ActionRow
+              icon="alarm-outline"
+              label="Default reminder"
+              value="None"
+              C={C}
+              onPress={() => Alert.alert("Default reminder", "Coming soon.")}
+            />
           </View>
 
           {/* ABOUT */}
           <SectionHeader title="About" C={C} />
           <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            {/* Version — no chevron, not tappable */}
             <View style={styles.settingsRow}>
               <View style={styles.rowLeft}>
                 <View style={[styles.iconWrap, { backgroundColor: C.muted + "14" }]}>
-                  <Ionicons name="information-circle-outline" size={s(16)} color={C.muted} />
+                  <Ionicons
+                    name="information-circle-outline"
+                    size={s(16)}
+                    color={C.muted}
+                  />
                 </View>
                 <Text style={[styles.rowLabel, { color: C.text }]}>Version</Text>
               </View>
               <Text style={[styles.rowValue, { color: C.muted }]}>1.0.0 (1)</Text>
             </View>
             <Divider C={C} />
-            <ActionRow icon="shield-checkmark-outline" label="Privacy policy" C={C}
-              onPress={() => Alert.alert("Privacy policy", "Coming soon.")} />
+            <ActionRow
+              icon="shield-checkmark-outline"
+              label="Privacy policy"
+              C={C}
+              onPress={() => Alert.alert("Privacy policy", "Coming soon.")}
+            />
             <Divider C={C} />
-            <ActionRow icon="chatbubble-ellipses-outline" label="Contact support" C={C}
-              onPress={() => Alert.alert("Support", "Coming soon.")} />
+            <ActionRow
+              icon="chatbubble-ellipses-outline"
+              label="Contact support"
+              C={C}
+              onPress={() => Alert.alert("Support", "Coming soon.")}
+            />
           </View>
 
           {/* DANGER ZONE */}
           <SectionHeader title="Danger zone" C={C} />
           <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <Pressable onPress={handleLogout}
+            <Pressable
+              onPress={handleLogout}
               style={({ pressed }) => [styles.settingsRow, { opacity: pressed ? 0.75 : 1 }]}
             >
               <View style={styles.rowLeft}>
@@ -588,10 +805,20 @@ export default function SettingsScreen() {
             </Pressable>
             <Divider C={C} />
             <Pressable
-              onPress={() => Alert.alert("Delete Account", "This will permanently delete your account and all data. This cannot be undone.", [
-                { text: "Cancel", style: "cancel" },
-                { text: "Continue", style: "destructive", onPress: () => setDeleteModalVisible(true) },
-              ])}
+              onPress={() =>
+                Alert.alert(
+                  "Delete Account",
+                  "This will permanently delete your account and all data. This cannot be undone.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Continue",
+                      style: "destructive",
+                      onPress: () => setDeleteModalVisible(true),
+                    },
+                  ]
+                )
+              }
               style={({ pressed }) => [styles.settingsRow, { opacity: pressed ? 0.75 : 1 }]}
             >
               <View style={styles.rowLeft}>
@@ -611,10 +838,14 @@ export default function SettingsScreen() {
           ACHIEVEMENTS TAB
       ══════════════════════════════════════════════════════════ */}
       {tab === "achievements" && (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
           {/* Summary bar */}
-          <View style={[styles.achieveSummary, { backgroundColor: C.card, borderColor: C.line }]}>
+          <View
+            style={[styles.achieveSummary, { backgroundColor: C.card, borderColor: C.line }]}
+          >
             <View style={{ flex: 1 }}>
               <Text style={[styles.achieveTitle, { color: C.text }]}>
                 {unlockedCount}/{badges.length} unlocked
@@ -623,14 +854,32 @@ export default function SettingsScreen() {
                 Keep completing tasks and focus sessions
               </Text>
             </View>
-            <View style={[styles.achieveBadge, { backgroundColor: C.accent + "18", borderColor: C.accent + "30" }]}>
+            <View
+              style={[
+                styles.achieveBadge,
+                { backgroundColor: C.accent + "18", borderColor: C.accent + "30" },
+              ]}
+            >
               <Ionicons name="trophy" size={s(22)} color={C.accent} />
             </View>
           </View>
 
           {/* Progress bar */}
-          <View style={[styles.progressBarWrap, { backgroundColor: C.card2, borderColor: C.line }]}>
-            <View style={[styles.progressBarFill, { width: `${Math.round((unlockedCount / badges.length) * 100)}%`, backgroundColor: C.accent }]} />
+          <View
+            style={[
+              styles.progressBarWrap,
+              { backgroundColor: C.card2, borderColor: C.line },
+            ]}
+          >
+            <View
+              style={[
+                styles.progressBarFill,
+                {
+                  width: `${Math.round((unlockedCount / badges.length) * 100)}%`,
+                  backgroundColor: C.accent,
+                },
+              ]}
+            />
           </View>
 
           {/* In-progress section */}
@@ -644,23 +893,63 @@ export default function SettingsScreen() {
                     <React.Fragment key={badge.id}>
                       {i > 0 && <Divider C={C} />}
                       <Pressable
-                        onPress={() => Alert.alert(badge.title, `${badge.subtitle}\n\nProgress: ${formatProgress(badge.progress, badge.total)}`)}
-                        style={({ pressed }) => [styles.inProgressRow, { opacity: pressed ? 0.8 : 1 }]}
+                        onPress={() =>
+                          Alert.alert(
+                            badge.title,
+                            `${badge.subtitle}\n\nProgress: ${formatProgress(badge.progress, badge.total)}`
+                          )
+                        }
+                        style={({ pressed }) => [
+                          styles.inProgressRow,
+                          { opacity: pressed ? 0.8 : 1 },
+                        ]}
                       >
-                        <View style={[styles.badgeIcon, { backgroundColor: C.accent + "18", borderColor: C.accent + "30" }]}>
+                        <View
+                          style={[
+                            styles.badgeIcon,
+                            {
+                              backgroundColor: C.accent + "18",
+                              borderColor: C.accent + "30",
+                            },
+                          ]}
+                        >
                           <Ionicons name={badge.icon} size={s(18)} color={C.accent} />
                         </View>
                         <View style={{ flex: 1, gap: s(4) }}>
-                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                            <Text style={[styles.badgeTitle, { color: C.text }]}>{badge.title}</Text>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                            }}
+                          >
+                            <Text style={[styles.badgeTitle, { color: C.text }]}>
+                              {badge.title}
+                            </Text>
                             <Text style={[styles.badgeProgress, { color: C.muted }]}>
                               {formatProgress(badge.progress, badge.total)}
                             </Text>
                           </View>
-                          <View style={[styles.miniProgressTrack, { backgroundColor: C.muted + "20" }]}>
-                            <View style={[styles.miniProgressFill, { width: `${Math.round(ratio * 100)}%`, backgroundColor: C.accent }]} />
+                          <View
+                            style={[
+                              styles.miniProgressTrack,
+                              { backgroundColor: C.muted + "20" },
+                            ]}
+                          >
+                            <View
+                              style={[
+                                styles.miniProgressFill,
+                                {
+                                  width: `${Math.round(ratio * 100)}%`,
+                                  backgroundColor: C.accent,
+                                },
+                              ]}
+                            />
                           </View>
-                          <Text style={[styles.badgeSub, { color: C.muted }]} numberOfLines={1}>
+                          <Text
+                            style={[styles.badgeSub, { color: C.muted }]}
+                            numberOfLines={1}
+                          >
                             {badge.subtitle}
                           </Text>
                         </View>
@@ -672,7 +961,7 @@ export default function SettingsScreen() {
             </>
           )}
 
-          {/* All badges — 1-column list for readability */}
+          {/* All badges */}
           <SectionHeader title="All badges" C={C} />
           <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
             {badges.map((badge, i) => {
@@ -682,30 +971,78 @@ export default function SettingsScreen() {
                 <React.Fragment key={badge.id}>
                   {i > 0 && <Divider C={C} />}
                   <Pressable
-                    onPress={() => Alert.alert(badge.title, done ? "Unlocked! 🎉" : `${badge.subtitle}\n\nProgress: ${formatProgress(badge.progress, badge.total)}`)}
-                    style={({ pressed }) => [styles.inProgressRow, { opacity: pressed ? 0.8 : 1 }]}
+                    onPress={() =>
+                      Alert.alert(
+                        badge.title,
+                        done
+                          ? "Unlocked! 🎉"
+                          : `${badge.subtitle}\n\nProgress: ${formatProgress(badge.progress, badge.total)}`
+                      )
+                    }
+                    style={({ pressed }) => [
+                      styles.inProgressRow,
+                      { opacity: pressed ? 0.8 : 1 },
+                    ]}
                   >
-                    <View style={[
-                      styles.badgeIcon,
-                      done
-                        ? { backgroundColor: C.success + "20", borderColor: C.success + "40" }
-                        : { backgroundColor: C.muted + "12", borderColor: C.line }
-                    ]}>
-                      <Ionicons name={badge.icon} size={s(18)} color={done ? C.success : C.muted} />
+                    <View
+                      style={[
+                        styles.badgeIcon,
+                        done
+                          ? { backgroundColor: C.success + "20", borderColor: C.success + "40" }
+                          : { backgroundColor: C.muted + "12", borderColor: C.line },
+                      ]}
+                    >
+                      <Ionicons
+                        name={badge.icon}
+                        size={s(18)}
+                        color={done ? C.success : C.muted}
+                      />
                     </View>
                     <View style={{ flex: 1, gap: s(3) }}>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                        <Text style={[styles.badgeTitle, { color: done ? C.text : C.muted }]}>{badge.title}</Text>
-                        <Text style={{ fontSize: s(11), fontWeight: "800", color: done ? C.success : C.muted }}>
-                          {done ? "Unlocked" : `${formatProgress(badge.progress, badge.total)}`}
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <Text style={[styles.badgeTitle, { color: done ? C.text : C.muted }]}>
+                          {badge.title}
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: s(11),
+                            fontWeight: "800",
+                            color: done ? C.success : C.muted,
+                          }}
+                        >
+                          {done
+                            ? "Unlocked"
+                            : `${formatProgress(badge.progress, badge.total)}`}
                         </Text>
                       </View>
-                      <Text style={[styles.badgeSub, { color: C.muted }]} numberOfLines={1}>
+                      <Text
+                        style={[styles.badgeSub, { color: C.muted }]}
+                        numberOfLines={1}
+                      >
                         {badge.subtitle}
                       </Text>
                       {!done && (
-                        <View style={[styles.miniProgressTrack, { backgroundColor: C.muted + "20" }]}>
-                          <View style={[styles.miniProgressFill, { width: `${Math.round(ratio * 100)}%`, backgroundColor: C.muted + "60" }]} />
+                        <View
+                          style={[
+                            styles.miniProgressTrack,
+                            { backgroundColor: C.muted + "20" },
+                          ]}
+                        >
+                          <View
+                            style={[
+                              styles.miniProgressFill,
+                              {
+                                width: `${Math.round(ratio * 100)}%`,
+                                backgroundColor: C.muted + "60",
+                              },
+                            ]}
+                          />
                         </View>
                       )}
                     </View>
@@ -724,18 +1061,41 @@ export default function SettingsScreen() {
       ══════════════════════════════════════════════════════════ */}
 
       {/* Accent color sheet */}
-      <Modal visible={accentSheetVisible} transparent animationType="slide" onRequestClose={() => setAccentSheetVisible(false)}>
-        <Pressable style={styles.sheetBackdrop} onPress={() => setAccentSheetVisible(false)} />
+      <Modal
+        visible={accentSheetVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAccentSheetVisible(false)}
+      >
+        <Pressable
+          style={styles.sheetBackdrop}
+          onPress={() => setAccentSheetVisible(false)}
+        />
         <View style={[styles.sheet, { backgroundColor: C.card, borderColor: C.line }]}>
           <View style={[styles.sheetHandle, { backgroundColor: C.line }]} />
           <Text style={[styles.sheetTitle, { color: C.text }]}>Accent color</Text>
-          <Text style={[styles.sheetSub, { color: C.muted }]}>Choose a color for buttons, highlights, and indicators.</Text>
+          <Text style={[styles.sheetSub, { color: C.muted }]}>
+            Choose a color for buttons, highlights, and indicators.
+          </Text>
           <View style={styles.colorGrid}>
             {accentPalette.map(({ hex, label }) => {
               const selected = hex.toLowerCase() === (accent || "").toLowerCase();
               return (
-                <Pressable key={hex} onPress={() => { setAccent(hex); setAccentSheetVisible(false); }}
-                  style={({ pressed }) => [styles.colorSwatch, { backgroundColor: hex, opacity: pressed ? 0.85 : 1, borderWidth: selected ? s(2.5) : s(1), borderColor: selected ? "#fff" : hex + "44" }]}
+                <Pressable
+                  key={hex}
+                  onPress={() => {
+                    setAccent(hex);
+                    setAccentSheetVisible(false);
+                  }}
+                  style={({ pressed }) => [
+                    styles.colorSwatch,
+                    {
+                      backgroundColor: hex,
+                      opacity: pressed ? 0.85 : 1,
+                      borderWidth: selected ? s(2.5) : s(1),
+                      borderColor: selected ? "#fff" : hex + "44",
+                    },
+                  ]}
                 >
                   {selected && <Ionicons name="checkmark" size={s(18)} color="#fff" />}
                   <Text style={styles.colorLabel}>{label}</Text>
@@ -749,16 +1109,33 @@ export default function SettingsScreen() {
       {/* Android name modal */}
       <SimpleModal visible={nameModal} onClose={() => setNameModal(false)} C={C}>
         <Text style={[styles.modalTitle, { color: C.text }]}>Edit name</Text>
-        <Text style={[styles.modalSub, { color: C.muted }]}>This is shown on your profile.</Text>
-        <TextInput value={nameDraft} onChangeText={setNameDraft} placeholder="Your name"
-          placeholderTextColor={C.muted} autoFocus returnKeyType="done" onSubmitEditing={saveNameAndroid}
-          style={[styles.modalInput, { color: C.text, borderColor: C.line, backgroundColor: C.card2 }]}
+        <Text style={[styles.modalSub, { color: C.muted }]}>
+          This is shown on your profile.
+        </Text>
+        <TextInput
+          value={nameDraft}
+          onChangeText={setNameDraft}
+          placeholder="Your name"
+          placeholderTextColor={C.muted}
+          autoFocus
+          returnKeyType="done"
+          onSubmitEditing={saveNameAndroid}
+          style={[
+            styles.modalInput,
+            { color: C.text, borderColor: C.line, backgroundColor: C.card2 },
+          ]}
         />
         <View style={styles.modalActions}>
-          <Pressable onPress={() => setNameModal(false)} style={[styles.modalCancelBtn, { borderColor: C.line }]}>
+          <Pressable
+            onPress={() => setNameModal(false)}
+            style={[styles.modalCancelBtn, { borderColor: C.line }]}
+          >
             <Text style={[styles.modalBtnText, { color: C.muted }]}>Cancel</Text>
           </Pressable>
-          <Pressable onPress={saveNameAndroid} style={[styles.modalPrimaryBtn, { backgroundColor: C.accent }]}>
+          <Pressable
+            onPress={saveNameAndroid}
+            style={[styles.modalPrimaryBtn, { backgroundColor: C.accent }]}
+          >
             <Text style={[styles.modalBtnText, { color: "#fff" }]}>Save</Text>
           </Pressable>
         </View>
@@ -767,53 +1144,116 @@ export default function SettingsScreen() {
       {/* Android goal modal */}
       <SimpleModal visible={goalModal} onClose={() => setGoalModal(false)} C={C}>
         <Text style={[styles.modalTitle, { color: C.text }]}>Daily task goal</Text>
-        <Text style={[styles.modalSub, { color: C.muted }]}>How many tasks do you want to complete each day?</Text>
-        <TextInput value={goalDraft} onChangeText={setGoalDraft} placeholder="5"
-          placeholderTextColor={C.muted} keyboardType="number-pad" autoFocus
-          returnKeyType="done" onSubmitEditing={saveGoalAndroid}
-          style={[styles.modalInput, { color: C.text, borderColor: C.line, backgroundColor: C.card2 }]}
+        <Text style={[styles.modalSub, { color: C.muted }]}>
+          How many tasks do you want to complete each day?
+        </Text>
+        <TextInput
+          value={goalDraft}
+          onChangeText={setGoalDraft}
+          placeholder="5"
+          placeholderTextColor={C.muted}
+          keyboardType="number-pad"
+          autoFocus
+          returnKeyType="done"
+          onSubmitEditing={saveGoalAndroid}
+          style={[
+            styles.modalInput,
+            { color: C.text, borderColor: C.line, backgroundColor: C.card2 },
+          ]}
         />
         <View style={styles.modalActions}>
-          <Pressable onPress={() => setGoalModal(false)} style={[styles.modalCancelBtn, { borderColor: C.line }]}>
+          <Pressable
+            onPress={() => setGoalModal(false)}
+            style={[styles.modalCancelBtn, { borderColor: C.line }]}
+          >
             <Text style={[styles.modalBtnText, { color: C.muted }]}>Cancel</Text>
           </Pressable>
-          <Pressable onPress={saveGoalAndroid} style={[styles.modalPrimaryBtn, { backgroundColor: C.accent }]}>
+          <Pressable
+            onPress={saveGoalAndroid}
+            style={[styles.modalPrimaryBtn, { backgroundColor: C.accent }]}
+          >
             <Text style={[styles.modalBtnText, { color: "#fff" }]}>Save</Text>
           </Pressable>
         </View>
       </SimpleModal>
 
       {/* Delete account confirmation */}
-      <Modal visible={deleteModalVisible} transparent animationType="fade"
-        onRequestClose={() => { if (!deletingAccount) { setDeleteModalVisible(false); setDeletePassword(""); } }}
+      <Modal
+        visible={deleteModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!deletingAccount) {
+            setDeleteModalVisible(false);
+            setDeletePassword("");
+          }
+        }}
       >
-        <View style={[styles.sheetBackdrop, { alignItems: "center", justifyContent: "center", padding: s(20) }]}>
+        <View
+          style={[
+            styles.sheetBackdrop,
+            { alignItems: "center", justifyContent: "center", padding: s(20) },
+          ]}
+        >
           <View style={[styles.modalCard, { backgroundColor: C.card, borderColor: C.line }]}>
             <View style={{ alignItems: "center", marginBottom: s(14) }}>
-              <View style={[styles.dangerIconWrap, { backgroundColor: C.danger + "18" }]}>
+              <View
+                style={[styles.dangerIconWrap, { backgroundColor: C.danger + "18" }]}
+              >
                 <Ionicons name="warning" size={s(28)} color={C.danger} />
               </View>
-              <Text style={[styles.modalTitle, { color: C.text, marginTop: s(12), textAlign: "center" }]}>
+              <Text
+                style={[
+                  styles.modalTitle,
+                  { color: C.text, marginTop: s(12), textAlign: "center" },
+                ]}
+              >
                 Delete account
               </Text>
-              <Text style={[styles.modalSub, { color: C.muted, textAlign: "center", marginTop: s(6) }]}>
-                Enter your password to permanently delete your account and all data. This cannot be undone.
+              <Text
+                style={[
+                  styles.modalSub,
+                  { color: C.muted, textAlign: "center", marginTop: s(6) },
+                ]}
+              >
+                Enter your password to permanently delete your account and all data. This
+                cannot be undone.
               </Text>
             </View>
-            <TextInput value={deletePassword} onChangeText={setDeletePassword}
-              placeholder="Enter your password" placeholderTextColor={C.muted}
-              secureTextEntry autoCapitalize="none" editable={!deletingAccount}
-              style={[styles.modalInput, { color: C.text, borderColor: C.line, backgroundColor: C.card2 }]}
+            <TextInput
+              value={deletePassword}
+              onChangeText={setDeletePassword}
+              placeholder="Enter your password"
+              placeholderTextColor={C.muted}
+              secureTextEntry
+              autoCapitalize="none"
+              editable={!deletingAccount}
+              style={[
+                styles.modalInput,
+                { color: C.text, borderColor: C.line, backgroundColor: C.card2 },
+              ]}
             />
             <View style={styles.modalActions}>
-              <Pressable onPress={() => { setDeleteModalVisible(false); setDeletePassword(""); }}
-                disabled={deletingAccount} style={[styles.modalCancelBtn, { borderColor: C.line }]}
+              <Pressable
+                onPress={() => {
+                  setDeleteModalVisible(false);
+                  setDeletePassword("");
+                }}
+                disabled={deletingAccount}
+                style={[styles.modalCancelBtn, { borderColor: C.line }]}
               >
                 <Text style={[styles.modalBtnText, { color: C.muted }]}>Cancel</Text>
               </Pressable>
-              <Pressable onPress={handleDeleteAccount}
+              <Pressable
+                onPress={handleDeleteAccount}
                 disabled={deletingAccount || !deletePassword.trim()}
-                style={[styles.modalPrimaryBtn, { backgroundColor: C.danger, opacity: deletingAccount || !deletePassword.trim() ? 0.5 : 1 }]}
+                style={[
+                  styles.modalPrimaryBtn,
+                  {
+                    backgroundColor: C.danger,
+                    opacity: deletingAccount || !deletePassword.trim() ? 0.5 : 1,
+                  },
+                ]}
               >
                 <Text style={[styles.modalBtnText, { color: "#fff" }]}>
                   {deletingAccount ? "Deleting..." : "Delete"}
@@ -838,7 +1278,7 @@ export default function SettingsScreen() {
   );
 }
 
-// ─── Sub-components ────────────────────────────────────────────────────────
+// ─── Sub-components ───────────────────────────────────────────────────────
 
 function SectionHeader({ title, C }: { title: string; C: any }) {
   return (
@@ -853,7 +1293,13 @@ function Divider({ C }: { C: any }) {
 }
 
 function ActionRow({
-  icon, label, value, C, onPress, showChevron = true, right,
+  icon,
+  label,
+  value,
+  C,
+  onPress,
+  showChevron = true,
+  right,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
@@ -864,8 +1310,12 @@ function ActionRow({
   right?: React.ReactNode;
 }) {
   return (
-    <Pressable onPress={onPress}
-      style={({ pressed }) => [styles.settingsRow, { backgroundColor: pressed ? C.muted + "08" : "transparent" }]}
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.settingsRow,
+        { backgroundColor: pressed ? C.muted + "08" : "transparent" },
+      ]}
     >
       <View style={styles.rowLeft}>
         <View style={[styles.iconWrap, { backgroundColor: C.muted + "14" }]}>
@@ -874,28 +1324,64 @@ function ActionRow({
         <Text style={[styles.rowLabel, { color: C.text }]}>{label}</Text>
       </View>
       <View style={{ flexDirection: "row", alignItems: "center", gap: s(6) }}>
-        {!!value && <Text style={[styles.rowValue, { color: C.muted }]} numberOfLines={1}>{value}</Text>}
+        {!!value && (
+          <Text style={[styles.rowValue, { color: C.muted }]} numberOfLines={1}>
+            {value}
+          </Text>
+        )}
         {right}
-        {showChevron && <Ionicons name="chevron-forward" size={s(15)} color={C.muted + "80"} />}
+        {showChevron && (
+          <Ionicons name="chevron-forward" size={s(15)} color={C.muted + "80"} />
+        )}
       </View>
     </Pressable>
   );
 }
 
-function StatCard({ value, label, icon, C, iconColor }: { value: string; label: string; icon: keyof typeof Ionicons.glyphMap; C: any; iconColor?: string }) {
+function StatCard({
+  value,
+  label,
+  icon,
+  C,
+  iconColor,
+}: {
+  value: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  C: any;
+  iconColor?: string;
+}) {
   return (
     <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
       <Ionicons name={icon} size={s(16)} color={iconColor ?? C.muted} />
       <Text style={[styles.statValue, { color: C.text }]}>{value}</Text>
-      <Text style={[styles.statLabel, { color: C.muted }]} numberOfLines={1}>{label}</Text>
+      <Text style={[styles.statLabel, { color: C.muted }]} numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 }
 
-function SimpleModal({ visible, onClose, C, children }: { visible: boolean; onClose: () => void; C: any; children: React.ReactNode }) {
+function SimpleModal({
+  visible,
+  onClose,
+  C,
+  children,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  C: any;
+  children: React.ReactNode;
+}) {
   if (!visible) return null;
   return (
-    <View style={[StyleSheet.absoluteFillObject, styles.sheetBackdrop, { alignItems: "center", justifyContent: "center", padding: s(20) }]}>
+    <View
+      style={[
+        StyleSheet.absoluteFillObject,
+        styles.sheetBackdrop,
+        { alignItems: "center", justifyContent: "center", padding: s(20) },
+      ]}
+    >
       <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
       <View style={[styles.modalCard, { backgroundColor: C.card, borderColor: C.line }]}>
         {children}
@@ -904,7 +1390,7 @@ function SimpleModal({ visible, onClose, C, children }: { visible: boolean; onCl
   );
 }
 
-// ─── Styles ────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safe: { flex: 1 },
 
@@ -919,7 +1405,6 @@ const styles = StyleSheet.create({
   pageTitle: { fontSize: s(24), fontWeight: "900", letterSpacing: -0.5 },
   pageSubtitle: { fontSize: s(13), fontWeight: "600", marginTop: s(2) },
 
-  // Tab bar
   tabBar: {
     flexDirection: "row",
     marginHorizontal: s(16),
@@ -995,7 +1480,6 @@ const styles = StyleSheet.create({
     borderWidth: s(1),
   },
 
-  // Profile tab
   identityCard: {
     borderRadius: s(16),
     borderWidth: s(1),
@@ -1036,9 +1520,13 @@ const styles = StyleSheet.create({
     gap: s(8),
   },
   emptyTitle: { fontSize: s(15), fontWeight: "800" },
-  emptySubtitle: { fontSize: s(13), fontWeight: "600", textAlign: "center", lineHeight: s(18) },
+  emptySubtitle: {
+    fontSize: s(13),
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: s(18),
+  },
 
-  // Achievements tab
   achieveSummary: {
     borderRadius: s(16),
     borderWidth: s(1),
@@ -1086,7 +1574,6 @@ const styles = StyleSheet.create({
   miniProgressTrack: { height: s(4), borderRadius: s(99), overflow: "hidden" },
   miniProgressFill: { height: "100%", borderRadius: s(99) },
 
-  // Modals
   sheetBackdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.45)",
@@ -1108,7 +1595,12 @@ const styles = StyleSheet.create({
     marginBottom: s(16),
   },
   sheetTitle: { fontSize: s(17), fontWeight: "900" },
-  sheetSub: { fontSize: s(13), fontWeight: "600", marginTop: s(4), marginBottom: s(16) },
+  sheetSub: {
+    fontSize: s(13),
+    fontWeight: "600",
+    marginTop: s(4),
+    marginBottom: s(16),
+  },
 
   colorGrid: { flexDirection: "row", flexWrap: "wrap", gap: s(10) },
   colorSwatch: {
@@ -1119,7 +1611,14 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     padding: s(6),
   },
-  colorLabel: { color: "#fff", fontSize: s(10), fontWeight: "800", textShadowColor: "rgba(0,0,0,0.4)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  colorLabel: {
+    color: "#fff",
+    fontSize: s(10),
+    fontWeight: "800",
+    textShadowColor: "rgba(0,0,0,0.4)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
 
   modalCard: {
     width: "100%",
@@ -1139,7 +1638,12 @@ const styles = StyleSheet.create({
     fontSize: s(15),
     fontWeight: "700",
   },
-  modalActions: { flexDirection: "row", gap: s(10), marginTop: s(14), justifyContent: "flex-end" },
+  modalActions: {
+    flexDirection: "row",
+    gap: s(10),
+    marginTop: s(14),
+    justifyContent: "flex-end",
+  },
   modalCancelBtn: {
     height: s(42),
     paddingHorizontal: s(16),
@@ -1174,5 +1678,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: s(32),
   },
   loadingTitle: { fontSize: s(20), fontWeight: "900", textAlign: "center" },
-  loadingSub: { fontSize: s(14), fontWeight: "600", textAlign: "center", lineHeight: s(20) },
+  loadingSub: {
+    fontSize: s(14),
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: s(20),
+  },
 });

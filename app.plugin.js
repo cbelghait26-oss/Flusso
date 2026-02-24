@@ -33,9 +33,10 @@ function addUrlSchemeToInfoPlist(infoPlist, scheme) {
 function addQueriesSchemes(infoPlist) {
   const schemes = new Set(ensureArray(infoPlist.LSApplicationQueriesSchemes));
   schemes.add("spotify");
+  schemes.add("spotify-action");
   infoPlist.LSApplicationQueriesSchemes = Array.from(schemes);
   return infoPlist;
-}
+} 
 
 function patchObjC(appDelegate) {
   // Imports

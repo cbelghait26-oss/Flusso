@@ -3,7 +3,7 @@
     "name": "Flusso",
     "slug": "FlowApp",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "all",
     "icon": "./assets/AppIcon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -19,7 +19,9 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "LSApplicationQueriesSchemes": ["spotify"]
+        "LSApplicationQueriesSchemes": [
+          "spotify", "spotify-action"
+        ]
       }
     },
     "android": {
@@ -36,8 +38,8 @@
     "plugins": [
       "@react-native-community/datetimepicker",
       "@react-native-google-signin/google-signin",
-      "./app.plugin.js"
-      
+      "./app.plugin.js",
+      "expo-web-browser"
     ],
     "extra": {
       "googleWebClientId": "402208533063-jk5a2gdeqina4u0lb5cjpd7f1kh8a4k4.apps.googleusercontent.com",

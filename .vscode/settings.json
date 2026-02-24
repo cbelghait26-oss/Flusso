@@ -1,5 +1,7 @@
 {
     "cSpell.words": [
+        "anims",
+        "Anims",
         "chatbubble",
         "cjpd",
         "Correctifs",
@@ -15,6 +17,7 @@
         "notif",
         "NSURL",
         "objc",
+        "PKCE",
         "pomodoro",
         "Pomodoro",
         "POMODORO",
@@ -22,7 +25,9 @@
         "pricetag",
         "reauthenticated",
         "Reauthenticating",
+        "Streakcelebrationmodal",
         "Subviews",
-        "Unretained"
+        "Unretained",
+        "unsub"
     ]
 }
