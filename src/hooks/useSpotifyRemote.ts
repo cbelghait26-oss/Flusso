@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+// src/hooks/useSpotifyRemote.ts
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Linking, Platform } from "react-native";
-import { remote } from "react-native-spotify-remote";
 import Constants from "expo-constants";
-import * as WebBrowser from "expo-web-browser";
-import * as AuthSession from "expo-auth-session";
+import {
+  spotifyConnectFull,
+  spotifyDisconnect,
+  spotifyIsConnected,
+} from "../services/SpotifyRemote";
 
-WebBrowser.maybeCompleteAuthSession();
+// ─── Types ─────────────────────────────────────────────────────────────────
 
 type State = {
   connected: boolean;
@@ -13,10 +16,7 @@ type State = {
   error: string | null;
 };
 
-const SPOTIFY_DISCOVERY: AuthSession.DiscoveryDocument = {
-  authorizationEndpoint: "https://accounts.spotify.com/authorize",
-  tokenEndpoint: "https://accounts.spotify.com/api/token",
-};
+// ─── Hook ──────────────────────────────────────────────────────────────────
 
 export function useSpotifyRemote() {
   const [state, setState] = useState<State>({
@@ -25,158 +25,105 @@ export function useSpotifyRemote() {
     error: null,
   });
 
+  // Prevent double-connect if the user taps rapidly
+  const connectingRef = useRef(false);
+
   const CLIENT_ID =
+    (Constants.expoConfig?.extra as any)?.spotifyClientId ??
     process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ??
     "f95c8effcc63427e8b98c6a92a9d0c17";
 
-  // Must match Spotify dashboard EXACTLY (keep the trailing slash if that's what you registered)
   const REDIRECT_URI =
     process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ?? "flusso://spotify-auth/";
 
-  // App Remote only
-  const SCOPES = ["app-remote-control"];
-
-  const [request, , promptAsync] = AuthSession.useAuthRequest(
-    {
-      clientId: CLIENT_ID,
-      scopes: SCOPES,
-      redirectUri: REDIRECT_URI,
-      responseType: AuthSession.ResponseType.Code,
-      usePKCE: true,
-    },
-    SPOTIFY_DISCOVERY,
-  );
-
+  // ── connect ──────────────────────────────────────────────────────────────
   const connect = useCallback(async () => {
-    console.log("🎵 Spotify connect button pressed!");
+    if (connectingRef.current) return;
 
+    // Guard: Expo Go cannot load native modules
     const isExpoGo =
       Constants.appOwnership === "expo" ||
       Constants.executionEnvironment === "storeClient";
 
-    console.log("🔍 Expo Go check:", {
-      appOwnership: Constants.appOwnership,
-      executionEnvironment: Constants.executionEnvironment,
-      bundleId: Constants.expoConfig?.ios?.bundleIdentifier,
-      isExpoGo,
-    });
-
     if (isExpoGo) {
       Alert.alert(
         "Expo Go Not Supported",
-        "Spotify Remote doesn't work in Expo Go. You need a custom development build.",
+        "Spotify Remote requires a custom development build (not Expo Go). Run `expo run:ios` or `expo run:android`.",
+        [{ text: "OK" }],
+      );
+      return;
+    }
+
+    // Guard: Spotify must be installed for App Remote to work
+    const spotifyInstalled = await Linking.canOpenURL("spotify://").catch(() => false);
+    if (!spotifyInstalled) {
+      Alert.alert(
+        "Spotify Not Installed",
+        "The Spotify app must be installed on this device to use Spotify Remote.",
         [{ text: "OK" }],
       );
       return;
     }
 
     try {
+      connectingRef.current = true;
       setState((s) => ({ ...s, connecting: true, error: null }));
 
-      if (!CLIENT_ID) throw new Error("Missing EXPO_PUBLIC_SPOTIFY_CLIENT_ID");
-      if (!REDIRECT_URI)
-        throw new Error("Missing EXPO_PUBLIC_SPOTIFY_REDIRECT_URI");
+      console.log("🎵 Starting Spotify native auth + connect…", { CLIENT_ID, REDIRECT_URI });
 
-      if (!request) throw new Error("Spotify auth request not ready yet");
+      // Single call: authorize via native SDK → connect App Remote
+      // auth.authorize() opens Spotify (or its OAuth page), gets a token,
+      // and returns it directly — no code exchange or backend required.
+      await spotifyConnectFull();
 
-      console.log("🎵 Starting Spotify PKCE auth with:", {
-        CLIENT_ID,
-        REDIRECT_URI,
-        SCOPES,
-      });
-
-      // Open Spotify auth in browser
-      const authResult = await promptAsync();
-
-      if (authResult.type !== "success") {
-        throw new Error(
-          authResult.type === "dismiss"
-            ? "Authorization dismissed"
-            : "Authorization failed",
-        );
-      }
-
-      const code = authResult.params?.code;
-      if (!code) throw new Error("Missing authorization code in redirect");
-
-      // Exchange code -> access token (PKCE; no backend required)
-      const tokenRes = await AuthSession.exchangeCodeAsync(
-        {
-          clientId: CLIENT_ID,
-          code,
-          redirectUri: REDIRECT_URI,
-          extraParams: {
-            // Spotify expects code_verifier for PKCE
-            code_verifier: request.codeVerifier ?? "",
-          },
-        },
-        SPOTIFY_DISCOVERY,
-      );
-
-      const accessToken = tokenRes.accessToken;
-      if (!accessToken) throw new Error("Missing access token");
-
-      const can = await Linking.canOpenURL("spotify://");
-      console.log("canOpenURL spotify:// =", can);
-
-      if (!can) {
-        Alert.alert(
-          "Spotify URL scheme not available",
-          "iOS cannot open spotify://. This usually means Spotify isn't installed, you're on a simulator, or the installed Flusso build doesn't include LSApplicationQueriesSchemes.",
-        );
-        return;
-      }
-      console.log("canOpenURL spotify:// =", await Linking.canOpenURL("spotify://"));
-      console.log("canOpenURL spotify-action:// =", await Linking.canOpenURL("spotify-action://"));
-      await remote.connect(accessToken);
-      
-      console.log("🎵 Connected successfully!");
-
+      console.log("✅ Spotify connected!");
       setState({ connected: true, connecting: false, error: null });
     } catch (e: any) {
-      console.error("❌ Spotify connection error:", e);
-      const errorMsg = e?.message ?? "Spotify connect failed";
-      setState({ connected: false, connecting: false, error: errorMsg });
-      Alert.alert("Spotify Connection Failed", errorMsg);
-    }
-  }, [CLIENT_ID, REDIRECT_URI, request, promptAsync]);
+      const msg: string =
+        e?.message?.includes("cancel") || e?.message?.includes("dismiss")
+          ? "Authorization was cancelled."
+          : (e?.message ?? "Spotify connect failed");
 
+      console.error("❌ Spotify connection error:", e);
+      setState({ connected: false, connecting: false, error: msg });
+
+      // Only show alert for non-cancellation errors
+      if (!msg.includes("cancelled")) {
+        Alert.alert("Spotify Connection Failed", msg);
+      }
+    } finally {
+      connectingRef.current = false;
+    }
+  }, [CLIENT_ID, REDIRECT_URI]);
+
+  // ── disconnect ───────────────────────────────────────────────────────────
   const disconnect = useCallback(async () => {
-    try {
-      await remote.disconnect();
-    } catch {}
+    await spotifyDisconnect();
     setState({ connected: false, connecting: false, error: null });
   }, []);
 
-  // keep state accurate
+  // ── Restore connection state on mount (e.g. after backgrounding) ─────────
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const ok = await remote.isConnectedAsync();
-        if (mounted && typeof ok === "boolean") {
-          setState((s) => ({ ...s, connected: ok }));
-        }
-      } catch {}
-    })();
+    spotifyIsConnected().then((ok) => {
+      if (mounted) setState((s) => ({ ...s, connected: ok }));
+    });
     return () => {
       mounted = false;
     };
   }, []);
 
-  // Optional diagnostics
+  // ── Deep-link diagnostics (dev only) ─────────────────────────────────────
   useEffect(() => {
-    const handleDeepLink = (event: { url: string }) => {
-      console.log("🔗 Deep link received:", event.url);
-    };
-
-    const subscription = Linking.addEventListener("url", handleDeepLink);
-
-    Linking.getInitialURL().then((url) => {
-      if (url) console.log("🔗 Initial URL:", url);
-    });
-
-    return () => subscription.remove();
+    if (__DEV__) {
+      const sub = Linking.addEventListener("url", ({ url }) => {
+        console.log("🔗 Deep link received:", url);
+      });
+      Linking.getInitialURL().then((url) => {
+        if (url) console.log("🔗 Initial URL:", url);
+      });
+      return () => sub.remove();
+    }
   }, []);
 
   return useMemo(
