@@ -1,93 +1,164 @@
 // src/services/SpotifyRemote.ts
 import { Platform } from "react-native";
-import { auth, remote, ApiScope, ApiConfig } from "react-native-spotify-remote";
+import { remote } from "react-native-spotify-remote";
 import Constants from "expo-constants";
+import * as WebBrowser from "expo-web-browser";
+import * as Crypto from "expo-crypto";
 
 // ─── Config ────────────────────────────────────────────────────────────────
 const CLIENT_ID =
   (Constants.expoConfig?.extra as any)?.spotifyClientId ??
   "f95c8effcc63427e8b98c6a92a9d0c17";
 
-// Must match EXACTLY what is registered in the Spotify Developer Dashboard
-const REDIRECT_URI = "flusso://spotify-auth/";
+// ⚠️ Keep client secret server-side in production.
+const CLIENT_SECRET = "3aef3477d95f4aa49e65368370eb9db7";
 
-// Scopes needed for App Remote
-const SCOPES: ApiScope[] = [
-  ApiScope.AppRemoteControlScope,
-  ApiScope.UserFollowReadScope,
-];
+export const REDIRECT_URI = "flusso://spotify-auth/";
 
-// Shared native ApiConfig
-const API_CONFIG: ApiConfig = {
-  clientID: CLIENT_ID,
-  redirectURL: REDIRECT_URI,
-  tokenRefreshURL: "",   // not needed — native auth returns the token directly
-  tokenSwapURL: "",      // not needed — native auth returns the token directly
-  scopes: SCOPES,
-};
+const SCOPES = ["app-remote-control", "user-read-playback-state"].join(" ");
+
+const AUTH_ENDPOINT = "https://accounts.spotify.com/authorize";
+const TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
 
 // ─── State ─────────────────────────────────────────────────────────────────
 let _isConnected = false;
 
-// ─── Public API ────────────────────────────────────────────────────────────
+// ─── PKCE Helpers ──────────────────────────────────────────────────────────
 
-/**
- * Authorize with Spotify using the native App Remote SDK.
- * This opens the Spotify app (or a web fallback) and returns an access token.
- * No PKCE, no backend, no expo-auth-session involved.
- */
-export async function spotifyAuthorize(): Promise<string> {
-  const session = await auth.authorize(API_CONFIG);
-  // session.accessToken is available immediately — no code exchange needed
-  if (!session?.accessToken) {
-    throw new Error("Spotify authorization returned no access token");
-  }
-  return session.accessToken;
+function base64urlEncode(input: Uint8Array): string {
+  const bytes = Array.from(input);
+  const b64 = btoa(String.fromCharCode(...bytes));
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
+async function generateCodeVerifier(): Promise<string> {
+  const random = await Crypto.getRandomBytesAsync(64);
+  return base64urlEncode(random);
+}
+
+async function generateCodeChallenge(verifier: string): Promise<string> {
+  const digest = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    verifier,
+    { encoding: Crypto.CryptoEncoding.BASE64 },
+  );
+  return digest.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+// ─── Token exchange ─────────────────────────────────────────────────────────
+
+async function exchangeCodeForToken(
+  code: string,
+  codeVerifier: string,
+): Promise<string> {
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: REDIRECT_URI,
+    client_id: CLIENT_ID,
+    code_verifier: codeVerifier,
+  });
+
+  const res = await fetch(TOKEN_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)}`,
+    },
+    body: body.toString(),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Token exchange failed (${res.status}): ${err}`);
+  }
+
+  const json = await res.json();
+  if (!json.access_token) throw new Error("No access_token in token response");
+  return json.access_token as string;
+}
+
+// ─── Main connect flow ──────────────────────────────────────────────────────
+
 /**
- * Authorize + connect to the Spotify App Remote in one step.
- * Call this from your UI connect button.
+ * Full authorize + connect flow:
+ * 1. PKCE challenge
+ * 2. Spotify OAuth via WebBrowser (captures ?code= redirect)
+ * 3. Token exchange
+ * 4. remote.connect()
+ *
+ * NOTE: remote.connect() on iOS checks canOpenURL("spotify://") internally.
+ * If that check fails it means LSApplicationQueriesSchemes is missing "spotify"
+ * in your built Info.plist. Rebuild the dev client after any app.plugin.js change.
  */
 export async function spotifyConnectFull(): Promise<void> {
-  const accessToken = await spotifyAuthorize();
+  if (!CLIENT_ID) throw new Error("Missing Spotify client ID");
+
+  const codeVerifier = await generateCodeVerifier();
+  const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    response_type: "code",
+    redirect_uri: REDIRECT_URI,
+    scope: SCOPES,
+    code_challenge_method: "S256",
+    code_challenge: codeChallenge,
+    show_dialog: "false",
+  });
+
+  const authUrl = `${AUTH_ENDPOINT}?${params.toString()}`;
+  console.log("🎵 Opening Spotify OAuth:", authUrl);
+
+  const result = await WebBrowser.openAuthSessionAsync(authUrl, REDIRECT_URI, {
+    showInRecents: false,
+  });
+
+  console.log("🎵 WebBrowser result:", result);
+
+  if (result.type !== "success") {
+    throw new Error(
+      result.type === "dismiss"
+        ? "Authorization was cancelled."
+        : "Authorization failed.",
+    );
+  }
+
+  const url = result.url;
+  const codeMatch = url.match(/[?&]code=([^&]+)/);
+  if (!codeMatch?.[1]) {
+    throw new Error(`No authorization code in redirect URL: ${url}`);
+  }
+  const code = decodeURIComponent(codeMatch[1]);
+
+  console.log("🎵 Got auth code, exchanging for token…");
+  const accessToken = await exchangeCodeForToken(code, codeVerifier);
+
+  console.log("🎵 Got access token, connecting App Remote…");
   await remote.connect(accessToken);
   _isConnected = true;
+
+  console.log("✅ Spotify App Remote connected!");
 }
 
-/**
- * Connect to App Remote with an already-obtained access token.
- * Use this if you cached a token and want to reconnect without re-auth.
- */
 export async function spotifyConnect(accessToken: string): Promise<void> {
   await remote.connect(accessToken);
   _isConnected = true;
 }
 
-/**
- * Returns the remote instance. Throws if not connected.
- */
 export function spotifyRemote() {
-  if (!_isConnected) throw new Error("Spotify not connected — call spotifyConnectFull() first");
+  if (!_isConnected)
+    throw new Error("Spotify not connected — call spotifyConnectFull() first");
   return remote;
 }
 
-/**
- * Disconnect from App Remote and clear local state.
- */
 export async function spotifyDisconnect(): Promise<void> {
   _isConnected = false;
   try {
     await remote.disconnect();
-  } catch {
-    // Ignore — already disconnected
-  }
+  } catch {}
 }
 
-/**
- * Returns true if the App Remote SDK reports an active connection.
- * Use this to restore UI state after a background/foreground cycle.
- */
 export async function spotifyIsConnected(): Promise<boolean> {
   try {
     const ok = await remote.isConnectedAsync();
@@ -99,7 +170,6 @@ export async function spotifyIsConnected(): Promise<boolean> {
   }
 }
 
-/** App Remote only works on physical iOS/Android devices with Spotify installed. */
 export function isSpotifyInstalledHint(): boolean {
   return Platform.OS === "ios" || Platform.OS === "android";
 }

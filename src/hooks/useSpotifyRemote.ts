@@ -48,7 +48,7 @@ export function useSpotifyRemote() {
     if (isExpoGo) {
       Alert.alert(
         "Expo Go Not Supported",
-        "Spotify Remote requires a custom development build (not Expo Go). Run `expo run:ios` or `expo run:android`.",
+        "Spotify Remote requires a custom development build. Run `expo run:ios` or `expo run:android`.",
         [{ text: "OK" }],
       );
       return;
@@ -69,11 +69,10 @@ export function useSpotifyRemote() {
       connectingRef.current = true;
       setState((s) => ({ ...s, connecting: true, error: null }));
 
-      console.log("🎵 Starting Spotify native auth + connect…", { CLIENT_ID, REDIRECT_URI });
+      console.log("🎵 Starting Spotify connect…", { CLIENT_ID, REDIRECT_URI });
 
-      // Single call: authorize via native SDK → connect App Remote
-      // auth.authorize() opens Spotify (or its OAuth page), gets a token,
-      // and returns it directly — no code exchange or backend required.
+      // Opens Spotify OAuth in an in-app browser, captures the ?code= redirect,
+      // exchanges for a token, then connects the App Remote native SDK.
       await spotifyConnectFull();
 
       console.log("✅ Spotify connected!");
@@ -87,7 +86,6 @@ export function useSpotifyRemote() {
       console.error("❌ Spotify connection error:", e);
       setState({ connected: false, connecting: false, error: msg });
 
-      // Only show alert for non-cancellation errors
       if (!msg.includes("cancelled")) {
         Alert.alert("Spotify Connection Failed", msg);
       }
@@ -102,7 +100,7 @@ export function useSpotifyRemote() {
     setState({ connected: false, connecting: false, error: null });
   }, []);
 
-  // ── Restore connection state on mount (e.g. after backgrounding) ─────────
+  // ── Restore connection state on mount (after background/foreground) ───────
   useEffect(() => {
     let mounted = true;
     spotifyIsConnected().then((ok) => {

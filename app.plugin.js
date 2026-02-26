@@ -19,7 +19,9 @@ function ensureArray(x) {
 
 function addUrlSchemeToInfoPlist(infoPlist, scheme) {
   const existing = ensureArray(infoPlist.CFBundleURLTypes);
-  const has = existing.some((t) => ensureArray(t.CFBundleURLSchemes).includes(scheme));
+  const has = existing.some((t) =>
+    ensureArray(t.CFBundleURLSchemes).includes(scheme)
+  );
   if (!has) {
     existing.push({
       CFBundleURLName: scheme,
@@ -31,15 +33,15 @@ function addUrlSchemeToInfoPlist(infoPlist, scheme) {
 }
 
 function addQueriesSchemes(infoPlist) {
-  const schemes = new Set(ensureArray(infoPlist.LSApplicationQueriesSchemes));
-  schemes.add("spotify");
-  schemes.add("spotify-action");
-  infoPlist.LSApplicationQueriesSchemes = Array.from(schemes);
+  // IMPORTANT: merge into whatever is already present — never replace
+  const existing = ensureArray(infoPlist.LSApplicationQueriesSchemes);
+  const required = ["spotify", "spotify-action"];
+  const merged = Array.from(new Set([...existing, ...required]));
+  infoPlist.LSApplicationQueriesSchemes = merged;
   return infoPlist;
-} 
+}
 
 function patchObjC(appDelegate) {
-  // Imports
   if (!appDelegate.includes("#import <React/RCTLinkingManager.h>")) {
     appDelegate = appDelegate.replace(
       /#import "AppDelegate\.h"\s*\n/,
@@ -54,7 +56,6 @@ function patchObjC(appDelegate) {
     );
   }
 
-  // Avoid duplicates
   if (
     appDelegate.includes("RNSpotifyRemoteAuth sharedInstance") &&
     appDelegate.includes("application:openURL:options:")
@@ -62,7 +63,6 @@ function patchObjC(appDelegate) {
     return appDelegate;
   }
 
-  // Insert before @end
   const method = `
 - (BOOL)application:(UIApplication *)application
             openURL:(NSURL *)url
@@ -85,7 +85,6 @@ function patchSwift(appDelegate) {
     appDelegate = appDelegate.replace(/import UIKit\s*\n/, (m) => `${m}import React\n`);
   }
 
-  // Avoid duplicates
   if (
     appDelegate.includes('NSClassFromString("RNSpotifyRemoteAuth")') &&
     appDelegate.includes("RCTLinkingManager.application")
@@ -94,19 +93,15 @@ function patchSwift(appDelegate) {
   }
 
   const method = `
-  // Spotify Auth callback - handles deep link from Spotify OAuth
   func application(
     _ application: UIApplication,
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey : Any] = [:]
   ) -> Bool {
-
-    // Try Spotify handler first (dynamic call to avoid compile errors)
     if let cls: AnyObject = NSClassFromString("RNSpotifyRemoteAuth") {
       let sharedSel = NSSelectorFromString("sharedInstance")
       if cls.responds(to: sharedSel),
          let shared = cls.perform(sharedSel)?.takeUnretainedValue() as AnyObject? {
-
         let handleSel = NSSelectorFromString("application:openURL:options:")
         if shared.responds(to: handleSel) {
           let res = shared.perform(handleSel, with: application, with: url)?.takeUnretainedValue()
@@ -114,21 +109,16 @@ function patchSwift(appDelegate) {
         }
       }
     }
-
-    // Fall back to React Native Linking for other deep links
     return RCTLinkingManager.application(application, open: url, options: options)
   }
 `;
 
-  // Insert inside AppDelegate class before last }
   const lastBrace = appDelegate.lastIndexOf("}");
   if (lastBrace === -1) return appDelegate;
-
   return appDelegate.slice(0, lastBrace) + method + "\n" + appDelegate.slice(lastBrace);
 }
 
 function patchMainActivity(mainActivity) {
-  // Add Intent import if missing
   if (!mainActivity.includes("import android.content.Intent")) {
     mainActivity = mainActivity.replace(
       /package .+\n/,
@@ -136,43 +126,50 @@ function patchMainActivity(mainActivity) {
     );
   }
 
-  // Avoid duplicate injection
-  if (mainActivity.includes("override fun onNewIntent(intent: Intent)") && mainActivity.includes("setIntent(intent)")) {
+  if (
+    mainActivity.includes("override fun onNewIntent(intent: Intent)") &&
+    mainActivity.includes("setIntent(intent)")
+  ) {
     return mainActivity;
   }
 
   const method = `
-  // Handle Spotify OAuth callback
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
   }
 `;
 
-  // Insert after onCreate block (best-effort)
   const onCreateEnd = mainActivity.indexOf("super.onCreate(savedInstanceState)");
   if (onCreateEnd !== -1) {
     const braceAfter = mainActivity.indexOf("}", onCreateEnd);
     if (braceAfter !== -1) {
-      return mainActivity.slice(0, braceAfter + 1) + method + mainActivity.slice(braceAfter + 1);
+      return (
+        mainActivity.slice(0, braceAfter + 1) +
+        method +
+        mainActivity.slice(braceAfter + 1)
+      );
     }
   }
 
-  // Fallback: append at end of class before final }
   const lastBrace = mainActivity.lastIndexOf("}");
   if (lastBrace === -1) return mainActivity;
   return mainActivity.slice(0, lastBrace) + method + "\n" + mainActivity.slice(lastBrace);
 }
 
 module.exports = function withSpotifyRemote(config) {
-  const redirectUri = process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI || "flusso://spotify-auth/";
+  const redirectUri =
+    process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI || "flusso://spotify-auth/";
   const scheme = getRedirectScheme(redirectUri) || "flusso";
 
   config = withInfoPlist(config, (cfg) => {
+    // 1. Register flusso:// as a URL scheme so the app can receive deep links
     if (scheme) cfg.modResults = addUrlSchemeToInfoPlist(cfg.modResults, scheme);
+
+    // 2. Whitelist spotify:// so canOpenURL() works — MERGE, never replace
     cfg.modResults = addQueriesSchemes(cfg.modResults);
 
-    // Force URL callbacks through AppDelegate (avoids SceneDelegate swallowing Spotify callback)
+    // 3. Disable multi-scene so AppDelegate receives openURL (not SceneDelegate)
     cfg.modResults.UIApplicationSceneManifest = {
       UIApplicationSupportsMultipleScenes: false,
     };
@@ -181,16 +178,15 @@ module.exports = function withSpotifyRemote(config) {
   });
 
   config = withAppDelegate(config, (cfg) => {
-    const lang = cfg.modResults.language; // "swift" or "objc"
+    const lang = cfg.modResults.language;
     const contents = cfg.modResults.contents;
-
-    cfg.modResults.contents = lang === "swift" ? patchSwift(contents) : patchObjC(contents);
+    cfg.modResults.contents =
+      lang === "swift" ? patchSwift(contents) : patchObjC(contents);
     return cfg;
   });
 
-  // Android: Patch MainActivity for OAuth callback delivery
   config = withMainActivity(config, (cfg) => {
-    if (cfg.modResults.language === "java") return cfg; // your project uses Kotlin
+    if (cfg.modResults.language === "java") return cfg;
     cfg.modResults.contents = patchMainActivity(cfg.modResults.contents);
     return cfg;
   });
