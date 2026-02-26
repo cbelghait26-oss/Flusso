@@ -1,7 +1,6 @@
 // app.plugin.js
 const {
   withInfoPlist,
-  withAppDelegate,
   withMainActivity,
 } = require("@expo/config-plugins");
 
@@ -33,89 +32,12 @@ function addUrlSchemeToInfoPlist(infoPlist, scheme) {
 }
 
 function addQueriesSchemes(infoPlist) {
-  // IMPORTANT: merge into whatever is already present — never replace
   const existing = ensureArray(infoPlist.LSApplicationQueriesSchemes);
   const required = ["spotify", "spotify-action"];
-  const merged = Array.from(new Set([...existing, ...required]));
-  infoPlist.LSApplicationQueriesSchemes = merged;
+  infoPlist.LSApplicationQueriesSchemes = Array.from(
+    new Set([...existing, ...required])
+  );
   return infoPlist;
-}
-
-function patchObjC(appDelegate) {
-  if (!appDelegate.includes("#import <React/RCTLinkingManager.h>")) {
-    appDelegate = appDelegate.replace(
-      /#import "AppDelegate\.h"\s*\n/,
-      (m) => `${m}#import <React/RCTLinkingManager.h>\n`
-    );
-  }
-
-  if (!appDelegate.includes("#import <RNSpotifyRemote.h>")) {
-    appDelegate = appDelegate.replace(
-      /#import "AppDelegate\.h"\s*\n/,
-      (m) => `${m}#import <RNSpotifyRemote.h>\n`
-    );
-  }
-
-  if (
-    appDelegate.includes("RNSpotifyRemoteAuth sharedInstance") &&
-    appDelegate.includes("application:openURL:options:")
-  ) {
-    return appDelegate;
-  }
-
-  const method = `
-- (BOOL)application:(UIApplication *)application
-            openURL:(NSURL *)url
-            options:(NSDictionary<UIApplicationOpenURLOptionsKey,id> *)options
-{
-  BOOL handledBySpotify = [[RNSpotifyRemoteAuth sharedInstance] application:application openURL:url options:options];
-  if (handledBySpotify) {
-    return YES;
-  }
-
-  return [RCTLinkingManager application:application openURL:url options:options];
-}
-`;
-
-  return appDelegate.replace(/@end\s*$/m, `${method}\n@end`);
-}
-
-function patchSwift(appDelegate) {
-  if (!appDelegate.includes("import React")) {
-    appDelegate = appDelegate.replace(/import UIKit\s*\n/, (m) => `${m}import React\n`);
-  }
-
-  if (
-    appDelegate.includes('NSClassFromString("RNSpotifyRemoteAuth")') &&
-    appDelegate.includes("RCTLinkingManager.application")
-  ) {
-    return appDelegate;
-  }
-
-  const method = `
-  func application(
-    _ application: UIApplication,
-    open url: URL,
-    options: [UIApplication.OpenURLOptionsKey : Any] = [:]
-  ) -> Bool {
-    if let cls: AnyObject = NSClassFromString("RNSpotifyRemoteAuth") {
-      let sharedSel = NSSelectorFromString("sharedInstance")
-      if cls.responds(to: sharedSel),
-         let shared = cls.perform(sharedSel)?.takeUnretainedValue() as AnyObject? {
-        let handleSel = NSSelectorFromString("application:openURL:options:")
-        if shared.responds(to: handleSel) {
-          let res = shared.perform(handleSel, with: application, with: url)?.takeUnretainedValue()
-          if let handled = res as? Bool, handled { return true }
-        }
-      }
-    }
-    return RCTLinkingManager.application(application, open: url, options: options)
-  }
-`;
-
-  const lastBrace = appDelegate.lastIndexOf("}");
-  if (lastBrace === -1) return appDelegate;
-  return appDelegate.slice(0, lastBrace) + method + "\n" + appDelegate.slice(lastBrace);
 }
 
 function patchMainActivity(mainActivity) {
@@ -162,29 +84,24 @@ module.exports = function withSpotifyRemote(config) {
     process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI || "flusso://spotify-auth/";
   const scheme = getRedirectScheme(redirectUri) || "flusso";
 
+  // iOS: register URL scheme + whitelist spotify:// for canOpenURL
   config = withInfoPlist(config, (cfg) => {
-    // 1. Register flusso:// as a URL scheme so the app can receive deep links
     if (scheme) cfg.modResults = addUrlSchemeToInfoPlist(cfg.modResults, scheme);
-
-    // 2. Whitelist spotify:// so canOpenURL() works — MERGE, never replace
     cfg.modResults = addQueriesSchemes(cfg.modResults);
-
-    // 3. Disable multi-scene so AppDelegate receives openURL (not SceneDelegate)
+    // Disable multi-scene so deep links route through AppDelegate not SceneDelegate
     cfg.modResults.UIApplicationSceneManifest = {
       UIApplicationSupportsMultipleScenes: false,
     };
-
     return cfg;
   });
 
-  config = withAppDelegate(config, (cfg) => {
-    const lang = cfg.modResults.language;
-    const contents = cfg.modResults.contents;
-    cfg.modResults.contents =
-      lang === "swift" ? patchSwift(contents) : patchObjC(contents);
-    return cfg;
-  });
+  // NOTE: AppDelegate patching removed.
+  // We use expo-web-browser (WebBrowser.openAuthSessionAsync) for OAuth which
+  // handles the redirect internally — no native openURL handler needed.
+  // The flusso:// scheme registered above is enough for WebBrowser to capture
+  // the redirect and return it as result.url.
 
+  // Android: handle OAuth callback delivery
   config = withMainActivity(config, (cfg) => {
     if (cfg.modResults.language === "java") return cfg;
     cfg.modResults.contents = patchMainActivity(cfg.modResults.contents);
