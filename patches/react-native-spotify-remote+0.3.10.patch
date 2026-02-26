@@ -396,26 +396,26 @@ new file mode 100644
 index 0000000..78e6bb9
 Binary files /dev/null and b/node_modules/react-native-spotify-remote/android/build/tmp/compileDebugJavaWithJavac/previous-compilation-data.bin differ
 diff --git a/node_modules/react-native-spotify-remote/ios/RNSpotifyRemoteAuth.m b/node_modules/react-native-spotify-remote/ios/RNSpotifyRemoteAuth.m
-index 4039277..291864f 100644
+index 4039277..01384ef 100644
 --- a/node_modules/react-native-spotify-remote/ios/RNSpotifyRemoteAuth.m
 +++ b/node_modules/react-native-spotify-remote/ios/RNSpotifyRemoteAuth.m
-@@ -36,7 +36,7 @@ static RNSpotifyRemoteAuth *sharedInstance = nil;
+@@ -36,9 +36,9 @@ static RNSpotifyRemoteAuth *sharedInstance = nil;
  }
  
  -(SPTConfiguration*) configuration{
--    return _apiConfiguration;
 +    if(_apiConfiguration == nil){ _apiConfiguration = [SPTConfiguration configurationWithClientID:@"f95c8effcc63427e8b98c6a92a9d0c17" redirectURL:[NSURL URLWithString:@"flusso://spotify-auth/"]]; }
+     return _apiConfiguration;
  }
- 
+-
  #pragma mark Singleton Methods
-@@ -72,8 +72,8 @@ static RNSpotifyRemoteAuth *sharedInstance = nil;
+ 
+ + (instancetype)sharedInstance {
+@@ -72,7 +72,7 @@ static RNSpotifyRemoteAuth *sharedInstance = nil;
  }
  
  -(BOOL)isSpotifyInstalled{
 -    return _sessionManager != nil && _sessionManager.spotifyAppInstalled;
--}
 +    return YES;
-+
+ }
  
  #pragma mark URL handling
- 
