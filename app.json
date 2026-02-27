@@ -6,7 +6,7 @@
     "orientation": "all",
     "icon": "./assets/AppIcon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "scheme": "flusso",
     "splash": {
       "image": "./assets/splash-icon.png",
