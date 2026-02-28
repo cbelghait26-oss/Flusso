@@ -1,140 +1,140 @@
 // src/hooks/useSpotifyRemote.ts
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Linking, Platform } from "react-native";
+import { Alert, AppState, AppStateStatus, Linking } from "react-native";
 import Constants from "expo-constants";
 import {
   spotifyConnectFull,
   spotifyDisconnect,
   spotifyIsConnected,
+  spotifyReconnect,
+  hasStoredCredentials,
 } from "../services/SpotifyRemote";
 
-// ─── Types ─────────────────────────────────────────────────────────────────
-
 type State = {
-  connected: boolean;
+  connected:  boolean;
   connecting: boolean;
-  error: string | null;
+  error:      string | null;
 };
 
-// ─── Hook ──────────────────────────────────────────────────────────────────
+// All the ways the SDK says "Spotify isn't actively playing"
+const NOT_PLAYING_PATTERNS = [
+  "connection refused",
+  "connection attempt failed",
+  "stream error",
+  "reconnect the transport",
+  "spotifynotinstalled",
+  "spotify not installed",
+  "not playing",
+];
+
+function isNotPlayingError(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return NOT_PLAYING_PATTERNS.some((p) => lower.includes(p));
+}
 
 export function useSpotifyRemote() {
-  const [state, setState] = useState<State>({
-    connected: false,
-    connecting: false,
-    error: null,
-  });
+  const [state, setState] = useState<State>({ connected: false, connecting: false, error: null });
+  const connectingRef     = useRef(false);
+  const appStateRef       = useRef<AppStateStatus>(AppState.currentState);
 
-  // Prevent double-connect if the user taps rapidly
-  const connectingRef = useRef(false);
+  // ── On app foreground: silent reconnect attempt — NEVER shows alerts ─────
+  // App Remote requires Spotify to be actively playing to connect.
+  // If Spotify isn't playing the reconnect will fail silently — that's fine.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", async (next) => {
+      if (appStateRef.current.match(/inactive|background/) && next === "active") {
+        const stillConnected = await spotifyIsConnected();
+        if (!stillConnected && hasStoredCredentials()) {
+          const ok = await spotifyReconnect(); // swallows all errors internally
+          setState((s) => ({ ...s, connected: ok }));
+        } else {
+          setState((s) => ({ ...s, connected: stillConnected }));
+        }
+      }
+      appStateRef.current = next;
+    });
+    return () => sub.remove();
+  }, []);
 
-  const CLIENT_ID =
-    (Constants.expoConfig?.extra as any)?.spotifyClientId ??
-    process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ??
-    "f95c8effcc63427e8b98c6a92a9d0c17";
+  // ── Initial check on mount ────────────────────────────────────────────────
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const ok = await spotifyIsConnected();
+      if (!mounted) return;
+      if (!ok && hasStoredCredentials()) {
+        const reconnected = await spotifyReconnect(); // silent
+        if (mounted) setState((s) => ({ ...s, connected: reconnected }));
+      } else {
+        if (mounted) setState((s) => ({ ...s, connected: ok }));
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
-  const REDIRECT_URI =
-    process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ?? "flusso://spotify-auth/";
-
-  // ── connect ──────────────────────────────────────────────────────────────
+  // ── Manual connect — user tapped the Spotify pill ────────────────────────
   const connect = useCallback(async () => {
     if (connectingRef.current) return;
 
-    // Guard: Expo Go cannot load native modules
     const isExpoGo =
       Constants.appOwnership === "expo" ||
       Constants.executionEnvironment === "storeClient";
-
     if (isExpoGo) {
-      Alert.alert(
-        "Expo Go Not Supported",
-        "Spotify Remote requires a custom development build. Run `expo run:ios` or `expo run:android`.",
-        [{ text: "OK" }],
-      );
+      Alert.alert("Expo Go Not Supported", "Spotify Remote requires a custom development build.", [{ text: "OK" }]);
       return;
     }
 
-    // Guard: Spotify must be installed for App Remote to work
     const spotifyInstalled = await Linking.canOpenURL("spotify://").catch(() => false);
     if (!spotifyInstalled) {
-      Alert.alert(
-        "Spotify Not Installed",
-        "The Spotify app must be installed on this device to use Spotify Remote.",
-        [{ text: "OK" }],
-      );
+      Alert.alert("Spotify Not Installed", "Install the Spotify app to use this feature.", [{ text: "OK" }]);
       return;
     }
 
     try {
       connectingRef.current = true;
       setState((s) => ({ ...s, connecting: true, error: null }));
-
-      console.log("🎵 Starting Spotify connect…", { CLIENT_ID, REDIRECT_URI });
-
-      // Opens Spotify OAuth in an in-app browser, captures the ?code= redirect,
-      // exchanges for a token, then connects the App Remote native SDK.
       await spotifyConnectFull();
-
-      console.log("✅ Spotify connected!");
       setState({ connected: true, connecting: false, error: null });
     } catch (e: any) {
-      const msg: string =
-        e?.message?.includes("cancel") || e?.message?.includes("dismiss")
-          ? "Authorization was cancelled."
-          : (e?.message ?? "Spotify connect failed");
+      const raw: string = e?.message ?? "";
+      setState({ connected: false, connecting: false, error: raw });
 
-      console.error("❌ Spotify connection error:", e);
-      setState({ connected: false, connecting: false, error: msg });
+      // User closed the browser — no noise
+      if (raw.includes("cancel") || raw.includes("dismiss")) return;
 
-      if (!msg.includes("cancelled")) {
-        Alert.alert("Spotify Connection Failed", msg);
+      // Spotify isn't open/playing — give clear instructions
+      if (isNotPlayingError(raw)) {
+        Alert.alert(
+          "Open Spotify First",
+          "Spotify must be open and playing before you can connect.\n\n1. Open the Spotify app\n2. Play any song\n3. Come back and tap Spotify",
+          [{ text: "Got it" }],
+        );
+        return;
       }
+
+      // Generic: show only the first line of the error (the SDK stacks multiple messages)
+      const friendly = raw.split("\n")[0].trim() || "Connection failed. Please try again.";
+      Alert.alert("Spotify Connection Failed", friendly);
     } finally {
       connectingRef.current = false;
     }
-  }, [CLIENT_ID, REDIRECT_URI]);
+  }, []);
 
-  // ── disconnect ───────────────────────────────────────────────────────────
   const disconnect = useCallback(async () => {
     await spotifyDisconnect();
     setState({ connected: false, connecting: false, error: null });
   }, []);
 
-  // ── Restore connection state on mount (after background/foreground) ───────
+  // Deep link debug logging (dev only)
   useEffect(() => {
-    let mounted = true;
-    spotifyIsConnected().then((ok) => {
-      if (mounted) setState((s) => ({ ...s, connected: ok }));
-    });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  // ── Deep-link diagnostics (dev only) ─────────────────────────────────────
-  useEffect(() => {
-    if (__DEV__) {
-      const sub = Linking.addEventListener("url", ({ url }) => {
-        console.log("🔗 Deep link received:", url);
-      });
-      Linking.getInitialURL().then((url) => {
-        if (url) console.log("🔗 Initial URL:", url);
-      });
-      return () => sub.remove();
-    }
+    if (!__DEV__) return;
+    const sub = Linking.addEventListener("url", ({ url }) => console.log("🔗 Deep link:", url));
+    Linking.getInitialURL().then((url) => { if (url) console.log("🔗 Initial URL:", url); });
+    return () => sub.remove();
   }, []);
 
   return useMemo(
-    () => ({
-      connected: state.connected,
-      connecting: state.connecting,
-      error: state.error,
-      connect,
-      disconnect,
-      clientId: CLIENT_ID,
-      redirectUri: REDIRECT_URI,
-      platform: Platform.OS,
-    }),
-    [state, connect, disconnect, CLIENT_ID, REDIRECT_URI],
+    () => ({ connected: state.connected, connecting: state.connecting, error: state.error, connect, disconnect }),
+    [state, connect, disconnect],
   );
 }

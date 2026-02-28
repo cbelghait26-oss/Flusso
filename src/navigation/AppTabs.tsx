@@ -221,7 +221,7 @@ function AnimatedTabBarWrapper(props: BottomTabBarProps) {
         duration: 300,
         useNativeDriver: true,
       }).start();
-    }, 5000);
+    }, 1500);
   };
 
   // Always update the global reference when this function changes
