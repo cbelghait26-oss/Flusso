@@ -7,15 +7,15 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "prebuildCommand": "npx patch-package"
+      "prebuildCommand": "patch-package"
     },
     "preview": {
       "distribution": "internal",
-      "prebuildCommand": "npx patch-package"
+      "prebuildCommand": "patch-package"
     },
     "production": {
       "autoIncrement": true,
-      "prebuildCommand": "npx patch-package"
+      "prebuildCommand": "patch-package"
     }
   },
   "submit": {
