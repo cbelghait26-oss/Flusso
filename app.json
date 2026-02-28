@@ -20,7 +20,8 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "LSApplicationQueriesSchemes": [
-          "spotify", "spotify-action"
+          "spotify",
+          "spotify-action"
         ]
       }
     },
@@ -38,7 +39,14 @@
     "plugins": [
       "@react-native-community/datetimepicker",
       "@react-native-google-signin/google-signin",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/AppIcon.png",
+          "color": "#4DA6FF"
+        }
+      ]
     ],
     "extra": {
       "googleWebClientId": "402208533063-jk5a2gdeqina4u0lb5cjpd7f1kh8a4k4.apps.googleusercontent.com",
