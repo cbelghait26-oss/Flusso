@@ -7,15 +7,21 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "prebuildCommand": "patch-package"
+      "env": {
+        "EXPO_NO_DOCTOR": "1"
+      }
     },
     "preview": {
       "distribution": "internal",
-      "prebuildCommand": "patch-package"
+      "env": {
+        "EXPO_NO_DOCTOR": "1"
+      }
     },
     "production": {
       "autoIncrement": true,
-      "prebuildCommand": "patch-package"
+      "env": {
+        "EXPO_NO_DOCTOR": "1"
+      }
     }
   },
   "submit": {
