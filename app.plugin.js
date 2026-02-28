@@ -2,7 +2,10 @@
 const {
   withInfoPlist,
   withMainActivity,
+  withDangerousMod,
 } = require("@expo/config-plugins");
+const fs = require("fs");
+const path = require("path");
 
 function getRedirectScheme(redirectUri) {
   if (!redirectUri || typeof redirectUri !== "string") return null;
@@ -79,6 +82,44 @@ function patchMainActivity(mainActivity) {
   return mainActivity.slice(0, lastBrace) + method + "\n" + mainActivity.slice(lastBrace);
 }
 
+function withSpotifyNativeFix(config) {
+  return withDangerousMod(config, [
+    "ios",
+    async (cfg) => {
+      const filePath = path.join(
+        cfg.modRequest.projectRoot,
+        "node_modules",
+        "react-native-spotify-remote",
+        "ios",
+        "RNSpotifyRemoteAuth.m"
+      );
+
+      if (!fs.existsSync(filePath)) {
+        console.warn("⚠️ RNSpotifyRemoteAuth.m not found, skipping patch");
+        return cfg;
+      }
+
+      let contents = fs.readFileSync(filePath, "utf8");
+
+      // Fix 1: isSpotifyInstalled always returns YES
+      contents = contents.replace(
+        /-(BOOL)isSpotifyInstalled\s*\{[\s\S]*?return _sessionManager != nil && _sessionManager\.spotifyAppInstalled;/,
+        "-(BOOL)isSpotifyInstalled{\n    return YES;"
+      );
+
+      // Fix 2: SPTConfiguration fallback
+      contents = contents.replace(
+        /-(SPTConfiguration\*) configuration\{\s*\n\s*return _apiConfiguration;/,
+        `-(SPTConfiguration*) configuration{\n    if(_apiConfiguration == nil){ _apiConfiguration = [SPTConfiguration configurationWithClientID:@"f95c8effcc63427e8b98c6a92a9d0c17" redirectURL:[NSURL URLWithString:@"flusso://spotify-auth/"]]; }\n    return _apiConfiguration;`
+      );
+
+      fs.writeFileSync(filePath, contents, "utf8");
+      console.log("✅ RNSpotifyRemoteAuth.m patched by config plugin");
+      return cfg;
+    },
+  ]);
+}
+
 module.exports = function withSpotifyRemote(config) {
   const redirectUri =
     process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI || "flusso://spotify-auth/";
@@ -88,18 +129,14 @@ module.exports = function withSpotifyRemote(config) {
   config = withInfoPlist(config, (cfg) => {
     if (scheme) cfg.modResults = addUrlSchemeToInfoPlist(cfg.modResults, scheme);
     cfg.modResults = addQueriesSchemes(cfg.modResults);
-    // Disable multi-scene so deep links route through AppDelegate not SceneDelegate
     cfg.modResults.UIApplicationSceneManifest = {
       UIApplicationSupportsMultipleScenes: false,
     };
     return cfg;
   });
 
-  // NOTE: AppDelegate patching removed.
-  // We use expo-web-browser (WebBrowser.openAuthSessionAsync) for OAuth which
-  // handles the redirect internally — no native openURL handler needed.
-  // The flusso:// scheme registered above is enough for WebBrowser to capture
-  // the redirect and return it as result.url.
+  // Patch RNSpotifyRemoteAuth.m directly via config plugin
+  config = withSpotifyNativeFix(config);
 
   // Android: handle OAuth callback delivery
   config = withMainActivity(config, (cfg) => {
