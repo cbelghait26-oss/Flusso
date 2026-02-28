@@ -38,7 +38,6 @@
     "plugins": [
       "@react-native-community/datetimepicker",
       "@react-native-google-signin/google-signin",
-      "./app.plugin.js",
       "expo-web-browser"
     ],
     "extra": {
