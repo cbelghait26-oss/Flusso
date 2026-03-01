@@ -27,7 +27,12 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   deleteUser,
+  sendEmailVerification,
 } from "firebase/auth";
+import {
+  reloadAndCheckVerified,
+  changeEmailWithReauth,
+} from "../src/services/emailVerification";
 
 import { useTheme } from "../src/components/theme/theme";
 import { TROPHY_TIERS, TROPHY_META } from "../src/context/AchievementContext";
@@ -316,6 +321,14 @@ export default function SettingsScreen() {
   // ── Accent color picker sheet ─────────────────────────────────────────────
   const [accentSheetVisible, setAccentSheetVisible] = useState(false);
 
+  // ── Email verification ────────────────────────────────────────────────────
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
+  const [changeEmailModal, setChangeEmailModal] = useState(false);
+  const [changeEmailNew, setChangeEmailNew] = useState("");
+  const [changeEmailPassword, setChangeEmailPassword] = useState("");
+  const [changingEmail, setChangingEmail] = useState(false);
+  const [resendingVerif, setResendingVerif] = useState(false);
+
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
     loadData();
@@ -327,7 +340,13 @@ export default function SettingsScreen() {
     setProfileNameState(n || "");
 
     const currentUser = auth.currentUser;
-    if (currentUser?.email) setProfileEmail(currentUser.email);
+    if (currentUser) {
+      // Reload to get latest emailVerified flag from Firebase.
+      try { await currentUser.reload(); } catch {}
+      const refreshed = auth.currentUser;
+      if (refreshed?.email) setProfileEmail(refreshed.email);
+      setIsEmailVerified(refreshed?.emailVerified ?? false);
+    }
 
     const tasks = await loadTasks();
     setCompletedCount(tasks.filter((t: any) => t.status === "completed").length);
@@ -680,6 +699,64 @@ export default function SettingsScreen() {
     }
   };
 
+  // ── Change email ──────────────────────────────────────────────────────────
+  const handleChangeEmail = async () => {
+    if (!changeEmailNew.trim() || !changeEmailPassword.trim()) {
+      Alert.alert("Required", "Please fill in both fields.");
+      return;
+    }
+    const user = auth.currentUser;
+    if (!user) return;
+    setChangingEmail(true);
+    try {
+      await changeEmailWithReauth(user, changeEmailPassword, changeEmailNew.trim());
+      setChangeEmailModal(false);
+      setProfileEmail(changeEmailNew.trim());
+      setIsEmailVerified(false);
+      setChangeEmailNew("");
+      setChangeEmailPassword("");
+      Alert.alert(
+        "Verify new email",
+        `A verification link has been sent to ${changeEmailNew.trim()}. Verify it before your next login.`
+      );
+    } catch (err: any) {
+      let msg = "An error occurred.";
+      if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") msg = "Incorrect password.";
+      else if (err.code === "auth/email-already-in-use") msg = "That email is already in use.";
+      else if (err.code === "auth/invalid-email") msg = "Invalid email address.";
+      else if (err.message) msg = err.message;
+      Alert.alert("Update failed", msg);
+    } finally {
+      setChangingEmail(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    setResendingVerif(true);
+    try {
+      await sendEmailVerification(user);
+      Alert.alert("Email sent", `Verification link sent to ${user.email}.`);
+    } catch (err: any) {
+      Alert.alert("Error", err?.message ?? "Could not send email.");
+    } finally {
+      setResendingVerif(false);
+    }
+  };
+
+  const handleRefreshVerification = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const verified = await reloadAndCheckVerified(user);
+    setIsEmailVerified(verified);
+    if (verified) {
+      Alert.alert("Verified!", "Your email address is now verified. ✅");
+    } else {
+      Alert.alert("Not verified yet", "Check your inbox and click the verification link.");
+    }
+  };
+
   // ── Color aliases ─────────────────────────────────────────────────────────
   const C = useMemo(
     () => ({
@@ -893,6 +970,62 @@ export default function SettingsScreen() {
               showChevron={false}
               right={<Ionicons name="copy-outline" size={s(16)} color={C.muted} />}
             />
+            <Divider C={C} />
+            {/* Change email */}
+            <ActionRow
+              icon="pencil-outline"
+              label="Change email"
+              C={C}
+              onPress={() => { setChangeEmailNew(""); setChangeEmailPassword(""); setChangeEmailModal(true); }}
+            />
+            <Divider C={C} />
+            {/* Email verification status */}
+            <View style={[styles.settingsRow, { height: "auto" as any, paddingVertical: s(12), flexDirection: "column", alignItems: "flex-start", gap: s(8) }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: s(10) }}>
+                <View style={[styles.iconWrap, { backgroundColor: (isEmailVerified ? C.success : "#F97316") + "20" }]}>
+                  <Ionicons
+                    name={isEmailVerified ? "shield-checkmark-outline" : "shield-outline"}
+                    size={s(16)}
+                    color={isEmailVerified ? C.success : "#F97316"}
+                  />
+                </View>
+                <View>
+                  <Text style={[styles.rowLabel, { color: C.text }]}>Email verification</Text>
+                  <Text style={{ fontSize: s(12), fontWeight: "700", color: isEmailVerified ? C.success : "#F97316", marginTop: s(1) }}>
+                    {isEmailVerified ? "Verified ✓" : "Not verified"}
+                  </Text>
+                </View>
+              </View>
+              {!isEmailVerified && (
+                <View style={{ flexDirection: "row", gap: s(8), paddingLeft: s(40) }}>
+                  <Pressable
+                    onPress={handleResendVerification}
+                    disabled={resendingVerif}
+                    style={({ pressed }) => ({
+                      paddingVertical: s(6), paddingHorizontal: s(12),
+                      borderRadius: s(8), backgroundColor: "#F97316" + "18",
+                      borderWidth: s(1), borderColor: "#F97316" + "44",
+                      opacity: pressed || resendingVerif ? 0.7 : 1,
+                    })}
+                  >
+                    <Text style={{ color: "#F97316", fontSize: s(12), fontWeight: "800" }}>
+                      {resendingVerif ? "Sending…" : "Resend email"}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleRefreshVerification}
+                    style={({ pressed }) => ({
+                      paddingVertical: s(6), paddingHorizontal: s(12),
+                      borderRadius: s(8), backgroundColor: C.accent + "18",
+                      borderWidth: s(1), borderColor: C.accent + "44",
+                      opacity: pressed ? 0.7 : 1,
+                    })}
+                  >
+                    <Text style={{ color: C.accent, fontSize: s(12), fontWeight: "800" }}>I verified</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
             <Divider C={C} />
             {/* Notifications – expandable chevron row */}
             <Pressable
@@ -1581,6 +1714,71 @@ export default function SettingsScreen() {
             >
               <Text style={{ color: "#fff", fontSize: s(15), fontWeight: "900" }}>Save changes</Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Change email */}
+      <Modal
+        visible={changeEmailModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => { if (!changingEmail) setChangeEmailModal(false); }}
+      >
+        <View style={[styles.sheetBackdrop, { alignItems: "center", justifyContent: "center", padding: s(20) }]}>
+          <View style={[styles.modalCard, { backgroundColor: C.card, borderColor: C.line }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: s(10), marginBottom: s(4) }}>
+              <View style={[styles.iconWrap, { backgroundColor: C.accent + "18" }]}>
+                <Ionicons name="mail-outline" size={s(18)} color={C.accent} />
+              </View>
+              <Text style={[styles.modalTitle, { color: C.text }]}>Change email</Text>
+            </View>
+            <Text style={[styles.modalSub, { color: C.muted }]}>
+              Enter your new email address and current password to confirm.
+            </Text>
+
+            <TextInput
+              style={[styles.modalInput, { color: C.text, borderColor: C.line, backgroundColor: C.card2 }]}
+              placeholder="New email address"
+              placeholderTextColor={C.muted}
+              value={changeEmailNew}
+              onChangeText={setChangeEmailNew}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!changingEmail}
+            />
+            <TextInput
+              style={[styles.modalInput, { color: C.text, borderColor: C.line, backgroundColor: C.card2, marginTop: s(10) }]}
+              placeholder="Current password"
+              placeholderTextColor={C.muted}
+              value={changeEmailPassword}
+              onChangeText={setChangeEmailPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!changingEmail}
+            />
+
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setChangeEmailModal(false)}
+                disabled={changingEmail}
+                style={[styles.modalCancelBtn, { borderColor: C.line }]}
+              >
+                <Text style={[styles.modalBtnText, { color: C.muted }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleChangeEmail}
+                disabled={changingEmail}
+                style={[styles.modalPrimaryBtn, { backgroundColor: C.accent }]}
+              >
+                {changingEmail
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={[styles.modalBtnText, { color: "#fff" }]}>Update email</Text>
+                }
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>

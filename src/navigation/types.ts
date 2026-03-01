@@ -15,6 +15,9 @@ export type RootStackParamList = {
   Q4QuoteScreen: { setup?: SetupPayload } | undefined;
   Q5TargetScreen: { setup?: SetupPayload } | undefined;
 
+  // Email verification gate
+  VerifyEmail: { afterVerifyRoute?: keyof RootStackParamList } | undefined;
+
   // Main app
   MainTabs: { setup?: SetupPayload } | undefined;
   FocusZoneScreen: undefined;

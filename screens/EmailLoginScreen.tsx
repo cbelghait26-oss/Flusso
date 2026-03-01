@@ -15,6 +15,7 @@ import { s } from "react-native-size-matters";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../src/services/firebase";
 import { setCurrentUser } from "../src/data/storage";
+import { sendVerificationEmail } from "../src/services/emailVerification";
 
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../src/navigation/types";
@@ -59,11 +60,18 @@ export default function EmailLoginScreen({ navigation, route }: Props) {
       if (isSignUp) {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         await setCurrentUser(userCredential.user.uid);
-        navigation.navigate("Q1NameScreen", { setup: {} });
+        // Send verification email and gate the user until they verify.
+        try { await sendVerificationEmail(userCredential.user); } catch {}
+        navigation.navigate("VerifyEmail", { afterVerifyRoute: "Q1NameScreen" });
       } else {
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         await setCurrentUser(userCredential.user.uid);
-        navigation.navigate("MainTabs", { setup: {} });
+        // If the email is not yet verified, send to the verification gate.
+        if (!userCredential.user.emailVerified) {
+          navigation.navigate("VerifyEmail", { afterVerifyRoute: "MainTabs" });
+        } else {
+          navigation.navigate("MainTabs", { setup: {} });
+        }
       }
     } catch (error: any) {
       if (error.code === "auth/email-already-in-use") {

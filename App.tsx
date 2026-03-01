@@ -24,6 +24,7 @@ console.log("------------------------------------------------");
 import SignInScreen from "./screens/SignInScreen";
 import EmailLoginScreen from "./screens/EmailLoginScreen";
 import ForgotPasswordScreen from "./screens/ForgotPasswordScreen";
+import VerifyEmailScreen from "./screens/VerifyEmailScreen";
 import Q1NameScreen from "./screens/SetupScreens/Q1NameScreen";
 import Q2OrganizeScreen from "./screens/SetupScreens/Q2OrganizeScreen";
 import Q4QuoteScreen from "./screens/SetupScreens/Q4QuoteScreen";
@@ -58,6 +59,7 @@ function AppInner({ initialRoute }: { initialRoute: keyof RootStackParamList }) 
             <Stack.Screen name="Q4QuoteScreen" component={Q4QuoteScreen} />
             <Stack.Screen name="Q3FocusScreen" component={Q3FocusScreen} />
             <Stack.Screen name="Q5TargetScreen" component={Q5TargetScreen} />
+            <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
             <Stack.Screen name="FocusZoneScreen" component={FocusZoneScreen} />
             <Stack.Screen name="MainTabs" component={AppTabs} />
             <Stack.Screen name="Search" component={SearchScreen} />
@@ -92,6 +94,11 @@ export default function App() {
 
         if (savedUserId && firebaseUser && firebaseUser.uid === savedUserId) {
           console.log("App: Valid session found, checking setup completion...");
+          await firebaseUser.reload();
+          if (!firebaseUser.emailVerified) {
+            setInitialRoute("VerifyEmail");
+            return;
+          }
           const setupComplete = await loadSetupComplete();
           console.log("App: Setup complete:", setupComplete);
           setInitialRoute(setupComplete ? "MainTabs" : "Q1NameScreen");
@@ -99,6 +106,11 @@ export default function App() {
           console.log("App: Syncing Firebase user to storage and loading cloud data...");
           await setCurrentUser(firebaseUser.uid);
           console.log("App: Cloud sync complete");
+          await firebaseUser.reload();
+          if (!firebaseUser.emailVerified) {
+            setInitialRoute("VerifyEmail");
+            return;
+          }
           const setupComplete = await loadSetupComplete();
           console.log("App: Setup complete:", setupComplete);
           setInitialRoute(setupComplete ? "MainTabs" : "Q1NameScreen");
