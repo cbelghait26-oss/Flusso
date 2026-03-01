@@ -7,6 +7,7 @@ export type SetupPayload = {
 export type RootStackParamList = {
   SignIn: undefined;
   EmailLogin: { isSignUp?: boolean };
+  ForgotPassword: undefined;
 
   Q1NameScreen: { setup?: SetupPayload } | undefined;
   Q2OrganizeScreen: { setup?: SetupPayload } | undefined;

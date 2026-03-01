@@ -23,6 +23,7 @@ console.log("------------------------------------------------");
 
 import SignInScreen from "./screens/SignInScreen";
 import EmailLoginScreen from "./screens/EmailLoginScreen";
+import ForgotPasswordScreen from "./screens/ForgotPasswordScreen";
 import Q1NameScreen from "./screens/SetupScreens/Q1NameScreen";
 import Q2OrganizeScreen from "./screens/SetupScreens/Q2OrganizeScreen";
 import Q4QuoteScreen from "./screens/SetupScreens/Q4QuoteScreen";
@@ -51,6 +52,7 @@ function AppInner({ initialRoute }: { initialRoute: keyof RootStackParamList }) 
           >
             <Stack.Screen name="SignIn" component={SignInScreen} />
             <Stack.Screen name="EmailLogin" component={EmailLoginScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
             <Stack.Screen name="Q1NameScreen" component={Q1NameScreen} />
             <Stack.Screen name="Q2OrganizeScreen" component={Q2OrganizeScreen} />
             <Stack.Screen name="Q4QuoteScreen" component={Q4QuoteScreen} />

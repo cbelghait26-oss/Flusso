@@ -103,11 +103,12 @@ const pb = StyleSheet.create({
 
 interface Props {
   onTrackChange?: (track: TrackInfo | null) => void;
+  isLandscape?: boolean;
 }
 
 const POLL_INTERVAL_MS = 3000; // poll every 3 seconds
 
-export function SpotifyMiniPlayer({ onTrackChange }: Props) {
+export function SpotifyMiniPlayer({ onTrackChange, isLandscape = false }: Props) {
   const [track,    setTrack]    = useState<TrackInfo | null>(null);
   const [expanded, setExpanded] = useState(false);
   const expandAnim = useRef(new Animated.Value(0)).current;
@@ -163,7 +164,10 @@ export function SpotifyMiniPlayer({ onTrackChange }: Props) {
     }).start();
   }, [expanded]);
 
-  const controlsH   = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, s(130)] });
+  const controlsH   = expandAnim.interpolate({ 
+    inputRange: [0, 1], 
+    outputRange: [0, isLandscape ? s(60) : s(130)] 
+  });
   const ctrlOpacity = expandAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 0, 1] });
   const chevron     = expandAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] });
 
@@ -224,13 +228,15 @@ export function SpotifyMiniPlayer({ onTrackChange }: Props) {
         style={[{ overflow: "hidden" }, { height: controlsH, opacity: ctrlOpacity }]}
         pointerEvents={expanded ? "auto" : "none"}
       >
-        <ProgressBar
-          positionMs={track?.positionMs ?? 0}
-          durationMs={track?.durationMs ?? 0}
-          isPaused={track?.isPaused ?? true}
-        />
+        {!isLandscape && (
+          <ProgressBar
+            positionMs={track?.positionMs ?? 0}
+            durationMs={track?.durationMs ?? 0}
+            isPaused={track?.isPaused ?? true}
+          />
+        )}
 
-        <View style={styles.ctrlRow}>
+        <View style={[styles.ctrlRow, isLandscape && { paddingTop: s(12) }]}>
           <Pressable onPress={prev}   style={({ pressed }) => [styles.ctrlBtn,     { opacity: pressed ? 0.6 : 1 }]}>
             <Ionicons name="play-skip-back"    size={s(18)} color="#fff" />
           </Pressable>
@@ -240,12 +246,14 @@ export function SpotifyMiniPlayer({ onTrackChange }: Props) {
           <Pressable onPress={next}   style={({ pressed }) => [styles.ctrlBtn,     { opacity: pressed ? 0.6 : 1 }]}>
             <Ionicons name="play-skip-forward" size={s(18)} color="#fff" />
           </Pressable>
-          <Pressable
-            onPress={openSpotify}
-            style={({ pressed }) => [styles.ctrlBtn, { opacity: pressed ? 0.6 : 1, borderColor: "rgba(29,185,84,0.4)" }]}
-          >
-            <Ionicons name="open-outline" size={s(16)} color="#1DB954" />
-          </Pressable>
+          {!isLandscape && (
+            <Pressable
+              onPress={openSpotify}
+              style={({ pressed }) => [styles.ctrlBtn, { opacity: pressed ? 0.6 : 1, borderColor: "rgba(29,185,84,0.4)" }]}
+            >
+              <Ionicons name="open-outline" size={s(16)} color="#1DB954" />
+            </Pressable>
+          )}
         </View>
       </Animated.View>
     </Pressable>

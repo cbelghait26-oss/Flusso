@@ -2,11 +2,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  FlatList,
   InteractionManager,
   LayoutAnimation,
   Platform,
   Pressable,
-  SectionList,
   StyleSheet,
   Text,
   UIManager,
@@ -221,6 +221,11 @@ export default function CalendarScreenV2() {
   const onSelectDay = (k: YMD) => {
     setSelected(k);
     setAnchorMonth(startOfMonth(parseYMD(k)));
+    const idx = dayKeys.findIndex((d) => d === k);
+    if (idx >= 0) {
+      scrollMainToIndex(idx);
+      scrollStripToIndex(idx);
+    }
   };
 
   const saveEvent = async (evOrEvents: any | any[]) => {
@@ -299,37 +304,50 @@ export default function CalendarScreenV2() {
     await reload();
   };
 
-  // Agenda window: starts from TODAY, extends 2 months forward
+  // Agenda window: 3 months back → 6 months forward.
+  // FlatList (one item = one day) + initialScrollIndex lands exactly on today,
+  // and the user can freely scroll past or future.
   const todayKey = useMemo(() => ymd(new Date()), []);
-  const dayKeysAll = useMemo(() => {
+  const dayKeys = useMemo(() => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    const end = addMonths(now, 2);
-    return buildDayKeysBetweenInclusive(now, end);
+    const start = addMonths(now, -3);
+    const end = addMonths(now, 6);
+    return buildDayKeysBetweenInclusive(start, end);
   }, []);
 
-  const sections = useMemo(() => {
-    return dayKeysAll.map((k) => ({ key: k, title: fmtDayHeader(parseYMD(k)), data: [k] }));
-  }, [dayKeysAll]);
+  const listRef = useRef<FlatList<YMD>>(null);
+  const weekStripRef = useRef<FlatList<YMD>>(null);
 
-  const listRef = useRef<SectionList<any>>(null);
+  // Measured row height: header (s38) + body with 1 item (s68) ≈ s(106).
+  // The ListHeaderComponent (s8) must also be added to every item's offset.
+  const DAY_ROW_H = s(97);
+  const LIST_HEADER_H = s(8);
 
   const todayIndex = useMemo(() => {
-    const idx = sections.findIndex((s) => s.key === todayKey);
+    const idx = dayKeys.findIndex((k) => k === todayKey);
     return idx >= 0 ? idx : 0;
-  }, [sections, todayKey]);
+  }, [dayKeys, todayKey]);
 
-  const scrollToToday = (animated = true) => {
+  // Scroll the main agenda list to a given index.
+  const scrollMainToIndex = (index: number, animated = true) => {
     InteractionManager.runAfterInteractions(() => {
       try {
-        listRef.current?.scrollToLocation({
-          sectionIndex: todayIndex,
-          itemIndex: 0,
-          viewPosition: 0,
-          animated,
-        });
+        listRef.current?.scrollToIndex({ index, viewPosition: 0, animated });
       } catch {}
     });
+  };
+
+  // Scroll the horizontal day strip to a given index, centering it.
+  const scrollStripToIndex = (index: number, animated = true) => {
+    try {
+      weekStripRef.current?.scrollToIndex({ index, viewPosition: 0.5, animated });
+    } catch {}
+  };
+
+  const scrollToToday = (animated = true) => {
+    scrollMainToIndex(todayIndex, animated);
+    scrollStripToIndex(todayIndex, animated);
   };
 
   const onToday = () => {
@@ -351,17 +369,18 @@ export default function CalendarScreenV2() {
     setExpandedDays((prev) => ({ ...prev, [k]: !prev[k] }));
   };
 
+  // Combined FlatList renderItem: header + body in one cell
+  const renderDayItem = ({ item: k }: { item: YMD }) => (
+    <View>
+      {renderDayHeader({ key: k, title: fmtDayHeader(parseYMD(k)) })}
+      {renderDayBody(k)}
+    </View>
+  );
+
   // ====== Week/Month header strip ======
   const WeekStrip = useMemo(() => {
-    const sel = parseYMD(selected);
-    const weekStart = startOfWeekMonday(sel);
-
-    const days = Array.from({ length: 7 }).map((_, i) => {
-      const d = addDays(weekStart, i);
-      const k = ymd(d);
-      const count = getDayItemsFrom(itemsByDay, k).length;
-      return { d, k, count };
-    });
+    // slot width: 7 items fill the strip exactly, same visual density as before
+    const slotW = Math.floor((width - s(24)) / 7);
 
     return (
       <View style={[styles.weekWrap, { borderBottomColor: theme.colors.border }]}>
@@ -393,15 +412,28 @@ export default function CalendarScreenV2() {
         </View>
 
         {calView === "week" ? (
-          <View style={styles.weekRow}>
-            {days.map(({ d, k, count }) => {
+          <FlatList
+            ref={weekStripRef}
+            horizontal
+            data={dayKeys}
+            keyExtractor={(item) => item}
+            showsHorizontalScrollIndicator={false}
+            initialScrollIndex={todayIndex}
+            getItemLayout={(_, index) => ({
+              length: slotW,
+              offset: slotW * index,
+              index,
+            })}
+            renderItem={({ item: k }) => {
+              const d = parseYMD(k);
+              const count = getDayItemsFrom(itemsByDay, k).length;
               const isSel = k === selected;
               return (
                 <Pressable
-                  key={k}
                   onPress={() => onSelectDay(k)}
                   style={[
                     styles.weekDay,
+                    { width: slotW },
                     isSel && { backgroundColor: theme.colors.card, borderColor: theme.colors.accent },
                     !isSel && { borderColor: theme.colors.border },
                   ]}
@@ -412,7 +444,6 @@ export default function CalendarScreenV2() {
                   <Text style={[styles.weekName, { color: theme.colors.muted ?? theme.colors.text }]}>
                     {fmtWeekdayShort(d)}
                   </Text>
-
                   <View style={styles.weekIndicatorRow}>
                     {count > 0 ? (
                       <>
@@ -429,8 +460,9 @@ export default function CalendarScreenV2() {
                   </View>
                 </Pressable>
               );
-            })}
-          </View>
+            }}
+            onScrollToIndexFailed={() => {}}
+          />
         ) : (
           <View style={{ paddingTop: s(8) }}>
             <MonthStrip
@@ -447,7 +479,7 @@ export default function CalendarScreenV2() {
       </View>
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theme, calView, selected, anchorMonth, monthCollapsed, itemsByDay, loading]);
+  }, [theme, calView, selected, anchorMonth, monthCollapsed, itemsByDay, loading, dayKeys, todayIndex, width]);
 
   // ====== Day renderers ======
   const renderDayHeader = (section: any) => {
@@ -610,22 +642,31 @@ export default function CalendarScreenV2() {
 
       {WeekStrip}
 
-      <SectionList
-        ref={listRef as any}
-        sections={sections as any}
-        keyExtractor={(item, index) => `${item}:${index}`}
-        stickySectionHeadersEnabled
+      <FlatList
+        ref={listRef}
+        data={dayKeys}
+        keyExtractor={(item) => item}
+        renderItem={renderDayItem}
+        getItemLayout={(_, index) => ({
+          length: DAY_ROW_H,
+          offset: LIST_HEADER_H + DAY_ROW_H * index,
+          index,
+        })}
+        initialScrollIndex={todayIndex}
         showsVerticalScrollIndicator={false}
-        renderSectionHeader={({ section }) => renderDayHeader(section)}
-        renderItem={({ item }) => renderDayBody(item as YMD)}
         contentContainerStyle={{ paddingBottom: s(140) + insets.bottom }}
-        ListHeaderComponent={<View style={{ height: s(8) }} />}
-        onScrollToIndexFailed={() => scrollToToday(false)}
+        ListHeaderComponent={<View style={{ height: LIST_HEADER_H }} />}
+        onScrollToIndexFailed={(info) => {
+          // Fallback: scroll to the closest safe index, then retry to today
+          const safeIndex = Math.min(info.index, info.highestMeasuredFrameIndex ?? 0);
+          listRef.current?.scrollToIndex({ index: safeIndex, animated: false });
+          setTimeout(() => scrollToToday(false), 300);
+        }}
         removeClippedSubviews
-        windowSize={10}
-        maxToRenderPerBatch={12}
-        initialNumToRender={12}
-        updateCellsBatchingPeriod={16}
+        windowSize={5}
+        maxToRenderPerBatch={8}
+        initialNumToRender={15}
+        updateCellsBatchingPeriod={50}
       />
 
       {/* FAB */}
@@ -738,7 +779,7 @@ const styles = StyleSheet.create({
     gap: s(8),
   },
   weekDay: {
-    flex: 1,
+    // width is set inline per item so the strip scrolls correctly
     borderWidth: 1,
     borderRadius: s(14),
     paddingVertical: s(10),

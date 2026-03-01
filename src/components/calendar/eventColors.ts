@@ -33,6 +33,8 @@ export function eventColor(theme: any, key: EventColorKey | undefined) {
       return EVENT_COLORS.purple;
     case "gray":
       return EVENT_COLORS.gray;
+    case "pink":
+      return EVENT_COLORS.pink;
     case "birthday":
       return EVENT_COLORS.birthday;
     case "blue":

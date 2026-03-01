@@ -1,5 +1,5 @@
 // screens/FocusZoneScreen.tsx updated
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   AppState,
@@ -24,6 +24,7 @@ import { s } from "react-native-size-matters";
 import { useGlobalMusic } from "../src/services/GlobalMusicPlayer";
 import { SpotifyMiniPlayer, type TrackInfo } from "../src/components/SpotifyMiniPlayer";
 import { useSpotifyRemote } from "../src/hooks/useSpotifyRemote";
+import { useFocusEffect } from "@react-navigation/native";
 
 import {
   loadTasks,
@@ -137,6 +138,14 @@ export default function FocusZoneScreen({ navigation }: any) {
   const [, forceClockTick] = useState(0);
 
   /* ── LOAD ──────────────────────────────────────────────────────────────── */
+  // Reload the time-format preference every time the screen comes into focus
+  // so that a change made in Settings is reflected immediately.
+  useFocusEffect(
+    useCallback(() => {
+      loadTimeFormat24h().then(setTimeFormat24h);
+    }, [])
+  );
+
   useEffect(() => {
     (async () => {
       const userId = await getCurrentUser();
@@ -446,8 +455,11 @@ export default function FocusZoneScreen({ navigation }: any) {
   const uiOpacity    = immAnim.interpolate({ inputRange: [0,1], outputRange: [1, 0] });
   const uiTranslateY = immAnim.interpolate({ inputRange: [0,1], outputRange: [0, -s(12)] });
 
-  const normalFontL    = timerMode === "timer" ? s(58) : s(76);
-  const immersiveFontL = height * 0.62;
+  // Stopwatch (H:MM:SS) is 7 chars vs 5 for countdown (MM:SS) or clock (HH:MM),
+  // so it needs a proportionally smaller font in landscape to avoid overflow.
+  const isStopwatchDisplay = timerMode === "timer" && timerView !== "clock";
+  const normalFontL    = isStopwatchDisplay ? s(56) : s(76);
+  const immersiveFontL = isStopwatchDisplay ? height * 0.44 : height * 0.62;
   const timerFontSizeL = immAnim.interpolate({ inputRange: [0,1], outputRange: [normalFontL, immersiveFontL] });
   const timerSpacingL  = immAnim.interpolate({ inputRange: [0,1], outputRange: [-1, -4] });
 
@@ -532,64 +544,69 @@ export default function FocusZoneScreen({ navigation }: any) {
 
               {/* Right: Controls panel */}
               <Animated.View style={[ls.controlsCol, { opacity: uiOpacity }]} pointerEvents={immersive ? "none" : "auto"}>
-                <View style={ls.topRow}>
-                  <Pressable onPress={attemptLeave} style={({ pressed }) => [styles.pill,{opacity:pressed?0.85:1}]}>
-                    <Entypo name="chevron-left" size={s(13)} color="#fff"/>
-                    <Text style={styles.pillText}>Leave</Text>
-                  </Pressable>
-                  <Pressable onPress={() => setShowSettings(true)} style={({ pressed }) => [styles.pill,{opacity:pressed?0.85:1}]}>
-                    <Ionicons name="options-outline" size={s(15)} color="#fff"/>
-                    <Text style={styles.pillText}>Settings</Text>
-                  </Pressable>
-                </View>
-
-                <Pressable
-                  onPress={spotify.connected ? spotify.disconnect : spotify.connect}
-                  disabled={spotify.connecting}
-                  style={({ pressed }) => [styles.pill, ls.spotifyPill, {
-                    opacity: pressed || spotify.connecting ? 0.65 : 1,
-                    backgroundColor: spotify.connected ? "rgba(29,185,84,0.22)" : "rgba(255,255,255,0.10)",
-                    borderColor: spotify.connected ? "rgba(29,185,84,0.35)" : "rgba(255,255,255,0.14)",
-                  }]}
+                <ScrollView 
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ gap: s(10), paddingBottom: s(14) }}
                 >
-                  <Entypo name="spotify" size={s(14)} color={spotify.connected ? "#1DB954" : "#fff"}/>
-                  <Text style={[styles.pillText, spotify.connected && { color:"#76eea0" }]}>
-                    {spotify.connecting ? "Connecting…" : spotify.connected ? "Spotify On" : "Spotify"}
-                  </Text>
-                </Pressable>
+                  <View style={ls.topRow}>
+                    <Pressable onPress={attemptLeave} style={({ pressed }) => [styles.pill,{opacity:pressed?0.85:1}]}>
+                      <Entypo name="chevron-left" size={s(13)} color="#fff"/>
+                      <Text style={styles.pillText}>Leave</Text>
+                    </Pressable>
+                    <Pressable onPress={() => setShowSettings(true)} style={({ pressed }) => [styles.pill,{opacity:pressed?0.85:1}]}>
+                      <Ionicons name="options-outline" size={s(15)} color="#fff"/>
+                      <Text style={styles.pillText}>Settings</Text>
+                    </Pressable>
+                  </View>
 
-                {spotify.connected && <SpotifyMiniPlayer onTrackChange={setCurrentTrack}/>}
+                  <Pressable
+                    onPress={spotify.connected ? spotify.disconnect : spotify.connect}
+                    disabled={spotify.connecting}
+                    style={({ pressed }) => [styles.pill, ls.spotifyPill, {
+                      opacity: pressed || spotify.connecting ? 0.65 : 1,
+                      backgroundColor: spotify.connected ? "rgba(29,185,84,0.22)" : "rgba(255,255,255,0.10)",
+                      borderColor: spotify.connected ? "rgba(29,185,84,0.35)" : "rgba(255,255,255,0.14)",
+                    }]}
+                  >
+                    <Entypo name="spotify" size={s(14)} color={spotify.connected ? "#1DB954" : "#fff"}/>
+                    <Text style={[styles.pillText, spotify.connected && { color:"#76eea0" }]}>
+                      {spotify.connecting ? "Connecting…" : spotify.connected ? "Spotify On" : "Spotify"}
+                    </Text>
+                  </Pressable>
 
-                <Text style={styles.phaseLabel}>{mainLabel.toUpperCase()}</Text>
+                  {spotify.connected && <SpotifyMiniPlayer onTrackChange={setCurrentTrack} isLandscape={true}/>}
 
-                <View style={ls.bottomRow}>
-                  <AnimToggle
-                    value={!isMuted}
-                    onChange={toggleMute}
-                    disabled={musicLoading}
-                    labelOn="Music"
-                    labelOff="Music"
-                    iconOn="musical-notes"
-                    iconOff="volume-mute"
-                  />
-                  <AnimToggle
-                    value={timerView !== "hidden"}
-                    onChange={toggleVisibility}
-                    labelOn="Visible"
-                    labelOff="Hidden"
-                    iconOn="eye"
-                    iconOff="eye-off"
-                  />
-                  <AnimToggle
-                    value={timerView === "clock"}
-                    onChange={toggleClockMode}
-                    disabled={false}
-                    labelOn="Clock"
-                    labelOff="Timer"
-                    iconOn="time-outline"
-                    iconOff="stopwatch-outline"
-                  />
-                </View>
+                  <Text style={styles.phaseLabel}>{mainLabel.toUpperCase()}</Text>
+
+                  <View style={ls.bottomRow}>
+                    <AnimToggle
+                      value={!isMuted}
+                      onChange={toggleMute}
+                      disabled={musicLoading}
+                      labelOn="Music"
+                      labelOff="Music"
+                      iconOn="musical-notes"
+                      iconOff="volume-mute"
+                    />
+                    <AnimToggle
+                      value={timerView !== "hidden"}
+                      onChange={toggleVisibility}
+                      labelOn="Visible"
+                      labelOff="Hidden"
+                      iconOn="eye"
+                      iconOff="eye-off"
+                    />
+                    <AnimToggle
+                      value={timerView === "clock"}
+                      onChange={toggleClockMode}
+                      disabled={false}
+                      labelOn="Clock"
+                      labelOff="Timer"
+                      iconOn="time-outline"
+                      iconOff="stopwatch-outline"
+                    />
+                  </View>
+                </ScrollView>
               </Animated.View>
 
               {/* Immersive toggle — LANDSCAPE ONLY, always visible */}
@@ -601,18 +618,10 @@ export default function FocusZoneScreen({ navigation }: any) {
                 />
               </Pressable>
 
-              {/* Album art in immersive */}
-              {immersive && (
-                <Animated.View style={[styles.immersiveArt, { opacity: artAnim }]}>
-                  {currentTrack?.albumArtUrl ? (
-                    <Image source={{ uri: currentTrack.albumArtUrl }} style={styles.immersiveArtImg}/>
-                  ) : null}
-                  {currentTrack?.name ? (
-                    <View style={styles.immersiveTrackInfo}>
-                      <Text style={styles.immersiveTrackName} numberOfLines={1}>{currentTrack.name}</Text>
-                      <Text style={styles.immersiveArtistName} numberOfLines={1}>{currentTrack.artist}</Text>
-                    </View>
-                  ) : null}
+              {/* Mini player in immersive mode - top right */}
+              {immersive && spotify.connected && (
+                <Animated.View style={[ls.immersiveMiniPlayer, { opacity: artAnim }]}>
+                  <SpotifyMiniPlayer onTrackChange={setCurrentTrack} isLandscape={true}/>
                 </Animated.View>
               )}
             </View>
@@ -1189,8 +1198,6 @@ const ls = StyleSheet.create({
     width: s(200),
     paddingVertical: s(14),
     paddingHorizontal: s(14),
-    justifyContent: "flex-start",
-    gap: s(10),
     borderLeftWidth: s(1),
     borderLeftColor: "rgba(255,255,255,0.08)",
     backgroundColor: "rgba(0, 0, 0, 0.46)",
@@ -1211,6 +1218,13 @@ const ls = StyleSheet.create({
     position: "absolute",
     bottom: s(12),
     left: s(12), // bottom-left of timer column in landscape
+  },
+  immersiveMiniPlayer: {
+    position: "absolute",
+    top: s(20),
+    right: s(20),
+    maxWidth: s(280),
+    zIndex: 30,
   },
 });
 

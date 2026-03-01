@@ -33,7 +33,6 @@ const COLORS: { key: EventColorKey; label: string }[] = [
   { key: "red", label: "Red" },
   { key: "purple", label: "Purple" },
   { key: "gray", label: "Gray" },
-  { key: "birthday", label: "Birthday" },
   { key: "pink", label: "Pink" },
 ];
 

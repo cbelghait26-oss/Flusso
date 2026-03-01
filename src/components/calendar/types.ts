@@ -12,6 +12,7 @@ export type EventColorKey =
   | "red"
   | "purple"
   | "gray"
+  | "pink"
   | "birthday";
 
 export type LocalEvent = {

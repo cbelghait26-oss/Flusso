@@ -200,7 +200,7 @@ export default function EmailLoginScreen({ navigation, route }: Props) {
 
           {!isSignUp && (
             <Pressable
-              onPress={() => {}}
+              onPress={() => navigation.navigate("ForgotPassword")}
               style={styles.forgotPassword}
             >
               <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
