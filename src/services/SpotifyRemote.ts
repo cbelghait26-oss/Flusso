@@ -1,17 +1,14 @@
 // src/services/SpotifyRemote.ts
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 import { remote } from "react-native-spotify-remote";
 import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
 import * as Crypto from "expo-crypto";
 
-// ─── Config ───────────────────────────────────────────────────────────────────
-
 const CLIENT_ID =
   (Constants.expoConfig?.extra as any)?.spotifyClientId ??
   "f95c8effcc63427e8b98c6a92a9d0c17";
 
-// ⚠️ Keep client secret server-side in production.
 const CLIENT_SECRET = "3aef3477d95f4aa49e65368370eb9db7";
 
 export const REDIRECT_URI = "flusso://spotify-auth/";
@@ -25,24 +22,23 @@ const SCOPES = [
 const AUTH_ENDPOINT  = "https://accounts.spotify.com/authorize";
 const TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
 
-// ─── State ────────────────────────────────────────────────────────────────────
-
 let _isConnected  = false;
-let _accessToken:   string | null = null;
-let _refreshToken:  string | null = null;
-let _tokenExpiry:   number = 0; // epoch ms when current token expires
+let _accessToken:  string | null = null;
+let _refreshToken: string | null = null;
+let _tokenExpiry:  number        = 0;
 
 export function getAccessToken(): string | null {
-  // Return token if still valid (with 60s buffer)
   if (_accessToken && Date.now() < _tokenExpiry - 60_000) return _accessToken;
-  return null; // caller should trigger refresh
+  return null;
 }
 
 export function getAccessTokenRaw(): string | null {
   return _accessToken;
 }
 
-// ─── PKCE helpers ─────────────────────────────────────────────────────────────
+export function hasStoredCredentials(): boolean {
+  return !!_accessToken;
+}
 
 function base64urlEncode(input: Uint8Array): string {
   const b64 = btoa(String.fromCharCode(...Array.from(input)));
@@ -62,9 +58,10 @@ async function generateCodeChallenge(verifier: string): Promise<string> {
   return digest.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
-// ─── Token exchange ───────────────────────────────────────────────────────────
-
-async function exchangeCodeForToken(code: string, codeVerifier: string): Promise<{ access_token: string; refresh_token?: string; expires_in: number }> {
+async function exchangeCodeForToken(
+  code: string,
+  codeVerifier: string,
+): Promise<{ access_token: string; refresh_token?: string; expires_in: number }> {
   const body = new URLSearchParams({
     grant_type:    "authorization_code",
     code,
@@ -82,25 +79,14 @@ async function exchangeCodeForToken(code: string, codeVerifier: string): Promise
     body: body.toString(),
   });
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Token exchange failed (${res.status}): ${err}`);
-  }
-
+  if (!res.ok) throw new Error(`Token exchange failed (${res.status}): ${await res.text()}`);
   const json = await res.json();
   if (!json.access_token) throw new Error("No access_token in token response");
   return json;
 }
 
-// ─── Token refresh ────────────────────────────────────────────────────────────
-// Spotify access tokens expire after 1 hour. This function uses the refresh
-// token to get a new one without re-showing the OAuth browser.
-
 export async function refreshAccessToken(): Promise<string | null> {
-  if (!_refreshToken) {
-    console.log("🎵 No refresh token stored — need to re-auth");
-    return null;
-  }
+  if (!_refreshToken) return null;
   try {
     const body = new URLSearchParams({
       grant_type:    "refresh_token",
@@ -115,23 +101,16 @@ export async function refreshAccessToken(): Promise<string | null> {
       },
       body: body.toString(),
     });
-    if (!res.ok) {
-      console.log("🎵 Token refresh failed:", res.status, await res.text());
-      return null;
-    }
+    if (!res.ok) return null;
     const json = await res.json();
     _accessToken  = json.access_token;
     _tokenExpiry  = Date.now() + json.expires_in * 1000;
     if (json.refresh_token) _refreshToken = json.refresh_token;
-    console.log("🎵 Token refreshed successfully");
+    console.log("🎵 Token refreshed");
     return _accessToken;
-  } catch (e) {
-    console.log("🎵 Token refresh error:", e);
-    return null;
-  }
+  } catch { return null; }
 }
 
-// Get a valid access token, refreshing if expired
 export async function getValidAccessToken(): Promise<string | null> {
   const token = getAccessToken();
   if (token) return token;
@@ -139,7 +118,40 @@ export async function getValidAccessToken(): Promise<string | null> {
   return null;
 }
 
-// ─── Main connect flow ────────────────────────────────────────────────────────
+const MAX_RETRIES    = 3;
+const RETRY_DELAY_MS = 700;
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function connectWithRetry(token: string): Promise<void> {
+  let lastError: any;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`🎵 connect attempt ${attempt}/${MAX_RETRIES}`);
+
+      if (attempt === 1) {
+        try {
+          await Linking.openURL("spotify://");
+          await sleep(RETRY_DELAY_MS);
+        } catch {}
+      } else {
+        await sleep(RETRY_DELAY_MS * attempt);
+      }
+
+      await remote.connect(token);
+      console.log("✅ Spotify App Remote connected!");
+      return;
+    } catch (e: any) {
+      lastError = e;
+      console.log(`🎵 attempt ${attempt} failed:`, e?.message ?? e);
+    }
+  }
+
+  throw lastError;
+}
 
 export async function spotifyConnectFull(): Promise<void> {
   if (!CLIENT_ID) throw new Error("Missing Spotify client ID");
@@ -185,16 +197,14 @@ export async function spotifyConnectFull(): Promise<void> {
   _tokenExpiry  = Date.now() + tokenData.expires_in * 1000;
   _refreshToken = tokenData.refresh_token ?? null;
 
-  console.log("🎵 Got access token. Expires in:", tokenData.expires_in, "s. Has refresh:", !!_refreshToken);
+  console.log(`🎵 Token OK. Expires in ${tokenData.expires_in}s. Has refresh: ${!!_refreshToken}`);
 
-  await remote.connect(_accessToken);
+  await connectWithRetry(_accessToken);
   _isConnected = true;
-
-  console.log("✅ Spotify App Remote connected!");
 }
 
 export async function spotifyConnect(accessToken: string): Promise<void> {
-  await remote.connect(accessToken);
+  await connectWithRetry(accessToken);
   _isConnected = true;
 }
 
@@ -206,7 +216,6 @@ export function spotifyRemote() {
 export async function spotifyDisconnect(): Promise<void> {
   _isConnected = false;
   try { await remote.disconnect(); } catch {}
-  // Keep tokens so we can reconnect without re-auth
 }
 
 export async function spotifyIsConnected(): Promise<boolean> {
@@ -220,26 +229,16 @@ export async function spotifyIsConnected(): Promise<boolean> {
   }
 }
 
-// Re-connect App Remote using stored token (no OAuth browser shown)
 export async function spotifyReconnect(): Promise<boolean> {
   const token = await getValidAccessToken();
   if (!token) return false;
   try {
-    await remote.connect(token);
+    await connectWithRetry(token);
     _isConnected = true;
-    console.log("🎵 Reconnected App Remote with stored token");
     return true;
   } catch (e) {
-    console.log("🎵 Reconnect failed:", e);
+    console.log("🎵 Silent reconnect failed (Spotify probably not playing):", e);
     _isConnected = false;
     return false;
   }
-}
-
-export function isSpotifyInstalledHint(): boolean {
-  return Platform.OS === "ios" || Platform.OS === "android";
-}
-
-export function hasStoredCredentials(): boolean {
-  return !!_accessToken;
 }
