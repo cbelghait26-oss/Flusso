@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  AppState,
   Image,
   Platform,
   Pressable,
@@ -35,7 +36,17 @@ import {
   loadBreakMinutes,
   saveBreakMinutes,
   getCurrentUser,
+  loadSetupData,
+  loadTimeFormat24h,
 } from "../src/data/storage";
+import {
+  generateFocusSessionId,
+  onFocusWorkPhaseStarted,
+  onFocusSessionCompleted,
+  onBreakCompleted,
+  cancelFocusSessionNotifs,
+  checkAndFireDailyFocusGoal,
+} from "../src/services/notifications";
 import type { Task, Objective } from "../src/data/models";
 
 // ─── Backgrounds ─────────────────────────────────────────────────────────────
@@ -86,9 +97,12 @@ export default function FocusZoneScreen({ navigation }: any) {
   // Spotify track state
   const [currentTrack, setCurrentTrack] = useState<TrackInfo | null>(null);
 
+  // Display preferences
+  const [timeFormat24h, setTimeFormat24h] = useState(false);
+
   // Settings
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"tasks" | "timer">("tasks");
+  const [settingsTab, setSettingsTab] = useState<"tasks" | "timer">("timer");
   const [taskSortMode, setTaskSortMode] = useState<"my-day" | "planned" | "important" | "objectives">("planned");
   const [expandedObjectives, setExpandedObjectives] = useState<Record<string, boolean>>({});
   const [pomoDurExpanded, setPomoDurExpanded] = useState(false);
@@ -107,10 +121,19 @@ export default function FocusZoneScreen({ navigation }: any) {
   }, [objectives]);
 
   // Refs
-  const cueRef           = useRef<Audio.Sound | null>(null);
-  const timerRef         = useRef<ReturnType<typeof setInterval> | null>(null);
-  const transitioningRef = useRef(false);
-  const sessionStartRef  = useRef<string | null>(null);
+  const cueRef            = useRef<Audio.Sound | null>(null);
+  const timerRef              = useRef<ReturnType<typeof setInterval> | null>(null);
+  const transitioningRef      = useRef(false);
+  const sessionStartRef       = useRef<string | null>(null);
+  const focusNotifSessionRef  = useRef<string>(""); // logical key for active focus session
+  const prevTimerViewRef  = useRef<"timer" | "clock">("timer");
+  // Tracks how many elapsed seconds have already been committed to a saved session.
+  // Only the delta (elapsedSeconds - savedElapsedRef.current) is saved each time the
+  // stopwatch is paused, preventing the double-counting bug.
+  const savedElapsedRef      = useRef(0);
+  const backgroundedAtRef     = useRef<number | null>(null); // wall-clock ms when app went to background
+  const secondsLeftRef        = useRef(secondsLeft);
+  const phaseRef              = useRef(phase);
   const [, forceClockTick] = useState(0);
 
   /* ── LOAD ──────────────────────────────────────────────────────────────── */
@@ -118,9 +141,10 @@ export default function FocusZoneScreen({ navigation }: any) {
     (async () => {
       const userId = await getCurrentUser();
       if (!userId) return;
-      const [storedBg, storedFocus, storedBreak] = await Promise.all([
-        loadFocusBackground(), loadFocusMinutes(), loadBreakMinutes(),
+      const [storedBg, storedFocus, storedBreak, fmt24h] = await Promise.all([
+        loadFocusBackground(), loadFocusMinutes(), loadBreakMinutes(), loadTimeFormat24h(),
       ]);
+      setTimeFormat24h(fmt24h);
       if (storedBg) {
         const found = BACKGROUNDS.find((b) => b.id === storedBg);
         if (found) setCurrentRoom(found);
@@ -135,11 +159,49 @@ export default function FocusZoneScreen({ navigation }: any) {
     })();
   }, []);
 
+  // Keep refs in sync with state so AppState handler always reads current values.
+  useEffect(() => { secondsLeftRef.current = secondsLeft; }, [secondsLeft]);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
   /* ── CLOCK TICK ────────────────────────────────────────────────────────── */
   useEffect(() => {
     const id = setInterval(() => forceClockTick((n) => n + 1), 1000);
     return () => clearInterval(id);
   }, []);
+
+  /* ── BACKGROUND / FOREGROUND FAST-FORWARD ──────────────────────────────── */
+  // setInterval pauses when JS thread is suspended (app backgrounded). On return
+  // we compute real wall-clock delta and snap the timer forward by that amount.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "background" || nextState === "inactive") {
+        // Record the moment we left — only matters when timer is running.
+        if (isRunning) backgroundedAtRef.current = Date.now();
+      } else if (nextState === "active") {
+        const bgAt = backgroundedAtRef.current;
+        backgroundedAtRef.current = null;
+        if (!isRunning || bgAt === null) return;
+        const elapsed = Math.floor((Date.now() - bgAt) / 1000);
+        if (elapsed <= 0) return;
+        if (timerMode === "timer") {
+          setElapsedSeconds((p) => p + elapsed);
+        } else {
+          // Pomodoro — clamp at 0; the phase-transition effect will handle the flip.
+          const newSecsLeft = Math.max(0, secondsLeftRef.current - elapsed);
+          setSecondsLeft(newSecsLeft);
+          // Reschedule focus:end for the corrected remaining time so it fires
+          // at the right moment, not the original wall-clock time.
+          if (phaseRef.current === "work" && focusNotifSessionRef.current && newSecsLeft > 0) {
+            void onFocusWorkPhaseStarted(
+              Math.ceil(newSecsLeft / 60),
+              focusNotifSessionRef.current,
+            );
+          }
+        }
+      }
+    });
+    return () => sub.remove();
+  }, [isRunning, timerMode]);
 
   /* ── CUE SOUND ─────────────────────────────────────────────────────────── */
   const ensureCue = async () => {
@@ -178,12 +240,29 @@ export default function FocusZoneScreen({ navigation }: any) {
     transitioningRef.current = true;
     (async () => {
       try { await playCueTwice(); } catch {}
-      if (phase === "work" && sessionStartRef.current)
-        await saveFocusSession({ date: todayKey(), startTime: sessionStartRef.current, minutes: focusMinutes, taskId: selectedTaskId || undefined });
+      const sid = focusNotifSessionRef.current;
+      if (phase === "work" && sessionStartRef.current) {
+        const saved = await saveFocusSession({ date: todayKey(), startTime: sessionStartRef.current, minutes: focusMinutes, taskId: selectedTaskId || undefined });
+        // Notify: focus complete + schedule break notifications
+        void onFocusSessionCompleted(breakMinutes, sid);
+        // Check daily focus goal
+        try {
+          const setup = await loadSetupData();
+          const target: number = setup?.targetMinutesPerDay ?? 60;
+          const total = (saved as any[]).reduce((acc: number, s: any) =>
+            s.date === todayKey() ? acc + (s.minutes ?? 0) : acc, 0);
+          void checkAndFireDailyFocusGoal(total, target);
+        } catch {}
+      }
       const next: Phase = phase === "work" ? "break" : "work";
       if (next === "work") {
         const now = new Date();
         sessionStartRef.current = `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`;
+        // Break ended → clean up + start new focus session notifications
+        void onBreakCompleted(sid);
+        const newSid = generateFocusSessionId();
+        focusNotifSessionRef.current = newSid;
+        void onFocusWorkPhaseStarted(focusMinutes, newSid);
       }
       setPhase(next);
       setSecondsLeft((next === "work" ? focusMinutes : breakMinutes) * 60);
@@ -202,22 +281,40 @@ export default function FocusZoneScreen({ navigation }: any) {
         setIsRunning(true); return;
       }
       setIsRunning(false);
-      const mins = Math.floor(elapsedSeconds / 60);
+      // Save only the DELTA since the last save checkpoint, not the full cumulative total.
+      const deltaSeconds = elapsedSeconds - savedElapsedRef.current;
+      const mins = Math.floor(deltaSeconds / 60);
       if (mins > 0 && sessionStartRef.current)
         void saveFocusSession({ date: todayKey(), startTime: sessionStartRef.current, minutes: mins, taskId: selectedTaskId || undefined });
+      // Advance checkpoint so the next segment won't re-count these seconds.
+      savedElapsedRef.current = elapsedSeconds;
       sessionStartRef.current = null; return;
     }
     if (secondsLeft <= 0) setSecondsLeft((phase === "work" ? focusMinutes : breakMinutes) * 60);
-    if (!isRunning && phase === "work" && !sessionStartRef.current) {
-      const now = new Date();
-      sessionStartRef.current = `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`;
+    if (!isRunning) {
+      // STARTING / RESUMING the timer
+      if (phase === "work") {
+        if (!sessionStartRef.current) {
+          const now = new Date();
+          sessionStartRef.current = `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`;
+        }
+        // Generate a session ID (or reuse if resuming) and schedule focus:end
+        const sid = focusNotifSessionRef.current || generateFocusSessionId();
+        focusNotifSessionRef.current = sid;
+        void onFocusWorkPhaseStarted(Math.ceil(secondsLeft / 60) || focusMinutes, sid);
+      }
+    } else {
+      // PAUSING the timer
+      void cancelFocusSessionNotifs(focusNotifSessionRef.current);
     }
     setIsRunning((v) => !v);
   };
 
   const resetTimer = () => {
+    void cancelFocusSessionNotifs(focusNotifSessionRef.current);
+    focusNotifSessionRef.current = "";
     setIsRunning(false); sessionStartRef.current = null;
-    if (timerMode === "timer") { setElapsedSeconds(0); return; }
+    if (timerMode === "timer") { setElapsedSeconds(0); savedElapsedRef.current = 0; return; }
     setPhase("work"); setSecondsLeft(focusMinutes * 60);
   };
 
@@ -228,6 +325,21 @@ export default function FocusZoneScreen({ navigation }: any) {
       if (v === "hidden") return "clock";
       return "timer";
     });
+  };
+
+  // Landscape toggles
+  const toggleVisibility = () => {
+    if (timerView === "hidden") {
+      setTimerView(prevTimerViewRef.current);
+    } else {
+      prevTimerViewRef.current = timerView as "timer" | "clock";
+      setTimerView("hidden");
+    }
+  };
+  const toggleClockMode = () => {
+    const next: TimerView = timerView === "clock" ? "timer" : "clock";
+    setTimerView(next);
+    prevTimerViewRef.current = next;
   };
 
   const saveSettings = async () => {
@@ -265,7 +377,13 @@ export default function FocusZoneScreen({ navigation }: any) {
   /* ── FORMATTERS ─────────────────────────────────────────────────────────── */
   const getCurrentTime = () => {
     const now = new Date();
-    return `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`;
+    if (timeFormat24h) {
+      return `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+    }
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}:${m.toString().padStart(2, "0")}`;
   };
   const formatCountdown = () => `${Math.floor(secondsLeft/60)}:${String(secondsLeft%60).padStart(2,"0")}`;
   const formatStopwatch = () => {
@@ -280,8 +398,10 @@ export default function FocusZoneScreen({ navigation }: any) {
     timerMode === "timer" ? formatStopwatch() :
     formatCountdown();
 
-  // Landscape always shows countdown/stopwatch
-  const landscapeValue = timerMode === "timer" ? formatStopwatch() : formatCountdown();
+  // Landscape respects timerView (including clock mode)
+  const landscapeValue =
+    timerView === "clock" ? getCurrentTime() :
+    timerMode === "timer" ? formatStopwatch() : formatCountdown();
 
   const mainLabel =
     timerMode === "timer"
@@ -308,8 +428,11 @@ export default function FocusZoneScreen({ navigation }: any) {
   /* ── ROOM NAVIGATION ────────────────────────────────────────────────────── */
   const enterRoom  = (room: typeof BACKGROUNDS[0]) => { setCurrentRoom(room); setIsInRoom(true); };
   const leaveRoom  = () => {
+    void cancelFocusSessionNotifs(focusNotifSessionRef.current);
+    focusNotifSessionRef.current = "";
     setIsInRoom(false); setShowLeaveConfirm(false); setIsRunning(false); setPhase("work");
     setSecondsLeft(focusMinutes * 60); setElapsedSeconds(0); sessionStartRef.current = null;
+    savedElapsedRef.current = 0;
     setTimerView("timer");
     setImmersive(false); immAnim.setValue(0); artAnim.setValue(0);
   };
@@ -369,22 +492,43 @@ export default function FocusZoneScreen({ navigation }: any) {
   return (
     <ImageBackground source={currentRoom.source} style={{ flex:1 }}>
       <LinearGradient colors={["rgba(0,0,0,0.22)","rgba(0,0,0,0.88)"]} style={{ flex:1 }}>
-        <SafeAreaView style={{ flex:1 }} edges={["top","left","right"]}>
+        <SafeAreaView style={{ flex:1 }} edges={isLandscape ? ["top","left"] : ["top","left","right"]}>
 
           {isLandscape ? (
             /* ════════════════ LANDSCAPE LAYOUT ════════════════ */
             <View style={ls.root}>
 
               {/* Left: Timer fills height */}
-              <Pressable onPress={toggleRun} style={ls.timerCol}>
-                <Animated.Text style={[ls.timerText, { fontSize: timerFontSizeL, letterSpacing: timerSpacingL }]}>
-                  {landscapeValue}
-                </Animated.Text>
-                <View style={styles.timerSubRow}>
-                  <View style={[styles.dot, isRunning && styles.dotActive]}/>
-                  <Text style={styles.timerSub}>{subLabel}</Text>
-                </View>
-              </Pressable>
+              <View style={ls.timerCol}>
+                <Pressable onPress={toggleRun} style={{ alignItems: "center" }}>
+                  {timerView !== "hidden" && (
+                    <>
+                      <Animated.Text style={[ls.timerText, { fontSize: timerFontSizeL, letterSpacing: timerSpacingL }]}>
+                        {landscapeValue}
+                      </Animated.Text>
+                      <View style={styles.timerSubRow}>
+                        <View style={[styles.dot, isRunning && styles.dotActive]}/>
+                        <Text style={styles.timerSub}>{subLabel}</Text>
+                      </View>
+                    </>
+                  )}
+                  {timerView === "hidden" && (
+                    <Text style={{ color: "rgba(255,255,255,0.2)", fontSize: s(16), fontWeight: "700" }}>Tap to start</Text>
+                  )}
+                </Pressable>
+                {/* Reset link — only when visible and not clock mode */}
+                {timerView !== "hidden" && timerView !== "clock" && (
+                  <Pressable
+                    onPress={resetTimer}
+                    style={({ pressed }) => [{ flexDirection: "row", alignItems: "center", gap: s(6), marginTop: s(18), opacity: pressed ? 0.65 : 0.55 }]}
+                  >
+                    <Ionicons name="refresh" size={s(14)} color="#fff"/>
+                    <Text style={{ color: "#fff", fontWeight: "700", fontSize: s(12) }}>
+                      {timerMode === "timer" ? "Reset timer" : "Reset session"}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
 
               {/* Right: Controls panel */}
               <Animated.View style={[ls.controlsCol, { opacity: uiOpacity }]} pointerEvents={immersive ? "none" : "auto"}>
@@ -419,14 +563,32 @@ export default function FocusZoneScreen({ navigation }: any) {
                 <Text style={styles.phaseLabel}>{mainLabel.toUpperCase()}</Text>
 
                 <View style={ls.bottomRow}>
-                  <Pressable onPress={toggleMute} disabled={musicLoading} style={({ pressed }) => [styles.actionPill,{opacity:pressed||musicLoading?0.85:1}]}>
-                    <Ionicons name={isMuted ? "volume-mute" : "musical-notes"} size={s(15)} color="#fff"/>
-                    <Text style={styles.actionPillText}>{isMuted ? "Music Off" : "Music On"}</Text>
-                  </Pressable>
-                  <Pressable onPress={resetTimer} style={({ pressed }) => [styles.actionPill,{opacity:pressed?0.85:1}]}>
-                    <Ionicons name="refresh" size={s(15)} color="#fff"/>
-                    <Text style={styles.actionPillText}>Reset</Text>
-                  </Pressable>
+                  <AnimToggle
+                    value={!isMuted}
+                    onChange={toggleMute}
+                    disabled={musicLoading}
+                    labelOn="Music"
+                    labelOff="Music"
+                    iconOn="musical-notes"
+                    iconOff="volume-mute"
+                  />
+                  <AnimToggle
+                    value={timerView !== "hidden"}
+                    onChange={toggleVisibility}
+                    labelOn="Visible"
+                    labelOff="Hidden"
+                    iconOn="eye"
+                    iconOff="eye-off"
+                  />
+                  <AnimToggle
+                    value={timerView === "clock"}
+                    onChange={toggleClockMode}
+                    disabled={false}
+                    labelOn="Clock"
+                    labelOff="Timer"
+                    iconOn="time-outline"
+                    iconOff="stopwatch-outline"
+                  />
                 </View>
               </Animated.View>
 
@@ -584,7 +746,7 @@ export default function FocusZoneScreen({ navigation }: any) {
 
           {/* ── Tab switcher ── */}
           <View style={styles.settingsTabs}>
-            {(["tasks", "timer"] as const).map((tab) => (
+            {(["timer", "tasks"] as const).map((tab) => (
               <Pressable
                 key={tab}
                 onPress={() => setSettingsTab(tab)}
@@ -757,9 +919,9 @@ export default function FocusZoneScreen({ navigation }: any) {
                   {/* Mode selector — stacked vertical cards */}
                   <View style={{ gap: s(8) }}>
                     {([
-                      { m: "timer"    as TimerMode, label: "Stopwatch", sub: "Count up freely — stop anytime", icon: "stopwatch-outline" },
-                      { m: "pomodoro" as TimerMode, label: "Pomodoro",  sub: "Focused work intervals with breaks", icon: "timer-outline" },
-                    ]).map(({ m, label, sub, icon }) => {
+                        { m: "timer"    as TimerMode, label: "Stopwatch", sub: "Count up freely — stop anytime", icon: "stopwatch-outline" as const },
+                        { m: "pomodoro" as TimerMode, label: "Pomodoro",  sub: "Focused work intervals with breaks", icon: "timer-outline" as const },
+                      ]).map(({ m, label, sub, icon }) => {
                       const active = timerMode === m;
                       return (
                         <Pressable
@@ -787,7 +949,7 @@ export default function FocusZoneScreen({ navigation }: any) {
                             alignItems: "center", justifyContent: "center",
                             backgroundColor: active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)",
                           }}>
-                            <Ionicons name={icon} size={s(18)} color={active ? "#fff" : "rgba(255,255,255,0.5)"}/>
+                            <Ionicons name={icon as any} size={s(18)} color={active ? "#fff" : "rgba(255,255,255,0.5)"}/>
                           </View>
                           <View style={{ flex: 1 }}>
                             <Text style={{ color: active ? "#fff" : "rgba(255,255,255,0.65)", fontWeight: "900", fontSize: s(14) }}>{label}</Text>
@@ -937,6 +1099,76 @@ function Stepper({ value, onDec, onInc }: { value: number; onDec: () => void; on
   );
 }
 
+function AnimToggle({
+  value, onChange, labelOn, labelOff, iconOn, iconOff, disabled,
+}: {
+  value: boolean;
+  onChange: () => void;
+  labelOn: string;
+  labelOff: string;
+  iconOn: any;
+  iconOff: any;
+  disabled?: boolean;
+}) {
+  const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.spring(anim, { toValue: value ? 1 : 0, useNativeDriver: false, speed: 22, bounciness: 5 }).start();
+  }, [value]);
+
+  const trackBg  = anim.interpolate({ inputRange: [0,1], outputRange: ["rgba(255,255,255,0.08)", "rgba(255,255,255,0.22)"] });
+  const thumbTx  = anim.interpolate({ inputRange: [0,1], outputRange: [s(2), s(18)] });
+  const thumbBg  = anim.interpolate({ inputRange: [0,1], outputRange: ["rgba(255,255,255,0.30)", "#ffffff"] });
+
+  return (
+    <Pressable
+      onPress={disabled ? undefined : onChange}
+      style={({ pressed }) => [{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingVertical: s(9),
+        paddingHorizontal: s(12),
+        borderRadius: s(12),
+        borderWidth: s(1),
+        borderColor: value ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)",
+        backgroundColor: value ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
+        opacity: pressed || disabled ? 0.75 : 1,
+        gap: s(8),
+      }]}
+    >
+      <Ionicons
+        name={value ? iconOn : iconOff}
+        size={s(13)}
+        color={value ? "#fff" : "rgba(255,255,255,0.45)"}
+      />
+      <Text style={{
+        flex: 1,
+        color: value ? "#fff" : "rgba(255,255,255,0.45)",
+        fontWeight: "800",
+        fontSize: s(12),
+      }}>
+        {value ? labelOn : labelOff}
+      </Text>
+      {/* Track */}
+      <Animated.View style={{
+        width: s(36), height: s(20), borderRadius: s(10),
+        backgroundColor: trackBg,
+        justifyContent: "center",
+        borderWidth: s(1),
+        borderColor: "rgba(255,255,255,0.12)",
+      }}>
+        {/* Thumb */}
+        <Animated.View style={{
+          width: s(14), height: s(14), borderRadius: s(7),
+          backgroundColor: thumbBg,
+          position: "absolute",
+          top: s(2), left: thumbTx as any,
+        }}/>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
 /* ─── Landscape-specific styles ──────────────────────────────────────────── */
 const ls = StyleSheet.create({
   root: {
@@ -954,13 +1186,14 @@ const ls = StyleSheet.create({
     textAlign: "center",
   },
   controlsCol: {
-    width: s(190),
-    paddingVertical: s(12),
+    width: s(200),
+    paddingVertical: s(14),
     paddingHorizontal: s(14),
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
+    gap: s(10),
     borderLeftWidth: s(1),
     borderLeftColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(0,0,0,0.18)",
+    backgroundColor: "rgba(0, 0, 0, 0.46)",
   },
   topRow: {
     flexDirection: "row",

@@ -1,4 +1,5 @@
 // src/components/SpotifyMiniPlayer.tsx
+// Web API version — no react-native-spotify-remote imports.
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -11,61 +12,41 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { s } from "react-native-size-matters";
-import { remote } from "react-native-spotify-remote";
-import { getAccessToken } from "../services/SpotifyRemote";
+import {
+  getPlayerState,
+  spotifyPlay,
+  spotifyPause,
+  spotifyResume,
+  spotifySkipNext,
+  spotifySkipPrevious,
+  spotifySeek,
+} from "../services/SpotifyRemote";
 
 // ─── Public type ──────────────────────────────────────────────────────────────
-// Exported so FocusZoneScreen can lift track state for immersive corner art.
 
 export type TrackInfo = {
-  name: string;
-  artist: string;
+  name:        string;
+  artist:      string;
   albumArtUrl: string | null;
-  trackUri: string | null;
-  isPaused: boolean;
-  durationMs: number;
-  positionMs: number;
+  trackUri:    string | null;
+  isPaused:    boolean;
+  durationMs:  number;
+  positionMs:  number;
 };
 
-// ─── Album art via Spotify Web API ───────────────────────────────────────────
-
-const artCache = new Map<string, string | null>();
-
-async function fetchAlbumArt(trackUri: string | null): Promise<string | null> {
-  if (!trackUri) return null;
-  const trackId = trackUri.split(":")[2];
-  if (!trackId) { console.log("🎨 no trackId in uri", trackUri); return null; }
-  if (artCache.has(trackId)) { console.log("🎨 cache hit", trackId); return artCache.get(trackId) ?? null; }
-  const token = getAccessToken();
-  if (!token) { console.log("🎨 no access token"); return null; }
-  try {
-    console.log("🎨 fetching art for", trackId);
-    const res = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      console.log("🎨 Web API error", res.status, body);
-      artCache.set(trackId, null);
-      return null;
-    }
-    const json = await res.json();
-    const images: any[] = json?.album?.images ?? [];
-    console.log("🎨 images:", images.map((i) => `${i.width}x${i.height}`));
-    const url = images[1]?.url ?? images[0]?.url ?? null;
-    artCache.set(trackId, url);
-    return url;
-  } catch (e) {
-    console.log("🎨 error:", e);
-    artCache.set(trackId, null);
-    return null;
-  }
-}
-
 // ─── Progress bar ─────────────────────────────────────────────────────────────
-// Ticks locally every second when playing, re-syncs when positionMs prop changes.
 
-function ProgressBar({ positionMs, durationMs, isPaused }: { positionMs: number; durationMs: number; isPaused: boolean }) {
+function ProgressBar({
+  positionMs,
+  durationMs,
+  isPaused,
+  onSeek,
+}: {
+  positionMs: number;
+  durationMs: number;
+  isPaused:   boolean;
+  onSeek?:    (ms: number) => void;
+}) {
   const [pos, setPos] = useState(positionMs);
 
   useEffect(() => { setPos(positionMs); }, [positionMs]);
@@ -83,10 +64,7 @@ function ProgressBar({ positionMs, durationMs, isPaused }: { positionMs: number;
   };
 
   return (
-    <Pressable
-      onPress={() => {}} // tappable area for future seek support
-      style={pb.wrap}
-    >
+    <View style={pb.wrap}>
       <View style={pb.track}>
         <View style={[pb.fill, { width: `${pct}%` as any }]} />
         <View style={[pb.thumb, { left: `${pct}%` as any, marginLeft: -s(5) }]} />
@@ -95,12 +73,12 @@ function ProgressBar({ positionMs, durationMs, isPaused }: { positionMs: number;
         <Text style={pb.time}>{fmt(pos)}</Text>
         <Text style={pb.time}>{fmt(durationMs)}</Text>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
 const pb = StyleSheet.create({
-  wrap: { paddingTop: s(10), paddingBottom: s(2) },
+  wrap:  { paddingTop: s(10), paddingBottom: s(2) },
   track: {
     height: s(3), borderRadius: s(999),
     backgroundColor: "rgba(255,255,255,0.15)",
@@ -114,10 +92,11 @@ const pb = StyleSheet.create({
     position: "absolute", top: -s(3.5),
     width: s(10), height: s(10), borderRadius: s(999),
     backgroundColor: "#fff",
-    shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 2, shadowOffset: { width: 0, height: 1 },
+    shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
   },
   times: { flexDirection: "row", justifyContent: "space-between", marginTop: s(5) },
-  time: { color: "rgba(255,255,255,0.38)", fontSize: s(10), fontWeight: "600" },
+  time:  { color: "rgba(255,255,255,0.38)", fontSize: s(10), fontWeight: "600" },
 });
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -126,98 +105,88 @@ interface Props {
   onTrackChange?: (track: TrackInfo | null) => void;
 }
 
+const POLL_INTERVAL_MS = 3000; // poll every 3 seconds
+
 export function SpotifyMiniPlayer({ onTrackChange }: Props) {
-  const [track, setTrack]         = useState<TrackInfo | null>(null);
-  const [expanded, setExpanded]   = useState(false);
-  const [connected, setConnected] = useState(false);
+  const [track,    setTrack]    = useState<TrackInfo | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const expandAnim = useRef(new Animated.Value(0)).current;
   const mountedRef = useRef(true);
-  const lastUri    = useRef<string | null>(null);
+  const pollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ── Parse player state ────────────────────────────────────────────────────
-  const applyState = async (ps: any) => {
-    if (!mountedRef.current) return;
-    const uri: string | null = ps?.track?.uri ?? null;
-    const base: TrackInfo = {
-      name:        ps?.track?.name ?? "",
-      artist:      ps?.track?.artist?.name ?? "",
-      albumArtUrl: track?.trackUri === uri ? (track?.albumArtUrl ?? null) : null, // keep existing art if same track
-      trackUri:    uri,
-      isPaused:    ps?.isPaused ?? true,
-      durationMs:  ps?.track?.duration ?? 0,
-      positionMs:  ps?.playbackPosition ?? 0,
+  // ── Convert WebPlayerState → TrackInfo ────────────────────────────────────
+  const applyState = (ps: Awaited<ReturnType<typeof getPlayerState>>) => {
+    if (!ps || !mountedRef.current) return;
+    const t: TrackInfo = {
+      name:        ps.trackName,
+      artist:      ps.artistName,
+      albumArtUrl: ps.albumArtUrl,
+      trackUri:    ps.trackUri,
+      isPaused:    !ps.isPlaying,
+      durationMs:  ps.durationMs,
+      positionMs:  ps.positionMs,
     };
-    setTrack(base);
-    onTrackChange?.(base);
+    setTrack(t);
+    onTrackChange?.(t);
+  };
 
-    // Only re-fetch art when track changes
-    if (uri && uri !== lastUri.current) {
-      lastUri.current = uri;
-      const art = await fetchAlbumArt(uri);
-      if (!mountedRef.current) return;
-      setTrack((prev) => prev ? { ...prev, albumArtUrl: art } : prev);
-      onTrackChange?.(base.trackUri === uri ? { ...base, albumArtUrl: art } : null);
+  const poll = async () => {
+    const ps = await getPlayerState();
+    if (!mountedRef.current) return;
+    if (ps) {
+      applyState(ps);
+    } else {
+      // Nothing playing — clear track but don't unmount the player
+      setTrack(null);
+      onTrackChange?.(null);
     }
   };
 
-  const fetchState = async () => {
-    try {
-      const ps = await remote.getPlayerState();
-      if (ps) applyState(ps);
-    } catch {}
-  };
-
-  // ── Subscribe ─────────────────────────────────────────────────────────────
+  // ── Start polling on mount ────────────────────────────────────────────────
   useEffect(() => {
     mountedRef.current = true;
-    let poll: ReturnType<typeof setInterval> | null = null;
-
-    (async () => {
-      try {
-        const ok = await remote.isConnectedAsync();
-        if (!mountedRef.current) return;
-        setConnected(!!ok);
-        if (ok) {
-          await fetchState();
-          remote.addListener("playerStateChanged", (ps: any) => { if (mountedRef.current) applyState(ps); });
-          remote.addListener("remoteDisconnected",  ()        => { if (mountedRef.current) { setConnected(false); setTrack(null); onTrackChange?.(null); } });
-          remote.addListener("remoteConnected",     ()        => { if (mountedRef.current) { setConnected(true);  fetchState(); } });
-          poll = setInterval(fetchState, 5000);
-        }
-      } catch {}
-    })();
-
+    poll(); // immediate first fetch
+    pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
     return () => {
       mountedRef.current = false;
-      if (poll) clearInterval(poll);
-      try {
-        remote.removeAllListeners("playerStateChanged");
-        remote.removeAllListeners("remoteDisconnected");
-        remote.removeAllListeners("remoteConnected");
-      } catch {}
+      if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
 
   // ── Expand animation ──────────────────────────────────────────────────────
   useEffect(() => {
-    Animated.spring(expandAnim, { toValue: expanded ? 1 : 0, useNativeDriver: false, tension: 90, friction: 14 }).start();
+    Animated.spring(expandAnim, {
+      toValue:     expanded ? 1 : 0,
+      useNativeDriver: false,
+      tension: 90,
+      friction: 14,
+    }).start();
   }, [expanded]);
 
-  const controlsH  = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, s(130)] });
+  const controlsH   = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, s(130)] });
   const ctrlOpacity = expandAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 0, 1] });
-  const chevron    = expandAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] });
+  const chevron     = expandAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] });
 
   // ── Controls ───────────────────────────────────────────────────────────────
-  const prev   = async () => { try { await remote.skipToPrevious(); } catch {} };
-  const next   = async () => { try { await remote.skipToNext();     } catch {} };
+  const prev = async () => {
+    await spotifySkipPrevious();
+    setTimeout(poll, 400); // re-poll after command so UI updates quickly
+  };
+  const next = async () => {
+    await spotifySkipNext();
+    setTimeout(poll, 400);
+  };
   const toggle = async () => {
-    try { track?.isPaused ? await remote.resume() : await remote.pause(); } catch {}
+    if (track?.isPaused) {
+      await spotifyResume();
+    } else {
+      await spotifyPause();
+    }
+    setTimeout(poll, 400);
   };
   const openSpotify = () => {
     Linking.openURL("spotify://").catch(() => Linking.openURL("https://open.spotify.com"));
   };
-
-  if (!connected) return null;
 
   return (
     <Pressable
@@ -229,14 +198,20 @@ export function SpotifyMiniPlayer({ onTrackChange }: Props) {
         <View style={styles.artWrap}>
           {track?.albumArtUrl
             ? <Image source={{ uri: track.albumArtUrl }} style={styles.art} />
-            : <View style={[styles.art, styles.artFallback]}><Ionicons name="musical-note" size={s(14)} color="rgba(255,255,255,0.35)" /></View>
+            : <View style={[styles.art, styles.artFallback]}>
+                <Ionicons name="musical-note" size={s(14)} color="rgba(255,255,255,0.35)" />
+              </View>
           }
           {track && !track.isPaused && <View style={styles.dot} />}
         </View>
 
         <View style={styles.info}>
-          <Text style={styles.trackName} numberOfLines={1}>{track?.name || "Spotify"}</Text>
-          <Text style={styles.artist}    numberOfLines={1}>{track?.artist || "Now playing"}</Text>
+          <Text style={styles.trackName} numberOfLines={1}>
+            {track?.name || "Spotify"}
+          </Text>
+          <Text style={styles.artist} numberOfLines={1}>
+            {track?.artist || "Now playing"}
+          </Text>
         </View>
 
         <Animated.View style={{ transform: [{ rotate: chevron }] }}>
@@ -256,16 +231,15 @@ export function SpotifyMiniPlayer({ onTrackChange }: Props) {
         />
 
         <View style={styles.ctrlRow}>
-          <Pressable onPress={prev} style={({ pressed }) => [styles.ctrlBtn, { opacity: pressed ? 0.6 : 1 }]}>
-            <Ionicons name="play-skip-back" size={s(18)} color="#fff" />
+          <Pressable onPress={prev}   style={({ pressed }) => [styles.ctrlBtn,     { opacity: pressed ? 0.6 : 1 }]}>
+            <Ionicons name="play-skip-back"    size={s(18)} color="#fff" />
           </Pressable>
           <Pressable onPress={toggle} style={({ pressed }) => [styles.ctrlBtnMain, { opacity: pressed ? 0.6 : 1 }]}>
             <Ionicons name={track?.isPaused ? "play" : "pause"} size={s(20)} color="#fff" />
           </Pressable>
-          <Pressable onPress={next} style={({ pressed }) => [styles.ctrlBtn, { opacity: pressed ? 0.6 : 1 }]}>
+          <Pressable onPress={next}   style={({ pressed }) => [styles.ctrlBtn,     { opacity: pressed ? 0.6 : 1 }]}>
             <Ionicons name="play-skip-forward" size={s(18)} color="#fff" />
           </Pressable>
-          {/* Open in Spotify */}
           <Pressable
             onPress={openSpotify}
             style={({ pressed }) => [styles.ctrlBtn, { opacity: pressed ? 0.6 : 1, borderColor: "rgba(29,185,84,0.4)" }]}
@@ -286,10 +260,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: s(12), paddingVertical: s(10),
     overflow: "hidden",
   },
-  row:        { flexDirection: "row", alignItems: "center", gap: s(10) },
-  artWrap:    { position: "relative" },
-  art:        { width: s(38), height: s(38), borderRadius: s(8) },
-  artFallback:{ backgroundColor: "rgba(255,255,255,0.07)", alignItems: "center", justifyContent: "center" },
+  row:         { flexDirection: "row", alignItems: "center", gap: s(10) },
+  artWrap:     { position: "relative" },
+  art:         { width: s(38), height: s(38), borderRadius: s(8) },
+  artFallback: { backgroundColor: "rgba(255,255,255,0.07)", alignItems: "center", justifyContent: "center" },
   dot: {
     position: "absolute", bottom: -s(2), right: -s(2),
     width: s(9), height: s(9), borderRadius: s(999),

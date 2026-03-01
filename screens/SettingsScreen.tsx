@@ -5,6 +5,8 @@ import {
   Alert,
   Animated,
   Clipboard,
+  Image,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -20,6 +22,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { s } from "react-native-size-matters";
+import * as ImagePicker from "expo-image-picker";
 import {
   EmailAuthProvider,
   reauthenticateWithCredential,
@@ -27,7 +30,7 @@ import {
 } from "firebase/auth";
 
 import { useTheme } from "../src/components/theme/theme";
-import { ACHIEVEMENT_DEFS } from "../src/context/AchievementContext";
+import { TROPHY_TIERS, TROPHY_META } from "../src/context/AchievementContext";
 import { useAchievements } from "../src/context/AchievementContext";
 import {
   loadSetupName,
@@ -39,15 +42,35 @@ import {
   loadDailyGoal,
   saveDailyGoal,
   loadTasksCompletedToday,
+  loadSetupData,
+  saveSetupData,
   clearUserData,
   deleteAllCloudData,
   getCurrentUser,
+  todayKey,
+  loadTimeFormat24h,
+  saveTimeFormat24h,
+  loadProfilePicture,
+  saveProfilePicture,
 } from "../src/data/storage";
 import { loadTasks, loadObjectives } from "../src/data/storage";
 import type { Objective } from "../src/data/models";
+import Svg, {
+  Polyline,
+  Circle,
+  Line as SvgLine,
+  Text as SvgText,
+} from "react-native-svg";
 import { auth } from "../src/services/firebase";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../src/navigation/types";
+import {
+  loadNotifSettings,
+  saveNotifSettings,
+  rescheduleAllNotifications,
+  type NotifSettings,
+  DEFAULT_NOTIF_SETTINGS,
+} from "../src/services/notifications";
 
 type TabKey = "profile" | "settings" | "achievements";
 
@@ -106,6 +129,141 @@ function InitialsAvatar({
   );
 }
 
+// ─── ProfileAvatar (photo or initials) ───────────────────────────────────────
+function ProfileAvatar({
+  pic,
+  name,
+  accent,
+  size = 46,
+}: {
+  pic?: string | null;
+  name: string;
+  accent: string;
+  size?: number;
+}) {
+  if (pic) {
+    return (
+      <Image
+        source={{ uri: `data:image/jpeg;base64,${pic}` }}
+        style={{
+          width: s(size),
+          height: s(size),
+          borderRadius: s(size * 0.38),
+          borderWidth: s(1.5),
+          borderColor: accent + "66",
+        }}
+      />
+    );
+  }
+  return <InitialsAvatar name={name} accent={accent} size={size} />;
+}
+
+// ─── Color interpolation helper ───────────────────────────────────────────────
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  return [
+    parseInt(h.substring(0, 2), 16),
+    parseInt(h.substring(2, 4), 16),
+    parseInt(h.substring(4, 6), 16),
+  ];
+}
+function rgbToHex(r: number, g: number, b: number): string {
+  return (
+    "#" +
+    [r, g, b]
+      .map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+function lerpColorMulti(
+  t: number,
+  stops: { t: number; hex: string }[]
+): string {
+  const clamped = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    if (clamped >= a.t && clamped <= b.t) {
+      const local = (clamped - a.t) / (b.t - a.t);
+      const [r1, g1, b1] = hexToRgb(a.hex);
+      const [r2, g2, b2] = hexToRgb(b.hex);
+      return rgbToHex(
+        r1 + (r2 - r1) * local,
+        g1 + (g2 - g1) * local,
+        b1 + (b2 - b1) * local
+      );
+    }
+  }
+  return stops[stops.length - 1].hex;
+}
+
+// ─── Circular focus progress card ─────────────────────────────────────────────
+const FIRE_STOPS = [
+  { t: 0,    hex: "#1C7ED6" }, // cool blue
+  { t: 0.35, hex: "#38BDF8" }, // sky
+  { t: 0.6,  hex: "#F97316" }, // orange
+  { t: 0.8,  hex: "#EF4444" }, // red
+  { t: 1,    hex: "#FF3B30" }, // fire red
+];
+
+function FocusRingCard({
+  focusMinToday,
+  dailyFocusMinutes,
+  C,
+}: {
+  focusMinToday: number;
+  dailyFocusMinutes: number;
+  C: any;
+}) {
+  const pct = dailyFocusMinutes > 0
+    ? Math.min(100, Math.round((focusMinToday / dailyFocusMinutes) * 100))
+    : 0;
+  const ringColor = lerpColorMulti(pct / 100, FIRE_STOPS);
+
+  const R = 22;
+  const CIRC = 2 * Math.PI * R;
+  const dashOffset = CIRC * (1 - pct / 100);
+
+  return (
+    <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
+      <Svg width={s(56)} height={s(56)} viewBox="0 0 56 56">
+        {/* Track */}
+        <Circle
+          cx={28} cy={28} r={R}
+          stroke={C.muted + "28"}
+          strokeWidth={4}
+          fill="none"
+        />
+        {/* Progress arc */}
+        <Circle
+          cx={28} cy={28} r={R}
+          stroke={ringColor}
+          strokeWidth={4}
+          fill="none"
+          strokeDasharray={`${CIRC} ${CIRC}`}
+          strokeDashoffset={dashOffset}
+          strokeLinecap="round"
+          rotation="-90"
+          origin="28,28"
+        />
+        {/* Percentage label */}
+        <SvgText
+          x={22} y={32}
+          textAnchor="middle"
+          fontSize={11}
+          fontWeight="900"
+          fill={ringColor}
+        >
+          {pct}%
+        </SvgText>
+      </Svg>
+      <Text style={[styles.statLabel, { color: C.muted }]} numberOfLines={2}>
+        Focus goal
+      </Text>
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
   const theme = useTheme();
   const { colors, isDark, themeMode, setThemeMode, accent, setAccent } = theme;
@@ -123,9 +281,17 @@ export default function SettingsScreen() {
   const [objectives, setObjectives] = useState<Objective[]>([]);
   const [earlyBirdCount, setEarlyBirdCount] = useState<number>(0);
   const [nightOwlCount, setNightOwlCount] = useState<number>(0);
-  const [marathonCount, setMarathonCount] = useState<number>(0);
+  const [marathon30Count, setMarathon30Count] = useState<number>(0);
+  const [marathon120Count, setMarathon120Count] = useState<number>(0);
+  const [marathon180Count, setMarathon180Count] = useState<number>(0);
+  const [objectivesCompletedCount, setObjectivesCompletedCount] = useState<number>(0);
   const [dailyGoal, setDailyGoal] = useState<number>(5);
   const [tasksCompletedToday, setTasksCompletedToday] = useState<number>(0);
+  const [dailyFocusMinutes, setDailyFocusMinutes] = useState<number>(60);
+
+  // ── Weekly activity ──────────────────────────────────────────────────────
+  type WeekDayData = { dateKey: string; label: string; focusMin: number; tasksDone: number; isToday: boolean; isFuture: boolean };
+  const [weeklyData, setWeeklyData] = useState<WeekDayData[]>([]);
 
   // ── Delete account ────────────────────────────────────────────────────────
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -134,9 +300,18 @@ export default function SettingsScreen() {
   const [showDeletionLoading, setShowDeletionLoading] = useState(false);
 
   // ── Settings toggles ──────────────────────────────────────────────────────
-  const [notifEnabled, setNotifEnabled] = useState(true);
+  const [notifSettings, setNotifSettings] = useState<NotifSettings>(DEFAULT_NOTIF_SETTINGS);
   const [weekStartsMonday, setWeekStartsMonday] = useState(true);
   const [timeFormat24h, setTimeFormat24h] = useState(false);
+  const [notifExpanded, setNotifExpanded] = useState(false);
+
+  // ── Profile picture ───────────────────────────────────────────────────────
+  const [profilePic, setProfilePic] = useState<string | null>(null);
+
+  // ── Edit profile modal ────────────────────────────────────────────────────
+  const [editProfileModal, setEditProfileModal] = useState(false);
+  const [editNameDraft, setEditNameDraft] = useState("");
+  const [editPicDraft, setEditPicDraft] = useState<string | null>(null);
 
   // ── Accent color picker sheet ─────────────────────────────────────────────
   const [accentSheetVisible, setAccentSheetVisible] = useState(false);
@@ -169,19 +344,69 @@ export default function SettingsScreen() {
     const sessions = await loadFocusSessions();
     setFocusSessionsCount(sessions.length);
 
-    setEarlyBirdCount(
-      sessions.some((s) => parseInt(s.startTime.split(":")[0]) < 8) ? 1 : 0
-    );
-    setNightOwlCount(
-      sessions.some((s) => parseInt(s.startTime.split(":")[0]) >= 20) ? 1 : 0
-    );
-    setMarathonCount(sessions.some((s) => s.minutes >= 120) ? 1 : 0);
+    const hr = (s: any) => parseInt(s.startTime?.split(":")[0] ?? "12", 10);
+    setEarlyBirdCount(sessions.filter((s: any) => hr(s) < 8).length);
+    setNightOwlCount(sessions.filter((s: any) => hr(s) >= 20).length);
+    setMarathon30Count(sessions.filter((s: any) => s.minutes >= 30).length);
+    setMarathon120Count(sessions.filter((s: any) => s.minutes >= 120).length);
+    setMarathon180Count(sessions.filter((s: any) => s.minutes >= 180).length);
+    setObjectivesCompletedCount(objs.filter((o: any) => o.status === "completed").length);
 
     const goal = await loadDailyGoal();
     setDailyGoal(goal);
 
     const completedToday = await loadTasksCompletedToday();
     setTasksCompletedToday(completedToday);
+
+    const setupData = await loadSetupData();
+    if (setupData?.targetMinutesPerDay) setDailyFocusMinutes(setupData.targetMinutesPerDay);
+
+    const ns = await loadNotifSettings();
+    setNotifSettings(ns);
+
+    const fmt24h = await loadTimeFormat24h();
+    setTimeFormat24h(fmt24h);
+
+    const pic = await loadProfilePicture();
+    setProfilePic(pic);
+
+    // ── Weekly chart data ─────────────────────────────────────────────────
+    const today = todayKey();
+    const nowD = new Date();
+    const dow = nowD.getDay(); // 0=Sun
+    const mondayOffset = dow === 0 ? -6 : 1 - dow;
+    const monday = new Date(nowD);
+    monday.setDate(nowD.getDate() + mondayOffset);
+    monday.setHours(0, 0, 0, 0);
+    const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+    const weekKeys = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return todayKey(d);
+    });
+
+    // focus minutes per date
+    const focusMap: Record<string, number> = {};
+    sessions.forEach((s: any) => { focusMap[s.date] = (focusMap[s.date] ?? 0) + s.minutes; });
+
+    // tasks completed per date
+    const taskMap: Record<string, number> = {};
+    const allTasks = await loadTasks();
+    allTasks.forEach((t: any) => {
+      if (t.status === "completed" && t.completedAt) {
+        const dk = todayKey(new Date(t.completedAt));
+        taskMap[dk] = (taskMap[dk] ?? 0) + 1;
+      }
+    });
+
+    setWeeklyData(weekKeys.map((dk, i) => ({
+      dateKey: dk,
+      label: DAY_LABELS[i],
+      focusMin: focusMap[dk] ?? 0,
+      tasksDone: taskMap[dk] ?? 0,
+      isToday: dk === today,
+      isFuture: dk > today,
+    })));
 
     // Check achievements after every data load
     const uid = await getCurrentUser();
@@ -251,32 +476,47 @@ export default function SettingsScreen() {
     []
   );
 
-  // ── Build badges from ACHIEVEMENT_DEFS + live progress ───────────────────
-  // Single source of truth — definitions live in AchievementContext.tsx
-  const badges: Badge[] = useMemo(() => {
-    const progressMap: Record<string, { progress: number; total: number }> = {
-      first_task: { progress: completedCount > 0 ? 1 : 0, total: 1 },
-      streak_7:   { progress: Math.min(streakDays, 7), total: 7 },
-      focus_10:   { progress: Math.min(focusSessionsCount, 10), total: 10 },
-      early:      { progress: earlyBirdCount, total: 1 },
-      night:      { progress: nightOwlCount, total: 1 },
-      marathon:   { progress: marathonCount, total: 1 },
-    };
-
-    return ACHIEVEMENT_DEFS.map((def) => ({
-      id: def.id,
-      title: def.title,
+  // ── Build badges per tier (live progress) ────────────────────────────────
+  const allBadges: Badge[] = useMemo(() => {
+    return TROPHY_TIERS.flat().map((def) => ({
+      id:       def.id,
+      title:    def.title,
       subtitle: def.subtitle,
-      icon: def.icon,
-      total: progressMap[def.id]?.total ?? 1,
-      progress: progressMap[def.id]?.progress ?? 0,
+      icon:     def.icon,
+      total:    def.total,
+      progress: def.getProgress({
+        completedCount, streakDays, focusSessionsCount,
+        earlyBirdCount, nightOwlCount,
+        marathon30Count, marathon120Count, marathon180Count,
+        objectivesCompletedCount,
+      }),
     }));
-  }, [completedCount, streakDays, focusSessionsCount, earlyBirdCount, nightOwlCount, marathonCount]);
+  }, [completedCount, streakDays, focusSessionsCount, earlyBirdCount, nightOwlCount,
+      marathon30Count, marathon120Count, marathon180Count, objectivesCompletedCount]);
 
-  const unlockedCount = badges.filter((b) => b.progress >= b.total && b.total > 0).length;
-  const nextToUnlock = badges.filter(
-    (b) => !(b.progress >= b.total && b.total > 0) && b.progress > 0
-  );
+  // Derive which tier is currently active
+  const activeTierIndex = useMemo(() => {
+    for (let t = 0; t < TROPHY_TIERS.length; t++) {
+      const tierBadges = allBadges.slice(t * 7, t * 7 + 7);
+      if (tierBadges.some((b) => b.progress < b.total)) return t;
+    }
+    return TROPHY_TIERS.length - 1; // all done, show last
+  }, [allBadges]);
+
+  const completedTierCount = useMemo(() => {
+    let count = 0;
+    for (let t = 0; t < TROPHY_TIERS.length; t++) {
+      const tierBadges = allBadges.slice(t * 7, t * 7 + 7);
+      if (tierBadges.every((b) => b.progress >= b.total)) count = t + 1;
+      else break;
+    }
+    return count;
+  }, [allBadges]);
+
+  const [viewingTier, setViewingTier] = useState<number | null>(null);
+  const displayedTier = viewingTier ?? activeTierIndex;
+  const displayedBadges = allBadges.slice(displayedTier * 7, displayedTier * 7 + 7);
+  const totalUnlocked = allBadges.filter((b) => b.progress >= b.total).length;
 
   // ── Tabs ──────────────────────────────────────────────────────────────────
   const tabs: { key: TabKey; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -322,9 +562,56 @@ export default function SettingsScreen() {
     await saveSetupName(v);
   };
 
-  // ── Daily goal editor ─────────────────────────────────────────────────────
-  const [goalModal, setGoalModal] = useState(false);
+  // ── Daily focus goal editor ──────────────────────────────────────────────
+  const [focusGoalModal, setFocusGoalModal] = useState(false);
+  const [focusGoalDraft, setFocusGoalDraft] = useState("60");
+
+  const FOCUS_GOAL_PRESETS = [
+    { minutes: 30,  label: "Casual",     sub: "30 min/day" },
+    { minutes: 60,  label: "Regular",    sub: "60 min/day" },
+    { minutes: 120, label: "Serious",    sub: "120 min/day" },
+    { minutes: 180, label: "Determined", sub: "180 min/day" },
+  ];
+
+  const openFocusGoalEditor = () => {
+    if (Platform.OS === "ios" && (Alert as any).prompt) {
+      (Alert as any).prompt(
+        "Daily focus goal",
+        "Minutes of focus per day? (30, 60, 120 or 180 recommended)",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Save",
+            onPress: async (value: string) => {
+              const num = parseInt(value ?? "", 10);
+              if (num >= 5 && num <= 480) {
+                setDailyFocusMinutes(num);
+                const current = await loadSetupData();
+                await saveSetupData({ ...(current ?? {}), targetMinutesPerDay: num });
+              } else {
+                Alert.alert("Invalid", "Enter a value between 5 and 480 minutes.");
+              }
+            },
+          },
+        ],
+        "plain-text",
+        String(dailyFocusMinutes)
+      );
+      return;
+    }
+    setFocusGoalDraft(String(dailyFocusMinutes));
+    setFocusGoalModal(true);
+  };
+
+  const saveFocusGoalAndroid = async (minutes: number) => {
+    setDailyFocusMinutes(minutes);
+    setFocusGoalModal(false);
+    const current = await loadSetupData();
+    await saveSetupData({ ...(current ?? {}), targetMinutesPerDay: minutes });
+  };
+
   const [goalDraft, setGoalDraft] = useState("");
+  const [goalModal, setGoalModal] = useState(false);
 
   const openGoalEditor = () => {
     if (Platform.OS === "ios" && (Alert as any).prompt) {
@@ -438,10 +725,10 @@ export default function SettingsScreen() {
             {profileName || profileEmail || "Your profile & settings"}
           </Text>
         </View>
-        <InitialsAvatar name={profileName} accent={C.accent} size={40} />
+        <ProfileAvatar pic={profilePic} name={profileName} accent={C.accent} size={40} />
       </View>
 
-      {/* ── Segmented tabs ── */}
+      {/* ══ Segmented tabs ══ */}
       <View style={[styles.tabBar, { backgroundColor: C.card, borderColor: C.line }]}>
         <Animated.View
           style={[
@@ -500,9 +787,13 @@ export default function SettingsScreen() {
         >
           {/* Identity card */}
           <View style={[styles.identityCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <InitialsAvatar name={profileName} accent={C.accent} size={56} />
+            <Pressable
+              onPress={() => { setEditNameDraft(profileName); setEditPicDraft(profilePic); setEditProfileModal(true); }}
+            >
+              <ProfileAvatar pic={profilePic} name={profileName} accent={C.accent} size={56} />
+            </Pressable>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.identityName, { color: C.text }]} numberOfLines={1}>
+              <Text style={[styles.identityName, { color: C.text }]} numberOfLines={2}>
                 {profileName || "Your name"}
               </Text>
               <Pressable
@@ -527,88 +818,50 @@ export default function SettingsScreen() {
               </Pressable>
             </View>
             <Pressable
-              onPress={openNameEditor}
+              onPress={() => { setEditNameDraft(profileName); setEditPicDraft(profilePic); setEditProfileModal(true); }}
               style={[
                 styles.editBtn,
                 { backgroundColor: C.accent + "16", borderColor: C.accent + "30" },
               ]}
             >
-              <Ionicons name="pencil" size={s(14)} color={C.accent} />
-              <Text style={{ color: C.accent, fontSize: s(12), fontWeight: "800" }}>Edit</Text>
+              <Ionicons name="pencil" size={s(12)} color={C.accent} />
+              <Text style={{ color: C.accent, fontSize: s(11), fontWeight: "800" }}>Edit</Text>
             </Pressable>
           </View>
 
           {/* Stats row */}
           <View style={styles.statsRow}>
-            <StatCard
-              value={`${tasksCompletedToday}/${dailyGoal}`}
-              label="Today's goal"
-              icon="flag-outline"
+            <FocusRingCard
+              focusMinToday={focusMinToday}
+              dailyFocusMinutes={dailyFocusMinutes}
               C={C}
-              iconColor={C.accent}
             />
             <StatCard
               value={`${streakDays}d`}
-              label="Streak"
+              label={"Streak"}
               icon="flame-outline"
               C={C}
               iconColor="#F97316"
             />
             <StatCard
               value={`${focusMinToday}m`}
-              label="Focus today"
+              label={"Focus\ntime"}
               icon="time-outline"
               C={C}
               iconColor={C.success}
             />
             <StatCard
               value={`${completedCount}`}
-              label="Completed"
+              label={"Tasks\ndone"}
               icon="checkmark-done-outline"
               C={C}
               iconColor={C.accent}
             />
           </View>
 
-          {/* Account actions */}
-          <SectionHeader title="Account actions" C={C} />
-          <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <ActionRow
-              icon="person-outline"
-              label="Edit profile name"
-              C={C}
-              onPress={openNameEditor}
-            />
-            <Divider C={C} />
-            <ActionRow
-              icon="mail-outline"
-              label="Email address"
-              value={profileEmail ? "Tap to copy" : "Not set"}
-              C={C}
-              onPress={copyEmail}
-              showChevron={false}
-              right={<Ionicons name="copy-outline" size={s(16)} color={C.muted} />}
-            />
-            <Divider C={C} />
-            <ActionRow
-              icon="notifications-outline"
-              label="Manage notifications"
-              C={C}
-              onPress={() => Alert.alert("Notifications", "Coming soon.")}
-            />
-          </View>
-
-          {/* Activity placeholder */}
+          {/* Activity chart */}
           <SectionHeader title="This week's activity" C={C} />
-          <View
-            style={[styles.emptyActivityCard, { backgroundColor: C.card, borderColor: C.line }]}
-          >
-            <Ionicons name="bar-chart-outline" size={s(32)} color={C.muted + "60"} />
-            <Text style={[styles.emptyTitle, { color: C.text }]}>No activity yet</Text>
-            <Text style={[styles.emptySubtitle, { color: C.muted }]}>
-              Complete tasks and focus sessions to see your weekly progress here.
-            </Text>
-          </View>
+          <WeeklyActivityChart data={weeklyData} C={C} />
         </ScrollView>
       )}
 
@@ -641,43 +894,84 @@ export default function SettingsScreen() {
               right={<Ionicons name="copy-outline" size={s(16)} color={C.muted} />}
             />
             <Divider C={C} />
-            <View style={styles.settingsRow}>
+            {/* Notifications – expandable chevron row */}
+            <Pressable
+              onPress={() => setNotifExpanded((v) => !v)}
+              style={styles.settingsRow}
+            >
               <View style={styles.rowLeft}>
                 <View style={[styles.iconWrap, { backgroundColor: C.muted + "14" }]}>
                   <Ionicons name="notifications-outline" size={s(16)} color={C.muted} />
                 </View>
                 <Text style={[styles.rowLabel, { color: C.text }]}>Notifications</Text>
               </View>
-              <Switch
-                style={{ marginTop: s(12) }}
-                value={notifEnabled}
-                onValueChange={setNotifEnabled}
-                trackColor={{ false: C.line, true: C.accent + "88" }}
-                thumbColor={notifEnabled ? C.accent : C.muted}
+              <Ionicons
+                name={notifExpanded ? "chevron-down" : "chevron-forward"}
+                size={s(16)}
+                color={C.muted}
               />
-            </View>
-            {!notifEnabled && (
-              <View
-                style={[
-                  styles.notifWarning,
-                  {
-                    backgroundColor: "#F97316" + "12",
-                    borderColor: "#F97316" + "30",
-                  },
-                ]}
-              >
-                <Ionicons name="warning-outline" size={s(14)} color="#F97316" />
-                <Text
-                  style={{
-                    color: "#F97316",
-                    fontSize: s(12),
-                    fontWeight: "700",
-                    flex: 1,
-                  }}
-                >
-                  Notifications are disabled. Enable them in Settings to receive reminders.
-                </Text>
-              </View>
+            </Pressable>
+            {notifExpanded && (
+              <>
+                {!notifSettings.master && (
+                  <View
+                    style={[
+                      styles.notifWarning,
+                      { backgroundColor: "#F97316" + "12", borderColor: "#F97316" + "30" },
+                    ]}
+                  >
+                    <Ionicons name="warning-outline" size={s(14)} color="#F97316" />
+                    <Text style={{ color: "#F97316", fontSize: s(12), fontWeight: "700", flex: 1 }}>
+                      Notifications are disabled. Enable them in Settings to receive reminders.
+                    </Text>
+                  </View>
+                )}
+                {([
+                  { key: "master"          as const, label: "Enable all",           icon: "notifications-circle-outline" },
+                  { key: "focus"           as const, label: "Focus & breaks",        icon: "timer-outline"                },
+                  { key: "tasks"           as const, label: "Task reminders",        icon: "checkmark-circle-outline"     },
+                  { key: "calendar"        as const, label: "Calendar events",       icon: "calendar-outline"             },
+                  { key: "dailySummaries"  as const, label: "Morning agenda",        icon: "sunny-outline"                },
+                  { key: "tomorrowPreview" as const, label: "Tomorrow preview",      icon: "moon-outline"                 },
+                  { key: "coach"           as const, label: "Coach suggestions",     icon: "bulb-outline"                 },
+                ] as { key: keyof NotifSettings; label: string; icon: any }[]).map((row) => (
+                  <React.Fragment key={row.key}>
+                    <Divider C={C} />
+                    <View
+                      style={[
+                        styles.settingsRow,
+                        { paddingLeft: s(12) },
+                        row.key !== "master" && !notifSettings.master && { opacity: 0.4 },
+                      ]}
+                    >
+                      <View style={styles.rowLeft}>
+                        <View style={[styles.iconWrap, { backgroundColor: C.accent + "10" }]}>
+                          <Ionicons name={row.icon} size={s(16)} color={C.accent} />
+                        </View>
+                        <View>
+                          <Text style={[styles.rowLabel, { color: C.text }]}>{row.label}</Text>
+                          {row.key === "coach" && (
+                            <Text style={{ color: C.muted, fontSize: s(10), fontWeight: "600" }}>Off by default</Text>
+                          )}
+                        </View>
+                      </View>
+                      <Switch
+                        style={{ marginTop: s(12) }}
+                        disabled={row.key !== "master" && !notifSettings.master}
+                        value={notifSettings[row.key] as boolean}
+                        onValueChange={async (v) => {
+                          const next = { ...notifSettings, [row.key]: v };
+                          setNotifSettings(next);
+                          await saveNotifSettings(next);
+                          await rescheduleAllNotifications();
+                        }}
+                        trackColor={{ false: C.line, true: C.accent + "88" }}
+                        thumbColor={(notifSettings[row.key] as boolean) ? C.accent : C.muted}
+                      />
+                    </View>
+                  </React.Fragment>
+                ))}
+              </>
             )}
           </View>
 
@@ -719,18 +1013,6 @@ export default function SettingsScreen() {
                 <Ionicons name="chevron-forward" size={s(16)} color={C.muted} />
               </View>
             </Pressable>
-          </View>
-
-          {/* PLANNING */}
-          <SectionHeader title="Calendar & planning" C={C} />
-          <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <ActionRow
-              icon="flag-outline"
-              label="Daily task goal"
-              value={`${dailyGoal} tasks`}
-              C={C}
-              onPress={openGoalEditor}
-            />
             <Divider C={C} />
             <View style={styles.settingsRow}>
               <View style={styles.rowLeft}>
@@ -742,19 +1024,14 @@ export default function SettingsScreen() {
               <Switch
                 style={{ marginTop: s(12) }}
                 value={timeFormat24h}
-                onValueChange={setTimeFormat24h}
+                onValueChange={async (v) => {
+                  setTimeFormat24h(v);
+                  await saveTimeFormat24h(v);
+                }}
                 trackColor={{ false: C.line, true: C.accent + "88" }}
                 thumbColor={timeFormat24h ? C.accent : C.muted}
               />
             </View>
-            <Divider C={C} />
-            <ActionRow
-              icon="alarm-outline"
-              label="Default reminder"
-              value="None"
-              C={C}
-              onPress={() => Alert.alert("Default reminder", "Coming soon.")}
-            />
           </View>
 
           {/* ABOUT */}
@@ -778,14 +1055,25 @@ export default function SettingsScreen() {
               icon="shield-checkmark-outline"
               label="Privacy policy"
               C={C}
-              onPress={() => Alert.alert("Privacy policy", "Coming soon.")}
+              onPress={() => Alert.alert("Privacy Policy", "Coming soon.")}
+            />
+            <Divider C={C} />
+            <ActionRow
+              icon="document-text-outline"
+              label="Terms and conditions"
+              C={C}
+              onPress={() => Alert.alert("Terms and Conditions", "Coming soon.")}
             />
             <Divider C={C} />
             <ActionRow
               icon="chatbubble-ellipses-outline"
               label="Contact support"
               C={C}
-              onPress={() => Alert.alert("Support", "Coming soon.")}
+              onPress={() =>
+                Linking.openURL(
+                  "mailto:admin@flussoapp.com?subject=Flusso%20Support&body=For%20any%20question%20or%20to%20report%20a%20bug%2C%20please%20contact%20us%20at%20admin%40flussoapp.com"
+                )
+              }
             />
           </View>
 
@@ -830,7 +1118,17 @@ export default function SettingsScreen() {
             </Pressable>
           </View>
 
-          <View style={{ height: s(32) }} />
+          {/* BLG GROUP */}
+          <View style={{ alignItems: "center", paddingVertical: s(20), gap: s(4) }}>
+            <Text style={{ color: C.muted, fontSize: s(11), fontWeight: "700", letterSpacing: 1.5 }}>
+              BLG GROUP
+            </Text>
+            <Text style={{ color: C.muted, fontSize: s(10), fontWeight: "500" }}>
+              Flusso · All rights reserved
+            </Text>
+          </View>
+
+          <View style={{ height: s(16) }} />
         </ScrollView>
       )}
 
@@ -842,131 +1140,87 @@ export default function SettingsScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          {/* Summary bar */}
-          <View
-            style={[styles.achieveSummary, { backgroundColor: C.card, borderColor: C.line }]}
-          >
+          {/* ── Trophy shelf ──────────────────────────────────────── */}
+          <View style={[styles.achieveSummary, { backgroundColor: C.card, borderColor: C.line }]}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.achieveTitle, { color: C.text }]}>
-                {unlockedCount}/{badges.length} unlocked
+                {totalUnlocked}/{TROPHY_TIERS.flat().length} badges · {completedTierCount}/5 trophies
               </Text>
               <Text style={[styles.achieveSub, { color: C.muted }]}>
-                Keep completing tasks and focus sessions
+                Complete all 7 badges in a tier to earn a trophy
               </Text>
             </View>
-            <View
-              style={[
-                styles.achieveBadge,
-                { backgroundColor: C.accent + "18", borderColor: C.accent + "30" },
-              ]}
-            >
+            <View style={[styles.achieveBadge, { backgroundColor: C.accent + "18", borderColor: C.accent + "30" }]}>
               <Ionicons name="trophy" size={s(22)} color={C.accent} />
             </View>
           </View>
 
-          {/* Progress bar */}
-          <View
-            style={[
-              styles.progressBarWrap,
-              { backgroundColor: C.card2, borderColor: C.line },
-            ]}
-          >
-            <View
-              style={[
-                styles.progressBarFill,
-                {
-                  width: `${Math.round((unlockedCount / badges.length) * 100)}%`,
-                  backgroundColor: C.accent,
-                },
-              ]}
-            />
+          {/* Trophy row */}
+          <View style={{ flexDirection: "row", gap: s(8), marginBottom: s(4), marginTop: s(8) }}>
+            {TROPHY_META.map((meta, t) => {
+              const earned  = t < completedTierCount;
+              const current = t === activeTierIndex && !earned;
+              const viewing = t === displayedTier;
+              return (
+                <Pressable
+                  key={t}
+                  onPress={() => setViewingTier(viewing ? null : t)}
+                  style={({ pressed }) => ({
+                    flex: 1,
+                    alignItems: "center",
+                    paddingVertical: s(10),
+                    borderRadius: s(14),
+                    borderWidth: s(1.5),
+                    borderColor: viewing
+                      ? meta.color
+                      : earned
+                      ? meta.color + "55"
+                      : C.line,
+                    backgroundColor: viewing
+                      ? meta.color + "18"
+                      : earned
+                      ? meta.color + "10"
+                      : C.card + "88",
+                    opacity: pressed ? 0.75 : 1,
+                    gap: s(4),
+                  })}
+                >
+                  <Ionicons
+                    name={meta.icon}
+                    size={s(22)}
+                    color={earned || current ? meta.color : C.muted + "60"}
+                  />
+                  {earned && (
+                    <View style={{
+                      position: "absolute", top: s(4), right: s(4),
+                      backgroundColor: meta.color,
+                      borderRadius: s(6), width: s(10), height: s(10),
+                      alignItems: "center", justifyContent: "center",
+                    }}>
+                      <Ionicons name="checkmark" size={s(7)} color="#fff" />
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
           </View>
 
-          {/* In-progress section */}
-          {nextToUnlock.length > 0 && (
-            <>
-              <SectionHeader title="In progress" C={C} />
-              <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
-                {nextToUnlock.map((badge, i) => {
-                  const ratio = badge.total > 0 ? clamp01(badge.progress / badge.total) : 0;
-                  return (
-                    <React.Fragment key={badge.id}>
-                      {i > 0 && <Divider C={C} />}
-                      <Pressable
-                        onPress={() =>
-                          Alert.alert(
-                            badge.title,
-                            `${badge.subtitle}\n\nProgress: ${formatProgress(badge.progress, badge.total)}`
-                          )
-                        }
-                        style={({ pressed }) => [
-                          styles.inProgressRow,
-                          { opacity: pressed ? 0.8 : 1 },
-                        ]}
-                      >
-                        <View
-                          style={[
-                            styles.badgeIcon,
-                            {
-                              backgroundColor: C.accent + "18",
-                              borderColor: C.accent + "30",
-                            },
-                          ]}
-                        >
-                          <Ionicons name={badge.icon} size={s(18)} color={C.accent} />
-                        </View>
-                        <View style={{ flex: 1, gap: s(4) }}>
-                          <View
-                            style={{
-                              flexDirection: "row",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                            }}
-                          >
-                            <Text style={[styles.badgeTitle, { color: C.text }]}>
-                              {badge.title}
-                            </Text>
-                            <Text style={[styles.badgeProgress, { color: C.muted }]}>
-                              {formatProgress(badge.progress, badge.total)}
-                            </Text>
-                          </View>
-                          <View
-                            style={[
-                              styles.miniProgressTrack,
-                              { backgroundColor: C.muted + "20" },
-                            ]}
-                          >
-                            <View
-                              style={[
-                                styles.miniProgressFill,
-                                {
-                                  width: `${Math.round(ratio * 100)}%`,
-                                  backgroundColor: C.accent,
-                                },
-                              ]}
-                            />
-                          </View>
-                          <Text
-                            style={[styles.badgeSub, { color: C.muted }]}
-                            numberOfLines={1}
-                          >
-                            {badge.subtitle}
-                          </Text>
-                        </View>
-                      </Pressable>
-                    </React.Fragment>
-                  );
-                })}
-              </View>
-            </>
-          )}
+          {/* Tier name + progress */}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: s(4) }}>
+            <Text style={{ color: C.muted, fontSize: s(11), fontWeight: "700", letterSpacing: 0.8 }}>
+              {TROPHY_META[displayedTier].name.toUpperCase()}
+            </Text>
+            <Text style={{ color: C.muted, fontSize: s(11), fontWeight: "700" }}>
+              {displayedBadges.filter((b) => b.progress >= b.total).length}/7
+            </Text>
+          </View>
 
-          {/* All badges */}
-          <SectionHeader title="All badges" C={C} />
+          {/* Badges for displayed tier */}
           <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            {badges.map((badge, i) => {
-              const done = badge.total > 0 && badge.progress >= badge.total;
+            {displayedBadges.map((badge, i) => {
+              const done  = badge.progress >= badge.total;
               const ratio = badge.total > 0 ? clamp01(badge.progress / badge.total) : 0;
+              const locked = displayedTier > activeTierIndex && !done;
               return (
                 <React.Fragment key={badge.id}>
                   {i > 0 && <Divider C={C} />}
@@ -976,72 +1230,46 @@ export default function SettingsScreen() {
                         badge.title,
                         done
                           ? "Unlocked! 🎉"
+                          : locked
+                          ? "Complete the current tier first."
                           : `${badge.subtitle}\n\nProgress: ${formatProgress(badge.progress, badge.total)}`
                       )
                     }
-                    style={({ pressed }) => [
-                      styles.inProgressRow,
-                      { opacity: pressed ? 0.8 : 1 },
-                    ]}
+                    style={({ pressed }) => [styles.inProgressRow, { opacity: pressed ? 0.8 : locked ? 0.4 : 1 }]}
                   >
                     <View
                       style={[
                         styles.badgeIcon,
                         done
-                          ? { backgroundColor: C.success + "20", borderColor: C.success + "40" }
+                          ? { backgroundColor: TROPHY_META[displayedTier].color + "22", borderColor: TROPHY_META[displayedTier].color + "44" }
                           : { backgroundColor: C.muted + "12", borderColor: C.line },
                       ]}
                     >
                       <Ionicons
-                        name={badge.icon}
+                        name={done ? badge.icon : locked ? "lock-closed-outline" : badge.icon}
                         size={s(18)}
-                        color={done ? C.success : C.muted}
+                        color={done ? TROPHY_META[displayedTier].color : C.muted}
                       />
                     </View>
                     <View style={{ flex: 1, gap: s(3) }}>
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                        }}
-                      >
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                         <Text style={[styles.badgeTitle, { color: done ? C.text : C.muted }]}>
                           {badge.title}
                         </Text>
-                        <Text
-                          style={{
-                            fontSize: s(11),
-                            fontWeight: "800",
-                            color: done ? C.success : C.muted,
-                          }}
-                        >
-                          {done
-                            ? "Unlocked"
-                            : `${formatProgress(badge.progress, badge.total)}`}
+                        <Text style={{ fontSize: s(11), fontWeight: "800", color: done ? TROPHY_META[displayedTier].color : C.muted }}>
+                          {done ? "✓" : formatProgress(badge.progress, badge.total)}
                         </Text>
                       </View>
-                      <Text
-                        style={[styles.badgeSub, { color: C.muted }]}
-                        numberOfLines={1}
-                      >
+                      <Text style={[styles.badgeSub, { color: C.muted }]} numberOfLines={1}>
                         {badge.subtitle}
                       </Text>
-                      {!done && (
-                        <View
-                          style={[
-                            styles.miniProgressTrack,
-                            { backgroundColor: C.muted + "20" },
-                          ]}
-                        >
+                      {!done && !locked && (
+                        <View style={[styles.miniProgressTrack, { backgroundColor: C.muted + "20" }]}>
                           <View
-                            style={[
-                              styles.miniProgressFill,
-                              {
-                                width: `${Math.round(ratio * 100)}%`,
-                                backgroundColor: C.muted + "60",
-                              },
-                            ]}
+                            style={[styles.miniProgressFill, {
+                              width: `${Math.round(ratio * 100)}%`,
+                              backgroundColor: TROPHY_META[displayedTier].color,
+                            }]}
                           />
                         </View>
                       )}
@@ -1176,6 +1404,186 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
       </SimpleModal>
+
+      {/* Android focus goal modal */}
+      <SimpleModal visible={focusGoalModal} onClose={() => setFocusGoalModal(false)} C={C}>
+        <Text style={[styles.modalTitle, { color: C.text }]}>Daily focus goal</Text>
+        <Text style={[styles.modalSub, { color: C.muted }]}>
+          How many minutes do you want to focus each day?
+        </Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: s(8), marginTop: s(6) }}>
+          {FOCUS_GOAL_PRESETS.map(({ minutes, label, sub }) => {
+            const sel = dailyFocusMinutes === minutes;
+            return (
+              <Pressable
+                key={minutes}
+                onPress={() => saveFocusGoalAndroid(minutes)}
+                style={({ pressed }) => [{
+                  flex: 1,
+                  minWidth: "44%",
+                  paddingVertical: s(12),
+                  paddingHorizontal: s(12),
+                  borderRadius: s(12),
+                  borderWidth: s(1.5),
+                  borderColor: sel ? C.accent : C.line,
+                  backgroundColor: sel ? C.accent + "18" : C.card2,
+                  opacity: pressed ? 0.8 : 1,
+                  gap: s(2),
+                }]}
+              >
+                <Text style={{ color: sel ? C.accent : C.text, fontWeight: "800", fontSize: s(13) }}>{label}</Text>
+                <Text style={{ color: C.muted, fontWeight: "600", fontSize: s(11) }}>{sub}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Pressable
+          onPress={() => setFocusGoalModal(false)}
+          style={[styles.modalCancelBtn, { borderColor: C.line, marginTop: s(10), alignSelf: "flex-end" }]}
+        >
+          <Text style={[styles.modalBtnText, { color: C.muted }]}>Cancel</Text>
+        </Pressable>
+      </SimpleModal>
+
+      {/* Edit profile modal */}
+      <Modal
+        visible={editProfileModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditProfileModal(false)}
+      >
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" }]}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setEditProfileModal(false)} />
+          <View
+            style={{
+              backgroundColor: C.card,
+              borderTopLeftRadius: s(24),
+              borderTopRightRadius: s(24),
+              padding: s(24),
+              paddingBottom: s(40),
+              gap: s(20),
+            }}
+          >
+            {/* Header */}
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Text style={{ color: C.text, fontSize: s(17), fontWeight: "900" }}>Edit Profile</Text>
+              <Pressable onPress={() => setEditProfileModal(false)}>
+                <Ionicons name="close" size={s(22)} color={C.muted} />
+              </Pressable>
+            </View>
+
+            {/* Avatar picker */}
+            <View style={{ alignItems: "center", gap: s(10) }}>
+              <Pressable
+                onPress={() => {
+                  Alert.alert("Profile Photo", "Choose an option", [
+                    {
+                      text: "Take Photo",
+                      onPress: async () => {
+                        const perm = await ImagePicker.requestCameraPermissionsAsync();
+                        if (!perm.granted) { Alert.alert("Permission required", "Camera access was denied."); return; }
+                        const result = await ImagePicker.launchCameraAsync({
+                          base64: true,
+                          quality: 0.3,
+                          allowsEditing: true,
+                          aspect: [1, 1],
+                        });
+                        if (!result.canceled && result.assets[0].base64) {
+                          setEditPicDraft(result.assets[0].base64);
+                        }
+                      },
+                    },
+                    {
+                      text: "Choose from Library",
+                      onPress: async () => {
+                        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                        if (!perm.granted) { Alert.alert("Permission required", "Photo library access was denied."); return; }
+                        const result = await ImagePicker.launchImageLibraryAsync({
+                          base64: true,
+                          quality: 0.3,
+                          allowsEditing: true,
+                          aspect: [1, 1],
+                        });
+                        if (!result.canceled && result.assets[0].base64) {
+                          setEditPicDraft(result.assets[0].base64);
+                        }
+                      },
+                    },
+                    editPicDraft
+                      ? {
+                          text: "Remove Photo",
+                          style: "destructive",
+                          onPress: () => setEditPicDraft(null),
+                        }
+                      : { text: "Cancel", style: "cancel" },
+                    editPicDraft ? { text: "Cancel", style: "cancel" } : undefined,
+                  ].filter(Boolean) as any[]);
+                }}
+              >
+                <ProfileAvatar pic={editPicDraft} name={editNameDraft || profileName} accent={C.accent} size={80} />
+                <View
+                  style={{
+                    position: "absolute",
+                    bottom: 0,
+                    right: 0,
+                    backgroundColor: C.accent,
+                    borderRadius: s(12),
+                    padding: s(4),
+                  }}
+                >
+                  <Ionicons name="camera" size={s(13)} color="#fff" />
+                </View>
+              </Pressable>
+              <Text style={{ color: C.muted, fontSize: s(11), fontWeight: "600" }}>Tap to change photo</Text>
+            </View>
+
+            {/* Name field */}
+            <View style={{ gap: s(6) }}>
+              <Text style={{ color: C.muted, fontSize: s(11), fontWeight: "700", letterSpacing: 0.8 }}>DISPLAY NAME</Text>
+              <TextInput
+                value={editNameDraft}
+                onChangeText={setEditNameDraft}
+                placeholder="Your name"
+                placeholderTextColor={C.muted + "88"}
+                style={{
+                  backgroundColor: C.bg,
+                  color: C.text,
+                  fontSize: s(15),
+                  fontWeight: "700",
+                  borderRadius: s(12),
+                  borderWidth: s(1),
+                  borderColor: C.line,
+                  paddingHorizontal: s(14),
+                  paddingVertical: s(12),
+                }}
+                returnKeyType="done"
+              />
+            </View>
+
+            {/* Save button */}
+            <Pressable
+              onPress={async () => {
+                const v = editNameDraft.trim();
+                setProfileNameState(v);
+                await saveSetupName(v);
+                setProfilePic(editPicDraft);
+                if (editPicDraft !== profilePic) {
+                  await saveProfilePicture(editPicDraft);
+                }
+                setEditProfileModal(false);
+              }}
+              style={{
+                backgroundColor: C.accent,
+                borderRadius: s(14),
+                paddingVertical: s(14),
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ color: "#fff", fontSize: s(15), fontWeight: "900" }}>Save changes</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       {/* Delete account confirmation */}
       <Modal
@@ -1355,12 +1763,200 @@ function StatCard({
     <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
       <Ionicons name={icon} size={s(16)} color={iconColor ?? C.muted} />
       <Text style={[styles.statValue, { color: C.text }]}>{value}</Text>
-      <Text style={[styles.statLabel, { color: C.muted }]} numberOfLines={1}>
+      <Text style={[styles.statLabel, { color: C.muted }]} numberOfLines={2}>
         {label}
       </Text>
     </View>
   );
 }
+
+function WeeklyActivityChart({
+  data,
+  C,
+}: {
+  data: {
+    dateKey: string;
+    label: string;
+    focusMin: number;
+    tasksDone: number;
+    isToday: boolean;
+    isFuture: boolean;
+  }[];
+  C: any;
+}) {
+  const { width: screenW } = useWindowDimensions();
+  // Subtract horizontal padding: scrollContent (16*2) + card padding (14*2)
+  const CHART_W = Math.max(200, screenW - s(60));
+  const CHART_H = s(120);
+  const P_TOP    = s(8);
+  const P_BOTTOM = s(18); // space for day labels
+  const P_LEFT   = s(4);
+  const P_RIGHT  = s(4);
+  const PLOT_W   = CHART_W - P_LEFT - P_RIGHT;
+  const PLOT_H   = CHART_H - P_TOP - P_BOTTOM;
+
+  const n = data.length || 7;
+  const maxFocus = Math.max(1, ...data.map((d) => d.focusMin));
+  const maxTasks = Math.max(1, ...data.map((d) => d.tasksDone));
+
+  const xOf   = (i: number) => P_LEFT + (i / (n - 1)) * PLOT_W;
+  const yFocus = (v: number) => P_TOP + PLOT_H - (v / maxFocus) * PLOT_H;
+  const yTasks = (v: number) => P_TOP + PLOT_H - (v / maxTasks) * PLOT_H;
+
+  // Clamp future points to the baseline
+  const focusPoints = data
+    .map((d, i) => `${xOf(i)},${yFocus(d.isFuture ? 0 : d.focusMin)}`)
+    .join(" ");
+  const taskPoints = data
+    .map((d, i) => `${xOf(i)},${yTasks(d.isFuture ? 0 : d.tasksDone)}`)
+    .join(" ");
+
+  // Fade-in animation when data loads
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (data.length === 0) return;
+    fadeAnim.setValue(0);
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
+  }, [data]);
+
+  const hasAnyData = data.some((d) => d.focusMin > 0 || d.tasksDone > 0);
+  // Horizontal grid lines at 33 %, 66 %, 100 %
+  const gridYs = [0.33, 0.66, 1.0].map((t) => P_TOP + PLOT_H - t * PLOT_H);
+
+  // Baseline Y (bottom of plot area)
+  const baselineY = P_TOP + PLOT_H;
+
+  return (
+    <View style={[wStyles.card, { backgroundColor: C.card, borderColor: C.line }]}>
+      {/* Legend */}
+      <View style={wStyles.legend}>
+        <View style={wStyles.legendItem}>
+          <View style={[wStyles.legendDot, { backgroundColor: C.accent }]} />
+          <Text style={[wStyles.legendLabel, { color: C.muted }]}>Focus mins</Text>
+        </View>
+        <View style={wStyles.legendItem}>
+          <View style={[wStyles.legendDot, { backgroundColor: C.success }]} />
+          <Text style={[wStyles.legendLabel, { color: C.muted }]}>Tasks done</Text>
+        </View>
+      </View>
+
+      {!hasAnyData ? (
+        <View style={wStyles.empty}>
+          <Ionicons name="stats-chart-outline" size={s(28)} color={C.muted + "50"} />
+          <Text style={[wStyles.emptyText, { color: C.muted }]}>No activity yet this week</Text>
+        </View>
+      ) : (
+        <Animated.View style={{ opacity: fadeAnim }}>
+          <Svg width={CHART_W} height={CHART_H}>
+            {/* Baseline */}
+            <SvgLine
+              x1={P_LEFT} y1={baselineY}
+              x2={P_LEFT + PLOT_W} y2={baselineY}
+              stroke={C.line}
+              strokeWidth={1}
+            />
+            {/* Horizontal grid lines */}
+            {gridYs.map((y, i) => (
+              <SvgLine
+                key={i}
+                x1={P_LEFT} y1={y}
+                x2={P_LEFT + PLOT_W} y2={y}
+                stroke={C.line}
+                strokeWidth={0.5}
+                strokeDasharray="3,5"
+              />
+            ))}
+            {/* Focus line */}
+            <Polyline
+              points={focusPoints}
+              fill="none"
+              stroke={C.accent}
+              strokeWidth={s(2)}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {/* Tasks line */}
+            <Polyline
+              points={taskPoints}
+              fill="none"
+              stroke={C.success}
+              strokeWidth={s(2)}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {/* Dots + labels */}
+            {data.map((d, i) => {
+              const cx  = xOf(i);
+              const cyF = yFocus(d.isFuture ? 0 : d.focusMin);
+              const cyT = yTasks(d.isFuture ? 0 : d.tasksDone);
+              const op  = d.isFuture ? 0.2 : 1;
+              const r   = d.isToday ? s(4.5) : s(3);
+              return (
+                <React.Fragment key={d.dateKey}>
+                  {/* Focus dot */}
+                  <Circle
+                    cx={cx} cy={cyF} r={r}
+                    fill={d.isFuture ? C.card : d.isToday ? C.accent : C.card}
+                    stroke={C.accent}
+                    strokeWidth={s(1.5)}
+                    opacity={op}
+                  />
+                  {/* Tasks dot */}
+                  <Circle
+                    cx={cx} cy={cyT} r={r}
+                    fill={d.isFuture ? C.card : d.isToday ? C.success : C.card}
+                    stroke={C.success}
+                    strokeWidth={s(1.5)}
+                    opacity={op}
+                  />
+                  {/* Day label */}
+                  <SvgText
+                    x={cx}
+                    y={CHART_H - s(2)}
+                    textAnchor="middle"
+                    fill={d.isToday ? C.accent : C.muted}
+                    fillOpacity={d.isFuture ? 0.35 : 1}
+                    fontSize={s(10)}
+                    fontWeight="800"
+                  >
+                    {d.label}
+                  </SvgText>
+                </React.Fragment>
+              );
+            })}
+          </Svg>
+        </Animated.View>
+      )}
+    </View>
+  );
+}
+
+const wStyles = StyleSheet.create({
+  card: {
+    borderRadius: s(16),
+    borderWidth: s(1),
+    padding: s(14),
+    paddingBottom: s(10),
+  },
+  legend: {
+    flexDirection: "row",
+    gap: s(14),
+    marginBottom: s(8),
+  },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: s(5) },
+  legendDot: { width: s(8), height: s(8), borderRadius: s(4) },
+  legendLabel: { fontSize: s(11), fontWeight: "700" },
+  empty: {
+    alignItems: "center",
+    paddingVertical: s(24),
+    gap: s(6),
+  },
+  emptyText: { fontSize: s(12), fontWeight: "700" },
+});
 
 function SimpleModal({
   visible,
@@ -1493,10 +2089,10 @@ const styles = StyleSheet.create({
   editBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: s(5),
-    paddingVertical: s(7),
-    paddingHorizontal: s(12),
-    borderRadius: s(10),
+    gap: s(4),
+    paddingVertical: s(5),
+    paddingHorizontal: s(9),
+    borderRadius: s(8),
     borderWidth: s(1),
   },
 
@@ -1508,9 +2104,11 @@ const styles = StyleSheet.create({
     padding: s(10),
     alignItems: "center",
     gap: s(4),
+    minHeight: s(90),
+    justifyContent: "center",
   },
   statValue: { fontSize: s(15), fontWeight: "900" },
-  statLabel: { fontSize: s(10), fontWeight: "700", textAlign: "center" },
+  statLabel: { fontSize: s(10), fontWeight: "700", textAlign: "center", lineHeight: s(13) },
 
   emptyActivityCard: {
     borderRadius: s(16),
@@ -1557,7 +2155,7 @@ const styles = StyleSheet.create({
   inProgressRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: s(12),
+    gap: s(16),
     padding: s(14),
   },
   badgeIcon: {

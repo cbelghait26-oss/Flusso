@@ -12,6 +12,7 @@ import { AchievementProvider } from "./src/context/AchievementContext";
 import { getCurrentUser, setCurrentUser, clearUserData, flushPendingCloudWrites, loadSetupComplete } from "./src/data/storage";
 import { auth } from "./src/services/firebase";
 import { bootstrapCloudForUser } from "./src/services/CloudBootstrap";
+import { initNotifications, rescheduleAllNotifications, devTestAllNotifications } from "./src/services/notifications";
 
 console.log("🏗️ BUILD INFO:");
 console.log("  Build timestamp: 2026-02-17 21:30 (with Spotify AppDelegate handler)");
@@ -70,6 +71,16 @@ export default function App() {
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>("SignIn");
 
   useEffect(() => {
+    // Initialise notifications early — sets foreground handler + requests permission.
+    // Non-blocking: failures are gracefully suppressed inside initNotifications.
+    initNotifications().catch(() => {});
+    // Expose test helper to Hermes debugger console in dev builds.
+    if (__DEV__) {
+      (global as any).devTestNotifs = devTestAllNotifications;
+    }
+  }, []);
+
+  useEffect(() => {
     const checkAuth = async () => {
       try {
         console.log("App: Checking authentication...");
@@ -89,6 +100,8 @@ export default function App() {
           const setupComplete = await loadSetupComplete();
           console.log("App: Setup complete:", setupComplete);
           setInitialRoute(setupComplete ? "MainTabs" : "Q1NameScreen");
+          // Reschedule after user is loaded
+          rescheduleAllNotifications().catch(() => {});
         } else {
           console.log("App: No authenticated user found");
           setInitialRoute("SignIn");

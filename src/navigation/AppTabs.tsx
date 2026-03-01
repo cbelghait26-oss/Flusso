@@ -8,6 +8,7 @@ import {
   Image,
   Platform,
   Animated,
+  useWindowDimensions,
 } from "react-native";
 import {
   createBottomTabNavigator,
@@ -192,6 +193,9 @@ function FlussoTabBar({ state, descriptors, navigation, resetTimerFn }: BottomTa
 }
 
 function AnimatedTabBarWrapper(props: BottomTabBarProps) {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+
   const [isVisible, setIsVisible] = useState(true);
   const translateY = useRef(new Animated.Value(0)).current;
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -238,6 +242,8 @@ function AnimatedTabBarWrapper(props: BottomTabBarProps) {
       }
     };
   }, [props.state.index]);
+
+  if (isLandscape) return null;
 
   return (
     <Animated.View style={{ transform: [{ translateY }] }}>

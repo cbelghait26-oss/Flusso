@@ -144,7 +144,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
   const systemIsDark = systemScheme !== "light";
 
-  const [themeMode, setThemeModeState] = useState<ThemeMode>("light");
+  const [themeMode, setThemeModeState] = useState<ThemeMode>("dark");
   const [accent, setAccentState] = useState<string>(BRAND.ACCENT);
 
   // load persisted prefs

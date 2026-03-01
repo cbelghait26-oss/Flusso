@@ -44,6 +44,8 @@ const KEYS = {
   FOCUS_BG: () => `${currentUserId}:focus:background`,
   FOCUS_MINUTES: () => `${currentUserId}:focus:minutes`,
   BREAK_MINUTES: () => `${currentUserId}:break:minutes`,
+  TIME_FORMAT_24H: () => `${currentUserId}:settings:timeFormat24h`,
+  PROFILE_PIC_URI: () => `${currentUserId}:profile:pictureUri`,
 };
 
 const memoryStore = new Map<string, string>();
@@ -743,8 +745,8 @@ async function loadThemeData(): Promise<ThemeData> {
     return { mode, accent };
   }
 
-  // fallback to AsyncStorage if you want, otherwise default
-  return { mode: "light", accent: "#1C7ED6" };
+  // fallback default — dark mode on first launch
+  return { mode: "dark", accent: "#1C7ED6" };
 }
 
 async function saveThemeData(next: ThemeData) {
@@ -807,6 +809,103 @@ export async function saveDailyGoal(goal: number) {
   requireUserId();
   setMemoryItem(KEYS.DAILY_GOAL(), String(goal));
   syncToCloud("dailyGoal", { goal }).catch(() => {});
+}
+
+// ========== Time Format (24h) ==========
+
+/**
+ * Load whether the user prefers 24-hour time display (default: false)
+ */
+export async function loadTimeFormat24h(): Promise<boolean> {
+  try {
+    requireUserId();
+    const cached = getMemoryItem(KEYS.TIME_FORMAT_24H());
+    if (cached !== null) return cached === "true";
+    const raw = await AsyncStorage.getItem(KEYS.TIME_FORMAT_24H());
+    const val = raw === "true";
+    setMemoryItem(KEYS.TIME_FORMAT_24H(), String(val));
+    return val;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Save whether the user prefers 24-hour time display
+ */
+export async function saveTimeFormat24h(value: boolean): Promise<void> {
+  try {
+    requireUserId();
+    setMemoryItem(KEYS.TIME_FORMAT_24H(), String(value));
+    await AsyncStorage.setItem(KEYS.TIME_FORMAT_24H(), String(value));
+  } catch {}
+}
+
+// ========== Profile Picture (base64, cloud-synced) ==========
+
+const PROFILE_PIC_MEM_KEY = () => `${currentUserId}:profile:picture`;
+
+export async function loadProfilePicture(): Promise<string | null> {
+  try {
+    requireUserId();
+    const memKey = PROFILE_PIC_MEM_KEY();
+    const cached = getMemoryItem(memKey);
+    if (cached !== null) return cached || null;
+    // Try cloud first
+    const cloud = await loadFromCloud("profilePicture");
+    if (cloud?.base64) {
+      setMemoryItem(memKey, cloud.base64);
+      return cloud.base64 as string;
+    }
+    // Fallback: local AsyncStorage (legacy URI)
+    const local = await AsyncStorage.getItem(KEYS.PROFILE_PIC_URI());
+    setMemoryItem(memKey, local ?? "");
+    return local || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveProfilePicture(base64: string | null): Promise<void> {
+  try {
+    requireUserId();
+    const memKey = PROFILE_PIC_MEM_KEY();
+    setMemoryItem(memKey, base64 ?? "");
+    // Persist locally as fallback
+    if (base64) {
+      await AsyncStorage.setItem(KEYS.PROFILE_PIC_URI(), base64);
+    } else {
+      await AsyncStorage.removeItem(KEYS.PROFILE_PIC_URI());
+    }
+    // Sync to cloud
+    syncToCloud("profilePicture", { base64: base64 ?? null }).catch(() => {});
+  } catch {}
+}
+
+// ========== Delete All Cloud Data ==========
+
+const CLOUD_COLLECTIONS = [
+  "setup", "streak", "focusDaily", "focusSessions",
+  "objectives", "tasks", "calendarEvents", "theme",
+  "dailyGoal", "focusSettings",
+];
+
+/**
+ * Deletes all Firestore data for the current user.
+ * Called during account deletion before removing the Firebase Auth user.
+ */
+export async function deleteAllCloudData(): Promise<void> {
+  if (!currentUserId) return;
+  try {
+    const batch = writeBatch(db);
+    for (const col of CLOUD_COLLECTIONS) {
+      const docRef = doc(db, "users", currentUserId, col, "data");
+      batch.delete(docRef);
+    }
+    await batch.commit();
+  } catch (e) {
+    console.warn("deleteAllCloudData error:", e);
+  }
 }
 
 /**

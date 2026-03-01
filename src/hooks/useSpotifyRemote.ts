@@ -1,4 +1,5 @@
 // src/hooks/useSpotifyRemote.ts
+// Web API version — no native SDK, no App Remote connection required.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, AppStateStatus, Linking } from "react-native";
 import Constants from "expo-constants";
@@ -16,39 +17,18 @@ type State = {
   error:      string | null;
 };
 
-// All the ways the SDK says "Spotify isn't actively playing"
-const NOT_PLAYING_PATTERNS = [
-  "connection refused",
-  "connection attempt failed",
-  "stream error",
-  "reconnect the transport",
-  "spotifynotinstalled",
-  "spotify not installed",
-  "not playing",
-];
-
-function isNotPlayingError(msg: string): boolean {
-  const lower = msg.toLowerCase();
-  return NOT_PLAYING_PATTERNS.some((p) => lower.includes(p));
-}
-
 export function useSpotifyRemote() {
-  const [state, setState] = useState<State>({ connected: false, connecting: false, error: null });
-  const connectingRef     = useRef(false);
-  const appStateRef       = useRef<AppStateStatus>(AppState.currentState);
+  const [state, setState]     = useState<State>({ connected: false, connecting: false, error: null });
+  const connectingRef         = useRef(false);
+  const appStateRef           = useRef<AppStateStatus>(AppState.currentState);
 
-  // ── On app foreground: silent reconnect attempt — NEVER shows alerts ─────
-  // App Remote requires Spotify to be actively playing to connect.
-  // If Spotify isn't playing the reconnect will fail silently — that's fine.
+  // ── On app foreground: silently verify token is still valid ─────────────
   useEffect(() => {
     const sub = AppState.addEventListener("change", async (next) => {
       if (appStateRef.current.match(/inactive|background/) && next === "active") {
-        const stillConnected = await spotifyIsConnected();
-        if (!stillConnected && hasStoredCredentials()) {
-          const ok = await spotifyReconnect(); // swallows all errors internally
+        if (hasStoredCredentials()) {
+          const ok = await spotifyReconnect(); // just checks /me with current token
           setState((s) => ({ ...s, connected: ok }));
-        } else {
-          setState((s) => ({ ...s, connected: stillConnected }));
         }
       }
       appStateRef.current = next;
@@ -60,14 +40,9 @@ export function useSpotifyRemote() {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      if (!hasStoredCredentials()) return;
       const ok = await spotifyIsConnected();
-      if (!mounted) return;
-      if (!ok && hasStoredCredentials()) {
-        const reconnected = await spotifyReconnect(); // silent
-        if (mounted) setState((s) => ({ ...s, connected: reconnected }));
-      } else {
-        if (mounted) setState((s) => ({ ...s, connected: ok }));
-      }
+      if (mounted) setState((s) => ({ ...s, connected: ok }));
     })();
     return () => { mounted = false; };
   }, []);
@@ -80,13 +55,11 @@ export function useSpotifyRemote() {
       Constants.appOwnership === "expo" ||
       Constants.executionEnvironment === "storeClient";
     if (isExpoGo) {
-      Alert.alert("Expo Go Not Supported", "Spotify Remote requires a custom development build.", [{ text: "OK" }]);
-      return;
-    }
-
-    const spotifyInstalled = await Linking.canOpenURL("spotify://").catch(() => false);
-    if (!spotifyInstalled) {
-      Alert.alert("Spotify Not Installed", "Install the Spotify app to use this feature.", [{ text: "OK" }]);
+      Alert.alert(
+        "Expo Go Not Supported",
+        "Spotify requires a custom development build.",
+        [{ text: "OK" }],
+      );
       return;
     }
 
@@ -100,19 +73,18 @@ export function useSpotifyRemote() {
       setState({ connected: false, connecting: false, error: raw });
 
       // User closed the browser — no noise
-      if (raw.includes("cancel") || raw.includes("dismiss")) return;
+      if (raw.toLowerCase().includes("cancel") || raw.toLowerCase().includes("dismiss")) return;
 
-      // Spotify isn't open/playing — give clear instructions
-      if (isNotPlayingError(raw)) {
+      // Spotify Web API unreachable — probably no active device
+      if (raw.includes("Web API unreachable")) {
         Alert.alert(
           "Open Spotify First",
-          "Spotify must be open and playing before you can connect.\n\n1. Open the Spotify app\n2. Play any song\n3. Come back and tap Spotify",
+          "Open the Spotify app and play a song, then come back and tap Spotify again.",
           [{ text: "Got it" }],
         );
         return;
       }
 
-      // Generic: show only the first line of the error (the SDK stacks multiple messages)
       const friendly = raw.split("\n")[0].trim() || "Connection failed. Please try again.";
       Alert.alert("Spotify Connection Failed", friendly);
     } finally {
@@ -134,7 +106,13 @@ export function useSpotifyRemote() {
   }, []);
 
   return useMemo(
-    () => ({ connected: state.connected, connecting: state.connecting, error: state.error, connect, disconnect }),
+    () => ({
+      connected:  state.connected,
+      connecting: state.connecting,
+      error:      state.error,
+      connect,
+      disconnect,
+    }),
     [state, connect, disconnect],
   );
 }
