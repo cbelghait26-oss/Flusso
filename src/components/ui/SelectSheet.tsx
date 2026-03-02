@@ -3,7 +3,7 @@ import React from "react";
 import { Modal, Pressable, ScrollView, Text, View, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../theme/theme";
-import { s } from "react-native-size-matters";
+import { s } from "../../ui/ts";
 
 export type SelectItem<T extends string | number> = {
   label: string;

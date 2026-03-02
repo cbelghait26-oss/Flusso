@@ -1,7 +1,7 @@
 // src/components/theme/theme.ts
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useColorScheme } from "react-native";
-import { s } from "react-native-size-matters";
+import { s } from "../../ui/ts";
 import { loadThemeMode, saveThemeMode, loadThemeAccent, saveThemeAccent } from "../../data/storage";
 
 // ✅ Updated brand colors - Primary Flow Blue

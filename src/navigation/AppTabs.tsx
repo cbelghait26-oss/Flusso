@@ -21,7 +21,7 @@ import TasksObjectivesScreen from "../../screens/TasksObjectivesScreen";
 import FocusZoneScreen from "../../screens/FocusZoneScreen";
 import CalendarScreenV2 from "../../screens/CalendarScreen";
 import SettingsScreen from "../../screens/SettingsScreen";
-import { s } from "react-native-size-matters";
+import { s } from "../ui/ts";
 import { useTheme } from "../components/theme/theme";
 
 type TabsParamList = {
@@ -195,6 +195,7 @@ function FlussoTabBar({ state, descriptors, navigation, resetTimerFn }: BottomTa
 function AnimatedTabBarWrapper(props: BottomTabBarProps) {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
+  const isTablet = Math.min(width, height) >= 768;
 
   const [isVisible, setIsVisible] = useState(true);
   const translateY = useRef(new Animated.Value(0)).current;
@@ -243,7 +244,8 @@ function AnimatedTabBarWrapper(props: BottomTabBarProps) {
     };
   }, [props.state.index]);
 
-  if (isLandscape) return null;
+  // Only hide the tab bar in landscape on phones; tablets always show it.
+  if (isLandscape && !isTablet) return null;
 
   return (
     <Animated.View style={{ transform: [{ translateY }] }}>

@@ -7,10 +7,11 @@ import {
   Animated,
   Easing,
 } from "react-native";
-import { s } from "react-native-size-matters";
+import { s } from "../../src/ui/ts";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../src/navigation/types";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useDeviceClass, CONTENT_MAX_WIDTH } from "../../src/ui/responsive";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Q4QuoteScreen">;
 
@@ -19,6 +20,7 @@ const INK = "#F4F6F2";
 
 const Q4QuoteScreen = ({ navigation, route }: Props) => {
   const insets = useSafeAreaInsets();
+  const { isTablet } = useDeviceClass();
 
   const fade = useRef(new Animated.Value(0)).current;
   const rise = useRef(new Animated.Value(10)).current;
@@ -58,7 +60,13 @@ const Q4QuoteScreen = ({ navigation, route }: Props) => {
   }, [fade, rise, ripple]);
 
   return (
-    <View style={styles.container}>
+    <View style={styles.outerBg}>
+      <View
+        style={[
+          styles.container,
+          isTablet && { maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center" as const, width: "100%" },
+        ]}
+      >
       {/* Fixed progress (same anchor across screens) */}
       <View style={[styles.progressFixed, { top: insets.top + s(12) }]}>
         <View style={styles.progressTrack}>
@@ -96,6 +104,7 @@ const Q4QuoteScreen = ({ navigation, route }: Props) => {
       >
         <Text style={styles.ctaText}>Next</Text>
       </TouchableOpacity>
+      </View>{/* container */}
     </View>
   );
 };
@@ -103,10 +112,13 @@ const Q4QuoteScreen = ({ navigation, route }: Props) => {
 export default Q4QuoteScreen;
 
 const styles = StyleSheet.create({
+  outerBg: {
+    flex: 1,
+    backgroundColor: BG,
+  },
   container: {
     flex: 1,
     position: "relative",
-    backgroundColor: BG,
     paddingHorizontal: s(20),
     paddingBottom: s(90),
   },

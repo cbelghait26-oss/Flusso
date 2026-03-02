@@ -17,6 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.BLGgroup.flusso",
       "googleServicesFile": "./GoogleService-Info.plist",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "LSApplicationQueriesSchemes": [
@@ -39,12 +40,19 @@
     "plugins": [
       "@react-native-community/datetimepicker",
       "@react-native-google-signin/google-signin",
+      "expo-apple-authentication",
       "expo-web-browser",
       [
         "expo-notifications",
         {
           "icon": "./assets/AppIcon.png",
           "color": "#4DA6FF"
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow Flusso to access your contacts to import birthdays and anniversaries into your calendar."
         }
       ]
     ],

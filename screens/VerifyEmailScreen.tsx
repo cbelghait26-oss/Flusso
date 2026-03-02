@@ -10,7 +10,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { s } from "react-native-size-matters";
+import { s } from "../src/ui/ts";
+import { useDeviceClass, CONTENT_MAX_WIDTH } from "../src/ui/responsive";
 
 import { auth } from "../src/services/firebase";
 import { reloadAndCheckVerified, sendVerificationEmail } from "../src/services/emailVerification";
@@ -23,6 +24,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "VerifyEmail">;
 
 export default function VerifyEmailScreen({ navigation, route }: Props) {
   const afterVerifyRoute = route.params?.afterVerifyRoute ?? "MainTabs";
+  const { isTablet } = useDeviceClass();
   const [resending, setResending] = useState(false);
   const [checking, setChecking] = useState(false);
   const [sent, setSent] = useState(false);
@@ -102,6 +104,12 @@ export default function VerifyEmailScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
+        <View
+          style={[
+            styles.innerCard,
+            isTablet && { maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center", width: "100%" },
+          ]}
+        >
         {/* Icon */}
         <View style={styles.iconWrap}>
           <Ionicons name="mail-unread-outline" size={s(48)} color="#1C7ED6" />
@@ -177,6 +185,7 @@ export default function VerifyEmailScreen({ navigation, route }: Props) {
             <Text style={styles.logoutText}>Log out</Text>
           </Pressable>
         </View>
+        </View>{/* innerCard */}
       </View>
     </SafeAreaView>
   );
@@ -192,6 +201,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: s(32),
+  },
+  innerCard: {
+    width: "100%",
+    alignItems: "center",
     gap: s(16),
   },
   iconWrap: {

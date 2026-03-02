@@ -13,7 +13,8 @@ import { PrimaryButton } from "../../src/components/ui/PrimaryButton";
 import { BottomSheet } from "../../src/components/ui/BottomSheet";
 import { StreakCelebrationModal } from "../../src/components/ui/Streakcelebrationmodal";
 import { useStreakCelebration } from "../../src/hooks/useStreakCelebration";
-import { s } from "react-native-size-matters";
+import { s } from "../../src/ui/ts";
+import { useDeviceClass, WIDE_MAX_WIDTH } from "../../src/ui/responsive";
 import {
   loadFocusMinutesToday,
   loadStreakDays,
@@ -48,6 +49,7 @@ function clamp(n: number, min: number, max: number) {
 
 export default function HomeScreen({ navigation, route }: any) {
   const { colors, radius, spacing } = useTheme();
+  const { isTablet } = useDeviceClass();
 
   // ── Streak celebration hook ──────────────────────────────────────────────
   const { state: streakState, checkAndShowStreak, dismissStreak } = useStreakCelebration();
@@ -255,6 +257,13 @@ export default function HomeScreen({ navigation, route }: any) {
           gap: spacing.md,
         }}
       >
+        {/* Centred column: maxWidth on iPad, full width on phone */}
+        <View
+          style={[
+            styles.contentColumn,
+            isTablet && { maxWidth: WIDE_MAX_WIDTH, alignSelf: "center", width: "100%" },
+          ]}
+        >
         {/* ── Header ── */}
         <View style={styles.header}>
           <View>
@@ -283,44 +292,23 @@ export default function HomeScreen({ navigation, route }: any) {
           </Text>
         </View>
 
-        {/* ── Stats ── */}
-        <View style={{ gap: s(10) }}>
+        {/* ── Stats ──
+             Phone:  [streak | focus] then [tasks - full width]
+             Tablet: [streak | focus | tasks] all in one row          */}
+        {isTablet ? (
           <View style={{ flexDirection: "row", gap: s(10) }}>
-            {/* Streak card */}
-            <View
-              style={[
-                styles.statCardLarge,
-                {
-                  borderRadius: radius.lg,
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                },
-              ]}
-            >
+            {/* Streak */}
+            <View style={[styles.statCardLarge, { borderRadius: radius.lg, backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={[styles.statIcon, { backgroundColor: "rgba(255,159,64,0.15)" }]}>
                 <Ionicons name="flame" size={s(22)} color="#FF9F40" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.statValue, { color: colors.text }]}>{dayStreak}</Text>
-                <Text style={[styles.statLabel, { color: colors.muted }]}>
-                  {dayStreak === 1 ? "day" : "days"} streak
-                </Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>{dayStreak === 1 ? "day" : "days"} streak</Text>
               </View>
             </View>
-
-            {/* Focus minutes card */}
-            <Pressable
-              onPress={goFocus}
-              style={({ pressed }) => [
-                styles.statCardLarge,
-                {
-                  borderRadius: radius.lg,
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                  opacity: pressed ? 0.9 : 1,
-                },
-              ]}
-            >
+            {/* Focus */}
+            <Pressable onPress={goFocus} style={({ pressed }) => [styles.statCardLarge, { borderRadius: radius.lg, backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.9 : 1 }]}>
               <View style={[styles.statIcon, { backgroundColor: colors.accent + "15" }]}>
                 <Ionicons name="timer-outline" size={s(22)} color={colors.accent} />
               </View>
@@ -329,35 +317,133 @@ export default function HomeScreen({ navigation, route }: any) {
                 <Text style={[styles.statLabel, { color: colors.muted }]}>minutes focused</Text>
               </View>
             </Pressable>
+            {/* Tasks */}
+            <Pressable onPress={goTasksToday} style={({ pressed }) => [styles.statCardLarge, { borderRadius: radius.lg, backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.9 : 1 }]}>
+              <View style={[styles.statIcon, { backgroundColor: "rgba(75,192,192,0.15)" }]}>
+                <Ionicons name="checkmark-circle" size={s(22)} color="#4BC0C0" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.statValue, { color: colors.text }]}>{tasksDoneToday}</Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>tasks today</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={s(18)} color={colors.muted} />
+            </Pressable>
           </View>
+        ) : (
+          <View style={{ gap: s(10) }}>
+            <View style={{ flexDirection: "row", gap: s(10) }}>
+              {/* Streak card */}
+              <View style={[styles.statCardLarge, { borderRadius: radius.lg, backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.statIcon, { backgroundColor: "rgba(255,159,64,0.15)" }]}>
+                  <Ionicons name="flame" size={s(22)} color="#FF9F40" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.statValue, { color: colors.text }]}>{dayStreak}</Text>
+                  <Text style={[styles.statLabel, { color: colors.muted }]}>{dayStreak === 1 ? "day" : "days"} streak</Text>
+                </View>
+              </View>
+              {/* Focus minutes card */}
+              <Pressable onPress={goFocus} style={({ pressed }) => [styles.statCardLarge, { borderRadius: radius.lg, backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.9 : 1 }]}>
+                <View style={[styles.statIcon, { backgroundColor: colors.accent + "15" }]}>
+                  <Ionicons name="timer-outline" size={s(22)} color={colors.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.statValue, { color: colors.text }]}>{focusedMinutesToday}</Text>
+                  <Text style={[styles.statLabel, { color: colors.muted }]}>minutes focused</Text>
+                </View>
+              </Pressable>
+            </View>
+            {/* Tasks completed card (full-width on phone) */}
+            <Pressable
+              onPress={goTasksToday}
+              style={({ pressed }) => [{
+                flexDirection: "row", alignItems: "center", padding: s(14), gap: s(12),
+                borderRadius: radius.lg, backgroundColor: colors.card, borderColor: colors.border,
+                borderWidth: s(1), opacity: pressed ? 0.9 : 1,
+              }]}
+            >
+              <View style={[styles.statIcon, { backgroundColor: "rgba(75,192,192,0.15)" }]}>
+                <Ionicons name="checkmark-circle" size={s(22)} color="#4BC0C0" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.statValue, { color: colors.text }]}>{tasksDoneToday}</Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>tasks completed today</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={s(18)} color={colors.muted} />
+            </Pressable>
+          </View>
+        )}
 
-          {/* Tasks completed card */}
-          <Pressable
-            onPress={goTasksToday}
-            style={({ pressed }) => [
-              {
-                flexDirection: "row",
-                alignItems: "center",
-                padding: s(14),
-                gap: s(12),
-                borderRadius: radius.lg,
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                borderWidth: s(1),
-                opacity: pressed ? 0.9 : 1,
-              },
-            ]}
-          >
-            <View style={[styles.statIcon, { backgroundColor: "rgba(75,192,192,0.15)" }]}>
-              <Ionicons name="checkmark-circle" size={s(22)} color="#4BC0C0" />
+        {/* ── Tablet-only: Quick Actions 2×2 grid ── */}
+        {isTablet && (
+          <View style={{ gap: s(10) }}>
+            <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: s(2) }]}>Quick Access</Text>
+            <View style={{ flexDirection: "row", gap: s(10) }}>
+              {/* Focus Zone tile */}
+              <Pressable
+                onPress={goFocus}
+                style={({ pressed }) => [{
+                  flex: 1, borderRadius: radius.xl, backgroundColor: colors.card,
+                  borderWidth: 1, borderColor: colors.accent + "40",
+                  padding: s(20), gap: s(10), opacity: pressed ? 0.88 : 1,
+                }]}
+              >
+                <View style={[{ width: s(44), height: s(44), borderRadius: s(22), alignItems: "center", justifyContent: "center" }, { backgroundColor: colors.accent + "18" }]}>
+                  <Ionicons name="flash" size={s(22)} color={colors.accent} />
+                </View>
+                <Text style={{ color: colors.text, fontWeight: "700", fontSize: s(16) }}>Focus Zone</Text>
+                <Text style={{ color: colors.muted, fontSize: s(13) }}>Start a session</Text>
+              </Pressable>
+              {/* Tasks tile */}
+              <Pressable
+                onPress={goTasksToday}
+                style={({ pressed }) => [{
+                  flex: 1, borderRadius: radius.xl, backgroundColor: colors.card,
+                  borderWidth: 1, borderColor: colors.border,
+                  padding: s(20), gap: s(10), opacity: pressed ? 0.88 : 1,
+                }]}
+              >
+                <View style={[{ width: s(44), height: s(44), borderRadius: s(22), alignItems: "center", justifyContent: "center" }, { backgroundColor: "rgba(75,192,192,0.15)" }]}>
+                  <Ionicons name="checkmark-done" size={s(22)} color="#4BC0C0" />
+                </View>
+                <Text style={{ color: colors.text, fontWeight: "700", fontSize: s(16) }}>My Tasks</Text>
+                <Text style={{ color: colors.muted, fontSize: s(13) }}>View &amp; manage</Text>
+              </Pressable>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.statValue, { color: colors.text }]}>{tasksDoneToday}</Text>
-              <Text style={[styles.statLabel, { color: colors.muted }]}>tasks completed today</Text>
+            <View style={{ flexDirection: "row", gap: s(10) }}>
+              {/* Calendar tile */}
+              <Pressable
+                onPress={() => navigation.navigate("CalendarTab")}
+                style={({ pressed }) => [{
+                  flex: 1, borderRadius: radius.xl, backgroundColor: colors.card,
+                  borderWidth: 1, borderColor: colors.border,
+                  padding: s(20), gap: s(10), opacity: pressed ? 0.88 : 1,
+                }]}
+              >
+                <View style={[{ width: s(44), height: s(44), borderRadius: s(22), alignItems: "center", justifyContent: "center" }, { backgroundColor: "rgba(99,102,241,0.15)" }]}>
+                  <Ionicons name="calendar-outline" size={s(22)} color="#6366F1" />
+                </View>
+                <Text style={{ color: colors.text, fontWeight: "700", fontSize: s(16) }}>Calendar</Text>
+                <Text style={{ color: colors.muted, fontSize: s(13) }}>Your schedule</Text>
+              </Pressable>
+              {/* Settings tile */}
+              <Pressable
+                onPress={() => navigation.navigate("SettingsTab")}
+                style={({ pressed }) => [{
+                  flex: 1, borderRadius: radius.xl, backgroundColor: colors.card,
+                  borderWidth: 1, borderColor: colors.border,
+                  padding: s(20), gap: s(10), opacity: pressed ? 0.88 : 1,
+                }]}
+              >
+                <View style={[{ width: s(44), height: s(44), borderRadius: s(22), alignItems: "center", justifyContent: "center" }, { backgroundColor: "rgba(255,159,64,0.15)" }]}>
+                  <Ionicons name="settings-outline" size={s(22)} color="#FF9F40" />
+                </View>
+                <Text style={{ color: colors.text, fontWeight: "700", fontSize: s(16) }}>Settings</Text>
+                <Text style={{ color: colors.muted, fontSize: s(13) }}>Preferences &amp; profile</Text>
+              </Pressable>
             </View>
-            <Ionicons name="chevron-forward" size={s(18)} color={colors.muted} />
-          </Pressable>
-        </View>
+          </View>
+        )}
 
         {/* ── Up Next ── */}
         <Card style={{ padding: s(16), backgroundColor: colors.card }}>
@@ -427,6 +513,7 @@ export default function HomeScreen({ navigation, route }: any) {
           leftIcon={<Ionicons name="flash" size={s(18)} color={colors.bg} />}
           style={{ borderRadius: radius.xl }}
         />
+        </View>{/* end contentColumn */}
       </ScrollView>
 
       {/* ── Add Task Sheet ── */}
@@ -857,6 +944,9 @@ function MiniCalendar({
 // Styles
 // ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  contentColumn: {
+    gap: 12, // mirrors spacing.md; keeps items stacked within the column
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",

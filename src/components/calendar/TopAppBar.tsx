@@ -1,7 +1,7 @@
 import React from "react";
 import { Animated, Pressable, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { s } from "react-native-size-matters";
+import { s } from "../../ui/ts";
 
 export function TopAppBar(props: {
   theme: any;

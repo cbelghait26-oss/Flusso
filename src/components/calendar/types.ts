@@ -15,6 +15,8 @@ export type EventColorKey =
   | "pink"
   | "birthday";
 
+export type ContactDateKind = "birthday" | "anniversary" | "other";
+
 export type LocalEvent = {
   id: string;
   title: string;
@@ -35,9 +37,19 @@ export type LocalEvent = {
 
   calendarSource: "local" | "google"; // placeholder
   googleCalendarId?: string; // placeholder
-  
+
   eventType?: "event" | "birthday"; // distinguish birthdays from regular events
   birthYear?: number; // only for birthday events
+
+  // ── Contact import fields (backward-compatible, never sent to cloud) ──────
+  /** "contacts" when this event was imported from device contacts. */
+  source?: "local" | "contacts";
+  /** Stable device contact ID — used for idempotent re-import */
+  contactId?: string;
+  /** What kind of contact date this is */
+  contactDateKind?: ContactDateKind;
+  /** Original label string from the contact's dates array (e.g. "Anniversary") */
+  originalLabel?: string;
 };
 
 export type CalItem = {
@@ -54,4 +66,7 @@ export type CalItem = {
   location?: string;
 
   completed?: boolean; // tasks/objectives
+
+  /** Filled for contact-imported events so icons can be differentiated */
+  contactDateKind?: ContactDateKind;
 };

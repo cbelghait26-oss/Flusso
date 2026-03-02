@@ -16,20 +16,23 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
-import { s } from "react-native-size-matters";
+import { s } from "../src/ui/ts";
 
 import { useTheme } from "../src/components/theme/theme";
 import { monthLabel, parseYMD, startOfMonth, ymd } from "../src/components/calendar/date";
 import type { YMD } from "../src/components/calendar/types";
 import { useCalendarItems } from "../src/components/calendar/useCalendarItems";
-import { loadLocalEvents, saveLocalEvents, STORAGE_MODULE_ID } from "../src/data/storage";
+import { loadLocalEvents, saveLocalEvents, STORAGE_MODULE_ID, loadContactItems, loadContactsSettings } from "../src/data/storage";
 import { eventColor } from "../src/components/calendar/eventColors";
+import type { LocalEvent } from "../src/components/calendar/types";
+import { buildContactEventsForDefaultWindow } from "../src/services/contactsDates";
 
 import { TopAppBar } from "../src/components/calendar/TopAppBar";
 import { MonthStrip } from "../src/components/calendar/MonthStrip";
 import { CreateSheet } from "../src/components/calendar/CreateSheet";
 import { SideDrawer } from "../src/components/calendar/SideDrawer";
 import { generateDefaultHolidays } from "../src/data/holidays";
+import { useDeviceClass, WIDE_MAX_WIDTH } from "../src/ui/responsive";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -83,7 +86,13 @@ function buildDayKeysBetweenInclusive(a: Date, b: Date): YMD[] {
   return out;
 }
 
-function itemIconName(type?: string) {
+function itemIconName(type?: string, contactDateKind?: string) {
+  // Contact date overrides come first so the correct icon is shown even
+  // though the CalItem type is always "event".
+  if (contactDateKind === "birthday") return "gift-outline";
+  if (contactDateKind === "anniversary") return "heart-outline";
+  if (contactDateKind === "other")      return "calendar-outline";
+
   switch (type) {
     case "event":      return "calendar-outline";
     case "task":       return "checkbox-outline";
@@ -141,6 +150,7 @@ export default function CalendarScreenV2() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<any>();
   const { width } = useWindowDimensions();
+  const { isTablet } = useDeviceClass();
 
   const canGoBack = typeof nav?.canGoBack === "function" ? nav.canGoBack() : false;
 
@@ -161,6 +171,10 @@ export default function CalendarScreenV2() {
   const [showTasks, setShowTasks] = useState(true);
   const [showBirthdays, setShowBirthdays] = useState(true);
   const [showHolidays, setShowHolidays] = useState(true);
+  const [showContacts, setShowContacts] = useState(true);
+
+  /** In-memory contact events derived from stored ContactDateItem[]. Never persisted to localEvents. */
+  const [contactEvents, setContactEvents] = useState<LocalEvent[]>([]);
 
   const { loading, reload, itemsByDay, events, setEvents } = useCalendarItems({
     query,
@@ -168,6 +182,8 @@ export default function CalendarScreenV2() {
     showTasks,
     showBirthdays,
     showHolidays,
+    showContacts,
+    contactEvents,
   });
 
   // Load events from storage on mount
@@ -191,6 +207,35 @@ export default function CalendarScreenV2() {
     loadEvents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Load contact events whenever the screen comes into focus (not just on mount).
+  // This ensures that after the user enables the feature in Settings and navigates
+  // back to the calendar, contact dates appear immediately without needing an
+  // app restart. Contact events are intentionally kept separate from `events`
+  // so they are never accidentally synced to the cloud or saved to localEvents.
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadContactEventsFromStorage = async () => {
+        try {
+          const settings = await loadContactsSettings();
+          if (!settings.enabled) {
+            setContactEvents([]); // clear if disabled
+            return;
+          }
+          const items = await loadContactItems();
+          if (items.length === 0) {
+            setContactEvents([]);
+            return;
+          }
+          const generated = buildContactEventsForDefaultWindow(items);
+          setContactEvents(generated);
+        } catch (error) {
+          console.error("Failed to load contact events:", error);
+        }
+      };
+      loadContactEventsFromStorage();
+    }, [])
+  );
 
   // Reload tasks/objectives when screen comes into focus
   useFocusEffect(
@@ -380,7 +425,8 @@ export default function CalendarScreenV2() {
   // ====== Week/Month header strip ======
   const WeekStrip = useMemo(() => {
     // slot width: 7 items fill the strip exactly, same visual density as before
-    const slotW = Math.floor((width - s(24)) / 7);
+    const innerW = isTablet ? Math.min(width, WIDE_MAX_WIDTH) : width;
+    const slotW = Math.floor((innerW - s(24)) / 7);
 
     return (
       <View style={[styles.weekWrap, { borderBottomColor: theme.colors.border }]}>
@@ -479,7 +525,7 @@ export default function CalendarScreenV2() {
       </View>
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theme, calView, selected, anchorMonth, monthCollapsed, itemsByDay, loading, dayKeys, todayIndex, width]);
+  }, [theme, calView, selected, anchorMonth, monthCollapsed, itemsByDay, loading, dayKeys, todayIndex, width, isTablet]);
 
   // ====== Day renderers ======
   const renderDayHeader = (section: any) => {
@@ -587,7 +633,7 @@ export default function CalendarScreenV2() {
               <View style={[styles.itemBar, { backgroundColor: barColor }]} />
               <View style={styles.itemMain}>
                 <View style={styles.itemTop}>
-                  <Ionicons name={itemIconName(type)} size={s(16)} color={theme.colors.text} />
+                  <Ionicons name={itemIconName(type, it?.contactDateKind)} size={s(16)} color={theme.colors.text} />
                   <Text style={[styles.itemTitle, { color: theme.colors.text }]} numberOfLines={1}>
                     {titleText}
                   </Text>
@@ -624,6 +670,7 @@ export default function CalendarScreenV2() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.bg }} edges={["top", "left", "right"]}>
+      <View style={[{ flex: 1 }, isTablet && { maxWidth: WIDE_MAX_WIDTH, alignSelf: "center" as const, width: "100%" }]}>
       <TopAppBar
         theme={theme}
         title={title}
@@ -696,6 +743,7 @@ export default function CalendarScreenV2() {
       >
         <Ionicons name="add" size={s(28)} color="#fff" />
       </Pressable>
+      </View>{/* end centering column */}
 
       <SideDrawer
         theme={theme}
@@ -710,6 +758,8 @@ export default function CalendarScreenV2() {
         setShowBirthdays={setShowBirthdays}
         showHolidays={showHolidays}
         setShowHolidays={setShowHolidays}
+        showContacts={showContacts}
+        setShowContacts={setShowContacts}
         onClose={() => setDrawerOpen(false)}
         onLinkGoogle={() => {}}
       />

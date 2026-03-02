@@ -4,7 +4,7 @@ import { Pressable, Text, View, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useTheme } from "../theme/theme";
-import { s } from "react-native-size-matters";
+import { s } from "../../ui/ts";
 
 function fmt(d: Date) {
   const y = d.getFullYear();

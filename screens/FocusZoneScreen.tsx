@@ -19,12 +19,13 @@ import { Audio } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import Entypo from "@expo/vector-icons/Entypo";
-import { s } from "react-native-size-matters";
+import { s } from "../src/ui/ts";
 
 import { useGlobalMusic } from "../src/services/GlobalMusicPlayer";
 import { SpotifyMiniPlayer, type TrackInfo } from "../src/components/SpotifyMiniPlayer";
 import { useSpotifyRemote } from "../src/hooks/useSpotifyRemote";
 import { useFocusEffect } from "@react-navigation/native";
+import { CONTENT_MAX_WIDTH } from "../src/ui/responsive";
 
 import {
   loadTasks,
@@ -74,6 +75,7 @@ export default function FocusZoneScreen({ navigation }: any) {
   const spotify = useSpotifyRemote();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
+  const isTablet = Math.min(width, height) >= 768;
 
   // Room
   const [isInRoom,         setIsInRoom]         = useState(false);
@@ -459,7 +461,11 @@ export default function FocusZoneScreen({ navigation }: any) {
   // so it needs a proportionally smaller font in landscape to avoid overflow.
   const isStopwatchDisplay = timerMode === "timer" && timerView !== "clock";
   const normalFontL    = isStopwatchDisplay ? s(56) : s(76);
-  const immersiveFontL = isStopwatchDisplay ? height * 0.44 : height * 0.62;
+  // On tablet, cap immersive font so the timer number doesn't overflow the screen.
+  // Safe baseline: roughly 9% of screen width for 7-char stopwatch, 14% for 5-char formats.
+  const immersiveFontL = isTablet
+    ? (isStopwatchDisplay ? Math.min(height * 0.44, width * 0.09) : Math.min(height * 0.62, width * 0.14))
+    : (isStopwatchDisplay ? height * 0.44 : height * 0.62);
   const timerFontSizeL = immAnim.interpolate({ inputRange: [0,1], outputRange: [normalFontL, immersiveFontL] });
   const timerSpacingL  = immAnim.interpolate({ inputRange: [0,1], outputRange: [-1, -4] });
 
@@ -476,6 +482,7 @@ export default function FocusZoneScreen({ navigation }: any) {
               </Pressable>
             </View>
             <View style={{ flex:1, paddingTop: s(28) }}>
+              <View style={[{ flex: 1 }, isTablet && { maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center" as const, width: "100%" }]}>
               <Text style={styles.roomTitle}>Choose Your Focus Room</Text>
               <Text style={styles.roomSubtitle}>Select an environment to begin</Text>
               <ScrollView contentContainerStyle={{ gap:s(14), paddingBottom:s(100) }} showsVerticalScrollIndicator={false}>
@@ -493,6 +500,7 @@ export default function FocusZoneScreen({ navigation }: any) {
                   </Pressable>
                 ))}
               </ScrollView>
+              </View>{/* end centering column */}
             </View>
           </SafeAreaView>
         </LinearGradient>
@@ -543,7 +551,10 @@ export default function FocusZoneScreen({ navigation }: any) {
               </View>
 
               {/* Right: Controls panel */}
-              <Animated.View style={[ls.controlsCol, { opacity: uiOpacity }]} pointerEvents={immersive ? "none" : "auto"}>
+              <Animated.View
+                style={[ls.controlsCol, { opacity: uiOpacity }, isTablet && { width: s(300) }]}
+                pointerEvents={immersive ? "none" : "auto"}
+              >
                 <ScrollView 
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={{ gap: s(10), paddingBottom: s(14) }}
@@ -574,7 +585,7 @@ export default function FocusZoneScreen({ navigation }: any) {
                     </Text>
                   </Pressable>
 
-                  {spotify.connected && <SpotifyMiniPlayer onTrackChange={setCurrentTrack} isLandscape={true}/>}
+                  {spotify.connected && <SpotifyMiniPlayer onTrackChange={setCurrentTrack} isLandscape={!isTablet}/>}
 
                   <Text style={styles.phaseLabel}>{mainLabel.toUpperCase()}</Text>
 

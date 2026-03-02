@@ -2,7 +2,8 @@
 import React, { ReactNode, useEffect, useState } from "react";
 import { Modal, Pressable, View, StyleSheet, Platform, ScrollView, Keyboard } from "react-native";
 import { useTheme } from "../theme/theme";
-import { s } from "react-native-size-matters";
+import { s } from "../../ui/ts";
+import { useDeviceClass, CONTENT_MAX_WIDTH } from "../../ui/responsive";
 
 export function BottomSheet({
   visible,
@@ -14,6 +15,7 @@ export function BottomSheet({
   children: ReactNode;
 }) {
   const { colors, radius } = useTheme();
+  const { isTablet } = useDeviceClass();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
@@ -44,7 +46,7 @@ export function BottomSheet({
         {/* Backdrop ONLY (captures outside taps) */}
         <Pressable style={styles.backdrop} onPress={onClose} />
 
-        {/* Sheet */}
+        {/* Sheet – centred with maxWidth on iPad */}
         <View
           style={[
             styles.sheet,
@@ -54,6 +56,15 @@ export function BottomSheet({
               borderTopLeftRadius: radius.xl,
               borderTopRightRadius: radius.xl,
               marginBottom: keyboardHeight,
+            },
+            isTablet && {
+              maxWidth: CONTENT_MAX_WIDTH,
+              alignSelf: "center" as const,
+              width: "100%",
+              // Round all corners on tablet (floating card style)
+              borderBottomLeftRadius: radius.xl,
+              borderBottomRightRadius: radius.xl,
+              marginBottom: keyboardHeight + 24,
             },
           ]}
           pointerEvents="auto"

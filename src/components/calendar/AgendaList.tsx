@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import type { CalItem, YMD } from "./types";
 import { formatDayHeader, timeLabel, ymdCompare } from "./date";
 import { eventColor } from "./eventColors";
-import { s } from "react-native-size-matters";
+import { s } from "../../ui/ts";
 
 export function AgendaList(props: {
   theme: any;

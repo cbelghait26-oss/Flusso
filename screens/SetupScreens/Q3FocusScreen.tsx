@@ -8,11 +8,12 @@ import {
   Easing,
   ScrollView,
 } from "react-native";
-import { s } from "react-native-size-matters";
+import { s } from "../../src/ui/ts";
 import { Feather } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../src/navigation/types";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useDeviceClass, CONTENT_MAX_WIDTH } from "../../src/ui/responsive";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Q3FocusScreen">;
 
@@ -31,6 +32,7 @@ const CARD = "#0f3f87";
 
 const Q3FocusScreen = ({ navigation, route }: Props) => {
   const insets = useSafeAreaInsets();
+  const { isTablet } = useDeviceClass();
 
   const [selected, setSelected] = useState<Set<OptionKey>>(new Set());
 
@@ -78,7 +80,13 @@ const Q3FocusScreen = ({ navigation, route }: Props) => {
   const canContinue = selected.size > 0;
 
   return (
-    <View style={styles.container}>
+    <View style={styles.outerBg}>
+      <View
+        style={[
+          styles.container,
+          isTablet && { maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center" as const, width: "100%" },
+        ]}
+      >
       {/* Fixed progress */}
       <View style={[styles.progressFixed, { top: insets.top + s(12) }]}>
         <View style={styles.progressTrack}>
@@ -137,6 +145,7 @@ const Q3FocusScreen = ({ navigation, route }: Props) => {
       >
         <Text style={styles.nextText}>Next</Text>
       </TouchableOpacity>
+      </View>{/* container */}
     </View>
   );
 };
@@ -144,10 +153,13 @@ const Q3FocusScreen = ({ navigation, route }: Props) => {
 export default Q3FocusScreen;
 
 const styles = StyleSheet.create({
+  outerBg: {
+    flex: 1,
+    backgroundColor: BG,
+  },
   container: {
     flex: 1,
     position: "relative",
-    backgroundColor: BG,
     paddingHorizontal: s(20),
     paddingBottom: s(90),
   },

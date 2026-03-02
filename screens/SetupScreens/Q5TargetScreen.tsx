@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
-import { s } from "react-native-size-matters";
+import { s } from "../../src/ui/ts";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../src/navigation/types";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { saveSetupName, saveSetupComplete, saveSetupData, getCurrentUser } from "../../src/data/storage";
 import { CommonActions } from "@react-navigation/native";
+import { useDeviceClass, CONTENT_MAX_WIDTH } from "../../src/ui/responsive";
 
 
 type Props = NativeStackScreenProps<RootStackParamList, "Q5TargetScreen">;
@@ -18,6 +19,7 @@ const ROW_BG = "#0f3f87";
 
 const Q5TargetScreen = ({ navigation, route }: Props) => {
   const insets = useSafeAreaInsets();
+  const { isTablet } = useDeviceClass();
 
   const [selected, setSelected] = useState<TargetLevel | null>(
     route.params?.setup?.targetLevel ?? null
@@ -121,7 +123,13 @@ const Q5TargetScreen = ({ navigation, route }: Props) => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.outerBg}>
+      <View
+        style={[
+          styles.container,
+          isTablet && { maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center" as const, width: "100%" },
+        ]}
+      >
       {/* Fixed progress */}
       <View style={[styles.progressFixed, { top: insets.top + s(12) }]}>
         <View style={styles.progressTrack}>
@@ -171,6 +179,7 @@ const Q5TargetScreen = ({ navigation, route }: Props) => {
       >
         <Text style={styles.nextText}>Finish</Text>
       </TouchableOpacity>
+      </View>{/* container */}
     </View>
   );
 };
@@ -178,10 +187,13 @@ const Q5TargetScreen = ({ navigation, route }: Props) => {
 export default Q5TargetScreen;
 
 const styles = StyleSheet.create({
+  outerBg: {
+    flex: 1,
+    backgroundColor: BG,
+  },
   container: {
     flex: 1,
     position: "relative",
-    backgroundColor: BG,
     paddingHorizontal: s(20),
     paddingBottom: s(90),
   },

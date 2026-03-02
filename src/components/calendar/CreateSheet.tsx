@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Picker } from "@react-native-picker/picker";
-import { s } from "react-native-size-matters";
+import { s } from "../../ui/ts";
 
 import type { EventColorKey, HM, LocalEvent, YMD } from "./types";
 import { isValidHM, ymdCompare } from "./date";

@@ -2,7 +2,7 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useTheme } from "../theme/theme";
-import { s } from "react-native-size-matters";
+import { s } from "../../ui/ts";
 
 type Item<T extends string> = { key: T; label: string };
 

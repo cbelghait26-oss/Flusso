@@ -46,6 +46,9 @@ const KEYS = {
   BREAK_MINUTES: () => `${currentUserId}:break:minutes`,
   TIME_FORMAT_24H: () => `${currentUserId}:settings:timeFormat24h`,
   PROFILE_PIC_URI: () => `${currentUserId}:profile:pictureUri`,
+  // Contact date items — stored locally only, never synced to cloud (privacy)
+  CONTACT_ITEMS: () => `${currentUserId}:contacts:dateItems`,
+  CONTACTS_SETTINGS: () => `${currentUserId}:contacts:settings`,
 };
 
 const memoryStore = new Map<string, string>();
@@ -1149,3 +1152,67 @@ function todayKey(d = new Date()) {
 }
 
 export { todayKey };
+
+// ========== Contacts Date Items (local-only, no cloud) ==========
+// Privacy: raw contact data (name, month/day/year, kind) is NEVER uploaded to
+// the cloud.  It is stored only in the device's AsyncStorage so the import is
+// idempotent across app restarts without requiring a fresh contacts read each time.
+
+export type ContactsSettings = {
+  /** Whether the contacts import feature is enabled by the user */
+  enabled: boolean;
+  /** ISO timestamp of the last successful import, or null */
+  lastSyncAt: string | null;
+  /** Permission status at the time of last import */
+  permissionStatus: "granted" | "denied" | "undetermined";
+};
+
+const DEFAULT_CONTACTS_SETTINGS: ContactsSettings = {
+  enabled: false,
+  lastSyncAt: null,
+  permissionStatus: "undetermined",
+};
+
+export async function loadContactsSettings(): Promise<ContactsSettings> {
+  try {
+    requireUserId();
+    const raw = await AsyncStorage.getItem(KEYS.CONTACTS_SETTINGS());
+    if (raw) return { ...DEFAULT_CONTACTS_SETTINGS, ...JSON.parse(raw) };
+  } catch {}
+  return { ...DEFAULT_CONTACTS_SETTINGS };
+}
+
+export async function saveContactsSettings(
+  settings: Partial<ContactsSettings>,
+): Promise<void> {
+  try {
+    requireUserId();
+    const current = await loadContactsSettings();
+    const next = { ...current, ...settings };
+    await AsyncStorage.setItem(KEYS.CONTACTS_SETTINGS(), JSON.stringify(next));
+  } catch {}
+}
+
+export async function loadContactItems(): Promise<any[]> {
+  try {
+    requireUserId();
+    const raw = await AsyncStorage.getItem(KEYS.CONTACT_ITEMS());
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+
+export async function saveContactItems(items: any[]): Promise<void> {
+  try {
+    requireUserId();
+    await AsyncStorage.setItem(KEYS.CONTACT_ITEMS(), JSON.stringify(items));
+  } catch {}
+}
+
+export async function clearContactItems(): Promise<void> {
+  try {
+    requireUserId();
+    await AsyncStorage.removeItem(KEYS.CONTACT_ITEMS());
+    await saveContactsSettings({ enabled: false, lastSyncAt: null });
+  } catch {}
+}

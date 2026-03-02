@@ -17,11 +17,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
-import { s } from "react-native-size-matters";
+import { s } from "../src/ui/ts";
 import { useAchievements } from "../src/context/AchievementContext";
 import { useTheme } from "../src/components/theme/theme";
 import { SegmentedControl } from "../src/components/ui/SegmentedControl";
 import { BottomSheet } from "../src/components/ui/BottomSheet";
+import { useDeviceClass, WIDE_MAX_WIDTH } from "../src/ui/responsive";
 
 import type { Objective, Task } from "../src/data/models";
 import {
@@ -307,6 +308,7 @@ export default function TasksObjectivesScreen() {
   }, []);
   const { colors, radius, spacing } = useTheme();
   const { checkAchievements } = useAchievements();
+  const { isTablet } = useDeviceClass();
 
   const [mode, setMode] = useState<Mode>("tasks");
 
@@ -559,6 +561,7 @@ export default function TasksObjectivesScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>
+      <View style={[{ flex: 1 }, isTablet && { maxWidth: WIDE_MAX_WIDTH, alignSelf: "center" as const, width: "100%" }]}>
       {/* HEADER */}
       <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md, gap: s(12) }}>
         <View style={styles.rowBetween}>
@@ -1156,6 +1159,7 @@ export default function TasksObjectivesScreen() {
           </View>
         )}
       </BottomSheet>
+      </View>{/* end centering column */}
     </SafeAreaView>
   );
 }

@@ -1,6 +1,6 @@
 import { StyleSheet, Text, TouchableOpacity } from "react-native";
 import React from "react";
-import { s } from "react-native-size-matters";
+import { s } from "../../ui/ts";
 
 
 

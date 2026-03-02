@@ -1,7 +1,7 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, ViewStyle } from "react-native";
 import { useTheme } from "../theme/theme";
-import { s } from "react-native-size-matters";
+import { s } from "../../ui/ts";
 
 export function StatTile({
   value,

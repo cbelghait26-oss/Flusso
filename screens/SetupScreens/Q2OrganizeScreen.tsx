@@ -7,11 +7,12 @@ import {
   Animated,
   Easing,
 } from "react-native";
-import { s } from "react-native-size-matters";
+import { s } from "../../src/ui/ts";
 import { Feather } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../src/navigation/types";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useDeviceClass, CONTENT_MAX_WIDTH } from "../../src/ui/responsive";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Q2OrganizeScreen">;
 
@@ -19,6 +20,7 @@ type OptionKey = "list" | "calendar" | "app" | "memory" | "other";
 
 const Q2OrganizeScreen = ({ navigation, route }: Props) => {
   const insets = useSafeAreaInsets();
+  const { isTablet } = useDeviceClass();
 
   const [selected, setSelected] = useState<OptionKey | null>(null);
 
@@ -58,7 +60,13 @@ const Q2OrganizeScreen = ({ navigation, route }: Props) => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.outerBg}>
+      <View
+        style={[
+          styles.container,
+          isTablet && { maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center" as const, width: "100%" },
+        ]}
+      >
       {/* Fixed progress */}
       <View style={[styles.progressFixed, { top: insets.top + s(12) }]}>
         <View style={styles.progressTrack}>
@@ -112,6 +120,7 @@ const Q2OrganizeScreen = ({ navigation, route }: Props) => {
         <Text style={styles.nextText}>Next</Text>
       </TouchableOpacity>
 
+      </View>{/* container */}
     </View>
   );
 };
@@ -123,10 +132,13 @@ const BG = "#1055BF";
 const CARD = "#0f3f87";
 
 const styles = StyleSheet.create({
+  outerBg: {
+    flex: 1,
+    backgroundColor: BG,
+  },
   container: {
     flex: 1,
     position: "relative",
-    backgroundColor: BG,
     paddingHorizontal: s(20),
     paddingBottom: s(90), // space so content won't hide behind fixed button
   },

@@ -11,8 +11,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { s } from "react-native-size-matters";
+import { s } from "../src/ui/ts";
 import { requestPasswordReset } from "../src/services/passwordReset";
+import { useDeviceClass, CONTENT_MAX_WIDTH, TABLET_GUTTER, PHONE_GUTTER } from "../src/ui/responsive";
 
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../src/navigation/types";
@@ -24,6 +25,8 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const { isTablet } = useDeviceClass();
+  const pad = isTablet ? TABLET_GUTTER : PHONE_GUTTER;
 
   const handleSubmit = async () => {
     setEmailError("");
@@ -63,6 +66,13 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardView}
       >
+        <View
+          style={[
+            styles.contentColumn,
+            isTablet && { maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center" },
+            { paddingHorizontal: pad },
+          ]}
+        >
         {/* Header */}
         <View style={styles.header}>
           <Pressable
@@ -141,7 +151,8 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
               </Pressable>
             </>
           )}
-        </View>
+        </View>{/* form */}
+        </View>{/* contentColumn */}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -154,7 +165,11 @@ const styles = StyleSheet.create({
   },
   keyboardView: {
     flex: 1,
-    paddingHorizontal: s(24),
+    // paddingHorizontal moved to contentColumn
+  },
+  contentColumn: {
+    flex: 1,
+    width: "100%",
   },
   header: {
     marginTop: s(20),

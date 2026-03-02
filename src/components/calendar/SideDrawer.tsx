@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { Animated, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { s } from "react-native-size-matters";
+import { s } from "../../ui/ts";
 
 export function SideDrawer(props: {
   theme: any;
@@ -18,11 +18,13 @@ export function SideDrawer(props: {
   setShowBirthdays: (v: boolean) => void;
   showHolidays: boolean;
   setShowHolidays: (v: boolean) => void;
+  showContacts: boolean;
+  setShowContacts: (v: boolean) => void;
 
   onClose: () => void;
   onLinkGoogle: () => void;
 }) {
-  const { theme, visible, width, insets, showEvents, setShowEvents, showTasks, setShowTasks, showBirthdays, setShowBirthdays, showHolidays, setShowHolidays, onClose, onLinkGoogle } = props;
+  const { theme, visible, width, insets, showEvents, setShowEvents, showTasks, setShowTasks, showBirthdays, setShowBirthdays, showHolidays, setShowHolidays, showContacts, setShowContacts, onClose, onLinkGoogle } = props;
 
   const x = useRef(new Animated.Value(width)).current;
 
@@ -68,6 +70,7 @@ export function SideDrawer(props: {
         <Toggle theme={theme} label="Tasks" value={showTasks} onToggle={() => setShowTasks(!showTasks)} />
         <Toggle theme={theme} label="Birthdays" value={showBirthdays} onToggle={() => setShowBirthdays(!showBirthdays)} />
         <Toggle theme={theme} label="Holidays" value={showHolidays} onToggle={() => setShowHolidays(!showHolidays)} />
+        <Toggle theme={theme} label="Contact Dates" value={showContacts} onToggle={() => setShowContacts(!showContacts)} />
 
         <Text style={{ marginTop: s(18), color: theme.colors.muted, fontWeight: "900", fontSize: s(12) }}>GOOGLE CALENDAR</Text>
 

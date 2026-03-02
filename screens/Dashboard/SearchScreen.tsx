@@ -15,7 +15,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useTheme } from "../../src/components/theme/theme";
-import { s } from "react-native-size-matters";
+import { useDeviceClass, WIDE_MAX_WIDTH } from "../../src/ui/responsive";
+import { s } from "../../src/ui/ts";
 import { loadTasks, loadObjectives, todayKey } from "../../src/data/storage";
 import type { Task, Objective } from "../../src/data/models";
 import type { LocalEvent } from "../../src/components/calendar/types";
@@ -128,6 +129,7 @@ const ACTIONS: (ActionItem & { title: string; subtitle: string; tags: string[] }
 
 export default function SearchScreen({ navigation }: any) {
   const { colors, radius, spacing, isDark, setThemeMode, accent, setAccent } = useTheme();
+  const { isTablet } = useDeviceClass();
 
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Kind | "all">("all");
@@ -446,7 +448,8 @@ export default function SearchScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      {/* header */}
+      <View style={[{ flex: 1 }, isTablet && { maxWidth: WIDE_MAX_WIDTH, alignSelf: "center" as const, width: "100%" }]}>
+      {/* header */}}
       <View style={styles.header}>
         <Pressable
           onPress={() => navigation.goBack()}
@@ -575,6 +578,7 @@ export default function SearchScreen({ navigation }: any) {
           )
         }
       />
+      </View>{/* end centering column */}
     </SafeAreaView>
   );
 }

@@ -9,10 +9,17 @@ type Params = {
   showTasks: boolean;
   showBirthdays: boolean;
   showHolidays: boolean;
+  /** Whether to include contact-imported birthdays and anniversaries */
+  showContacts?: boolean;
+  /**
+   * Pre-built LocalEvent objects generated from device contacts.
+   * Passed in from CalendarScreen; not persisted to the events storage bucket.
+   */
+  contactEvents?: LocalEvent[];
 };
 
 export function useCalendarItems(params: Params) {
-  const { query, showEvents, showTasks, showBirthdays, showHolidays } = params;
+  const { query, showEvents, showTasks, showBirthdays, showHolidays, showContacts = true, contactEvents = [] } = params;
 
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<any[]>([]);
@@ -163,6 +170,48 @@ export function useCalendarItems(params: Params) {
       }
     }
 
+    // ── Contact-imported birthdays & anniversaries ──────────────────────────
+    // Processed from the `contactEvents` prop (generated in CalendarScreen from
+    // the device contacts; never stored in the `events` state bucket).
+    if (showContacts && contactEvents.length > 0) {
+      for (const e of contactEvents) {
+        const isContactBirthday = e.eventType === "birthday" && e.source === "contacts";
+        const isContactOther = e.source === "contacts" && e.eventType !== "birthday";
+
+        if (isContactBirthday) {
+          // Use the same birthday color key as regular birthdays
+          out.push({
+            id: `event:${e.id}`,
+            type: "event",
+            title: e.title || "Birthday",
+            date: e.startDate,
+            allDay: true,
+            startTime: undefined,
+            endTime: undefined,
+            colorKey: "birthday",
+            location: e.location,
+            contactDateKind: "birthday",
+          });
+        } else if (isContactOther) {
+          // Anniversaries → teal; other contact dates → gray
+          const colorKey =
+            e.contactDateKind === "anniversary" ? "teal" : "gray";
+          out.push({
+            id: `event:${e.id}`,
+            type: "event",
+            title: e.title || "Anniversary",
+            date: e.startDate,
+            allDay: true,
+            startTime: undefined,
+            endTime: undefined,
+            colorKey,
+            location: e.location,
+            contactDateKind: e.contactDateKind,
+          });
+        }
+      }
+    }
+
     const q = query.trim().toLowerCase();
     if (!q) return out;
 
@@ -171,7 +220,7 @@ export function useCalendarItems(params: Params) {
       if (x.type === "event" && x.location && x.location.toLowerCase().includes(q)) return true;
       return false;
     });
-  }, [events, tasks, objectives, showEvents, showBirthdays, showTasks, showHolidays, query]);
+  }, [events, tasks, objectives, showEvents, showBirthdays, showTasks, showHolidays, showContacts, contactEvents, query]);
 
   const itemsByDay = useMemo(() => {
     const map = new Map<YMD, CalItem[]>();

@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { CalItem, YMD } from "./types";
 import { addDays, dowShort, parseYMD, sameDay, startOfMonth, startOfWeekSunday, ymd } from "./date";
-import { s } from "react-native-size-matters";
+import { s } from "../../ui/ts";
 
 export function MonthStrip(props: {
   theme: any;

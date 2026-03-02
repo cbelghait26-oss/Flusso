@@ -1,6 +1,5 @@
 // src/services/SpotifyRemote.ts
 // Pure Web API implementation — no react-native-spotify-remote dependency.
-import { Linking } from "react-native";
 import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
 import * as Crypto from "expo-crypto";
@@ -17,7 +16,10 @@ const SCOPES = [
   "app-remote-control",
   "user-read-playback-state",
   "user-read-currently-playing",
-  "user-modify-playback-state",   // required for play/pause/skip via Web API
+  "user-modify-playback-state",
+  "playlist-read-private",
+  "playlist-read-collaborative",
+  "user-library-read",
 ].join(" ");
 
 const AUTH_ENDPOINT  = "https://accounts.spotify.com/authorize";
@@ -76,7 +78,6 @@ async function exchangeCodeForToken(
     client_id:     CLIENT_ID,
     code_verifier: codeVerifier,
   });
-
   const res = await fetch(TOKEN_ENDPOINT, {
     method:  "POST",
     headers: {
@@ -85,7 +86,6 @@ async function exchangeCodeForToken(
     },
     body: body.toString(),
   });
-
   if (!res.ok) throw new Error(`Token exchange failed (${res.status}): ${await res.text()}`);
   const json = await res.json();
   if (!json.access_token) throw new Error("No access_token in token response");
@@ -162,7 +162,7 @@ export async function spotifyConnectFull(): Promise<void> {
   const codeMatch = url.match(/[?&]code=([^&]+)/);
   if (!codeMatch?.[1]) throw new Error(`No authorization code in redirect URL: ${url}`);
 
-  const code      = decodeURIComponent(codeMatch[1]);
+  const code = decodeURIComponent(codeMatch[1]);
   console.log("🎵 Exchanging code for token…");
 
   const tokenData = await exchangeCodeForToken(code, codeVerifier);
@@ -173,14 +173,13 @@ export async function spotifyConnectFull(): Promise<void> {
 
   console.log(`🎵 Token OK. Expires in ${tokenData.expires_in}s. Has refresh: ${!!_refreshToken}`);
 
-  // Verify we can reach the Web API (no native SDK needed)
   const ok = await spotifyIsConnected();
   if (!ok) throw new Error("Spotify Web API unreachable — check scopes or network.");
 
   console.log("✅ Spotify Web API ready");
 }
 
-// ─── Connection state (Web API: always "connected" if we have a valid token) ──
+// ─── Connection state ─────────────────────────────────────────────────────────
 
 export async function spotifyIsConnected(): Promise<boolean> {
   const token = await getValidAccessToken();
@@ -196,29 +195,24 @@ export async function spotifyIsConnected(): Promise<boolean> {
 }
 
 export async function spotifyReconnect(): Promise<boolean> {
-  // With Web API there's nothing to "reconnect" — just verify token is valid.
   return spotifyIsConnected();
 }
 
 export async function spotifyDisconnect(): Promise<void> {
-  // Clear in-memory tokens so the user has to re-auth next time.
   _accessToken  = null;
   _refreshToken = null;
   _tokenExpiry  = 0;
 }
 
-// ─── Web API playback controls ────────────────────────────────────────────────
+// ─── Core API helper ──────────────────────────────────────────────────────────
 
 async function apiCall(
   endpoint: string,
-  method: "GET" | "PUT" | "POST" = "GET",
+  method: "GET" | "PUT" | "POST" | "DELETE" = "GET",
   body?: object,
 ): Promise<any | null> {
   const token = await getValidAccessToken();
-  if (!token) {
-    console.log("🎵 apiCall: no token");
-    return null;
-  }
+  if (!token) { console.log("🎵 apiCall: no token"); return null; }
   try {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method,
@@ -228,7 +222,6 @@ async function apiCall(
       },
       body: body ? JSON.stringify(body) : undefined,
     });
-    // 204 = success with no body
     if (res.status === 204) return {};
     if (!res.ok) {
       const text = await res.text();
@@ -244,30 +237,36 @@ async function apiCall(
 
 // ─── Player state ─────────────────────────────────────────────────────────────
 
+export type RepeatMode = "off" | "track" | "context";
+
 export type WebPlayerState = {
-  isPlaying:   boolean;
-  trackName:   string;
-  artistName:  string;
-  albumArtUrl: string | null;
-  trackUri:    string | null;
-  durationMs:  number;
-  positionMs:  number;
+  isPlaying:    boolean;
+  trackName:    string;
+  artistName:   string;
+  albumArtUrl:  string | null;
+  trackUri:     string | null;
+  durationMs:   number;
+  positionMs:   number;
+  shuffleState: boolean;
+  repeatState:  RepeatMode;
 };
 
 export async function getPlayerState(): Promise<WebPlayerState | null> {
-  const data = await apiCall("/me/player/currently-playing");
+  const data = await apiCall("/me/player");
   if (!data || !data.item) return null;
   const item   = data.item;
   const images: any[] = item.album?.images ?? [];
   const art    = images[1]?.url ?? images[0]?.url ?? null;
   return {
-    isPlaying:   data.is_playing ?? false,
-    trackName:   item.name ?? "",
-    artistName:  item.artists?.[0]?.name ?? "",
-    albumArtUrl: art,
-    trackUri:    item.uri ?? null,
-    durationMs:  item.duration_ms ?? 0,
-    positionMs:  data.progress_ms ?? 0,
+    isPlaying:    data.is_playing    ?? false,
+    trackName:    item.name          ?? "",
+    artistName:   item.artists?.[0]?.name ?? "",
+    albumArtUrl:  art,
+    trackUri:     item.uri           ?? null,
+    durationMs:   item.duration_ms   ?? 0,
+    positionMs:   data.progress_ms   ?? 0,
+    shuffleState: data.shuffle_state ?? false,
+    repeatState:  (data.repeat_state as RepeatMode) ?? "off",
   };
 }
 
@@ -275,8 +274,8 @@ export async function getPlayerState(): Promise<WebPlayerState | null> {
 
 export async function spotifyPlay(contextUri?: string, trackUri?: string): Promise<void> {
   const body: any = {};
-  if (contextUri)  body.context_uri = contextUri;
-  if (trackUri)    body.uris        = [trackUri];
+  if (contextUri) body.context_uri = contextUri;
+  if (trackUri)   body.uris        = [trackUri];
   await apiCall("/me/player/play", "PUT", Object.keys(body).length ? body : undefined);
 }
 
@@ -298,4 +297,129 @@ export async function spotifySkipPrevious(): Promise<void> {
 
 export async function spotifySeek(positionMs: number): Promise<void> {
   await apiCall(`/me/player/seek?position_ms=${Math.round(positionMs)}`, "PUT");
+}
+
+// ─── Shuffle & repeat ─────────────────────────────────────────────────────────
+
+export async function spotifySetShuffle(state: boolean): Promise<void> {
+  await apiCall(`/me/player/shuffle?state=${state}`, "PUT");
+}
+
+export function nextRepeatMode(current: RepeatMode): RepeatMode {
+  if (current === "off")     return "context";
+  if (current === "context") return "track";
+  return "off";
+}
+
+export async function spotifySetRepeat(mode: RepeatMode): Promise<void> {
+  await apiCall(`/me/player/repeat?state=${mode}`, "PUT");
+}
+
+// ─── Queue ────────────────────────────────────────────────────────────────────
+
+export type QueueTrack = {
+  uri:        string;
+  name:       string;
+  artistName: string;
+  artUrl:     string | null;
+  durationMs: number;
+};
+
+export async function spotifyGetQueue(): Promise<QueueTrack[]> {
+  const data = await apiCall("/me/player/queue");
+  if (!data?.queue) return [];
+  return (data.queue as any[]).slice(0, 20).map((item: any) => ({
+    uri:        item.uri ?? "",
+    name:       item.name ?? "",
+    artistName: item.artists?.[0]?.name ?? "",
+    artUrl:     item.album?.images?.[2]?.url ?? item.album?.images?.[0]?.url ?? null,
+    durationMs: item.duration_ms ?? 0,
+  }));
+}
+
+export async function spotifyAddToQueue(trackUri: string): Promise<void> {
+  await apiCall(`/me/player/queue?uri=${encodeURIComponent(trackUri)}`, "POST");
+}
+
+// ─── Playlists ────────────────────────────────────────────────────────────────
+
+export type SpotifyPlaylist = {
+  id:          string;
+  uri:         string;
+  name:        string;
+  description: string;
+  trackCount:  number;
+  artUrl:      string | null;
+  owner:       string;
+};
+
+export async function spotifyGetPlaylists(limit = 50): Promise<SpotifyPlaylist[]> {
+  const data = await apiCall(`/me/playlists?limit=${limit}`);
+  if (!data?.items) return [];
+  return (data.items as any[]).map((p: any) => ({
+    id:          p.id,
+    uri:         p.uri,
+    name:        p.name ?? "Untitled",
+    description: p.description ?? "",
+    trackCount:  p.tracks?.total ?? 0,
+    artUrl:      p.images?.[0]?.url ?? null,
+    owner:       p.owner?.display_name ?? "",
+  }));
+}
+
+// ─── Playlist tracks ──────────────────────────────────────────────────────────
+// No `fields` filter — the strict filter was silently returning 0 items.
+
+export type SpotifyTrack = {
+  uri:        string;
+  name:       string;
+  artistName: string;
+  albumName:  string;
+  artUrl:     string | null;
+  durationMs: number;
+};
+
+export async function spotifyGetPlaylistTracks(
+  playlistId: string,
+  limit  = 50,
+  offset = 0,
+): Promise<{ tracks: SpotifyTrack[]; total: number }> {
+  const data = await apiCall(`/playlists/${playlistId}/tracks?limit=${limit}&offset=${offset}`);
+  if (!data?.items) return { tracks: [], total: 0 };
+  const tracks: SpotifyTrack[] = (data.items as any[])
+    .filter((item: any) => item?.track?.uri) // remove null / local-file entries
+    .map((item: any) => {
+      const t = item.track;
+      return {
+        uri:        t.uri,
+        name:       t.name       ?? "",
+        artistName: t.artists?.[0]?.name ?? "",
+        albumName:  t.album?.name ?? "",
+        artUrl:     t.album?.images?.[2]?.url ?? t.album?.images?.[0]?.url ?? null,
+        durationMs: t.duration_ms ?? 0,
+      };
+    });
+  return { tracks, total: data.total ?? 0 };
+}
+
+// ─── Saved tracks ─────────────────────────────────────────────────────────────
+
+export async function spotifyGetSavedTracks(
+  limit  = 50,
+  offset = 0,
+): Promise<{ tracks: SpotifyTrack[]; total: number }> {
+  const data = await apiCall(`/me/tracks?limit=${limit}&offset=${offset}`);
+  if (!data?.items) return { tracks: [], total: 0 };
+  const tracks: SpotifyTrack[] = (data.items as any[]).map((item: any) => {
+    const t = item.track;
+    return {
+      uri:        t.uri,
+      name:       t.name       ?? "",
+      artistName: t.artists?.[0]?.name ?? "",
+      albumName:  t.album?.name ?? "",
+      artUrl:     t.album?.images?.[2]?.url ?? t.album?.images?.[0]?.url ?? null,
+      durationMs: t.duration_ms ?? 0,
+    };
+  });
+  return { tracks, total: data.total ?? 0 };
 }

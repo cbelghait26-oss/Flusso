@@ -21,7 +21,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { s } from "react-native-size-matters";
+import { s } from "../src/ui/ts";
 import * as ImagePicker from "expo-image-picker";
 import {
   EmailAuthProvider,
@@ -36,6 +36,7 @@ import {
 } from "../src/services/emailVerification";
 
 import { useTheme } from "../src/components/theme/theme";
+import { useDeviceClass, CONTENT_MAX_WIDTH } from "../src/ui/responsive";
 import { TROPHY_TIERS, TROPHY_META } from "../src/context/AchievementContext";
 import { useAchievements } from "../src/context/AchievementContext";
 import {
@@ -60,6 +61,18 @@ import {
   saveProfilePicture,
 } from "../src/data/storage";
 import { loadTasks, loadObjectives } from "../src/data/storage";
+import {
+  loadContactsSettings,
+  saveContactsSettings,
+  loadContactItems,
+  saveContactItems,
+  clearContactItems,
+} from "../src/data/storage";
+import {
+  requestContactsPermission,
+  getContactsPermissionStatus,
+  fetchContactDateItems,
+} from "../src/services/contactsDates";
 import type { Objective } from "../src/data/models";
 import Svg, {
   Polyline,
@@ -274,7 +287,7 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const { colors, isDark, themeMode, setThemeMode, accent, setAccent } = theme;
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { width } = useWindowDimensions();
+  const { width, isTablet } = useDeviceClass();
   const { checkAchievements } = useAchievements();
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -310,6 +323,12 @@ export default function SettingsScreen() {
   const [weekStartsMonday, setWeekStartsMonday] = useState(true);
   const [timeFormat24h, setTimeFormat24h] = useState(false);
   const [notifExpanded, setNotifExpanded] = useState(false);
+
+  // ── Contacts settings ─────────────────────────────────────────────────────
+  const [contactsEnabled, setContactsEnabled] = useState(false);
+  const [contactsSyncing, setContactsSyncing] = useState(false);
+  const [contactsLastSync, setContactsLastSync] = useState<string | null>(null);
+  const [contactsCount, setContactsCount] = useState(0);
 
   // ── Profile picture ───────────────────────────────────────────────────────
   const [profilePic, setProfilePic] = useState<string | null>(null);
@@ -446,6 +465,142 @@ export default function SettingsScreen() {
     // Check achievements after every data load
     const uid = await getCurrentUser();
     if (uid) checkAchievements(uid);
+
+    // Load contacts settings
+    try {
+      const cs = await loadContactsSettings();
+      setContactsEnabled(cs.enabled);
+      setContactsLastSync(cs.lastSyncAt);
+      const storedItems = await loadContactItems();
+      setContactsCount(storedItems.length);
+    } catch {}
+  };
+
+  // ── Contacts import ───────────────────────────────────────────────────────
+  const handleContactsToggle = async (value: boolean) => {
+    if (!value) {
+      // Turning off: just mark disabled (keep cached data)
+      setContactsEnabled(false);
+      await saveContactsSettings({ enabled: false });
+      return;
+    }
+
+    // Always call requestPermissionsAsync directly.
+    // - If status is "undetermined": iOS shows the system dialog.
+    // - If status is "granted": returns immediately without a dialog (no-op).
+    // - If status is "denied": returns not-granted; we then offer to open Settings.
+    // Skipping the pre-check avoids the bug where an old "denied" record causes
+    // the flow to exit before ever showing the system dialog.
+    let granted = false;
+    try {
+      granted = await requestContactsPermission();
+    } catch (err: any) {
+      Alert.alert("Permission error", err?.message ?? "Could not request contacts access.");
+      return;
+    }
+
+    if (!granted) {
+      Alert.alert(
+        "Contacts access required",
+        "Flusso needs access to your contacts to import birthdays and anniversaries. Please allow it in your device Settings.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Open Settings",
+            onPress: () => Linking.openSettings(),
+          },
+        ],
+      );
+      return;
+    }
+
+    // Permission granted — perform first import
+    setContactsSyncing(true);
+    try {
+      const items = await fetchContactDateItems();
+      await saveContactItems(items);
+      const now = new Date().toISOString();
+      await saveContactsSettings({
+        enabled: true,
+        lastSyncAt: now,
+        permissionStatus: "granted",
+      });
+      setContactsEnabled(true);
+      setContactsCount(items.length);
+      setContactsLastSync(now);
+      Alert.alert(
+        "Contact dates imported",
+        `Found ${items.length} date${items.length !== 1 ? "s" : ""} across your contacts.`,
+      );
+    } catch (err: any) {
+      Alert.alert("Import failed", err?.message ?? "Could not read contacts.");
+      setContactsEnabled(false);
+    } finally {
+      setContactsSyncing(false);
+    }
+  };
+
+  const handleContactsRefresh = async () => {
+    let granted = false;
+    try {
+      granted = await requestContactsPermission();
+    } catch (err: any) {
+      Alert.alert("Permission error", err?.message ?? "Could not request contacts access.");
+      return;
+    }
+
+    if (!granted) {
+      Alert.alert(
+        "Contacts access required",
+        "Please allow Contacts access for Flusso in your device Settings.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ],
+      );
+      return;
+    }
+    setContactsSyncing(true);
+    try {
+      const items = await fetchContactDateItems();
+      await saveContactItems(items);
+      const now = new Date().toISOString();
+      await saveContactsSettings({
+        enabled: true,
+        lastSyncAt: now,
+        permissionStatus: "granted",
+      });
+      setContactsCount(items.length);
+      setContactsLastSync(now);
+      Alert.alert(
+        "Refreshed",
+        `${items.length} contact date${items.length !== 1 ? "s" : ""} updated.`,
+      );
+    } catch (err: any) {
+      Alert.alert("Refresh failed", err?.message ?? "Could not read contacts.");
+    } finally {
+      setContactsSyncing(false);
+    }
+  };
+
+  const handleContactsClear = async () => {
+    Alert.alert(
+      "Clear imported contact dates",
+      "This will remove all imported birthdays and anniversaries from Flusso. Your actual device contacts are NOT affected.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            await clearContactItems();
+            setContactsEnabled(false);
+            setContactsCount(0);
+            setContactsLastSync(null);
+          },
+        },
+      ],
+    );
   };
 
   // ── Delete account ────────────────────────────────────────────────────────
@@ -831,6 +986,13 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: C.bg }]} edges={["top", "left", "right"]}>
+      {/* Centered content column: caps at CONTENT_MAX_WIDTH on iPad */}
+      <View
+        style={[
+          { flex: 1 },
+          isTablet && { maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center" as const, width: "100%" },
+        ]}
+      >
 
       {/* ── Page header ── */}
       <View style={styles.pageHeader}>
@@ -1203,6 +1365,106 @@ export default function SettingsScreen() {
                 thumbColor={timeFormat24h ? C.accent : C.muted}
               />
             </View>
+          </View>
+
+          {/* CONTACTS */}
+          <SectionHeader title="Contacts" C={C} />
+          <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
+            {/* Enable toggle */}
+            <View style={styles.settingsRow}>
+              <View style={styles.rowLeft}>
+                <View style={[styles.iconWrap, { backgroundColor: C.accent + "14" }]}>
+                  <Ionicons name="people-outline" size={s(16)} color={C.accent} />
+                </View>
+                <View>
+                  <Text style={[styles.rowLabel, { color: C.text }]}>Birthdays & anniversaries</Text>
+                  <Text style={{ fontSize: s(11), fontWeight: "600", color: C.muted, marginTop: s(1) }}>
+                    {contactsEnabled
+                      ? `${contactsCount} date${contactsCount !== 1 ? "s" : ""} imported`
+                      : "Tap to import from contacts"}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                style={{ marginTop: s(12) }}
+                value={contactsEnabled}
+                onValueChange={handleContactsToggle}
+                disabled={contactsSyncing}
+                trackColor={{ false: C.line, true: C.accent + "88" }}
+                thumbColor={contactsEnabled ? C.accent : C.muted}
+              />
+            </View>
+
+            {contactsEnabled && (
+              <>
+                <Divider C={C} />
+                {/* Last synced */}
+                {contactsLastSync ? (
+                  <View style={[styles.settingsRow, { height: "auto" as any, paddingVertical: s(10) }]}>
+                    <View style={styles.rowLeft}>
+                      <View style={[styles.iconWrap, { backgroundColor: C.muted + "14" }]}>
+                        <Ionicons name="time-outline" size={s(16)} color={C.muted} />
+                      </View>
+                      <View>
+                        <Text style={[styles.rowLabel, { color: C.text }]}>Last imported</Text>
+                        <Text style={{ fontSize: s(11), fontWeight: "600", color: C.muted, marginTop: s(1) }}>
+                          {new Date(contactsLastSync).toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ) : null}
+                <Divider C={C} />
+                {/* Refresh button */}
+                <Pressable
+                  onPress={handleContactsRefresh}
+                  disabled={contactsSyncing}
+                  style={({ pressed }) => [
+                    styles.settingsRow,
+                    { opacity: pressed || contactsSyncing ? 0.6 : 1 },
+                  ]}
+                >
+                  <View style={styles.rowLeft}>
+                    <View style={[styles.iconWrap, { backgroundColor: C.accent + "14" }]}>
+                      {contactsSyncing ? (
+                        <ActivityIndicator size="small" color={C.accent} />
+                      ) : (
+                        <Ionicons name="refresh-outline" size={s(16)} color={C.accent} />
+                      )}
+                    </View>
+                    <Text style={[styles.rowLabel, { color: C.text }]}>
+                      {contactsSyncing ? "Importing…" : "Refresh contact dates"}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={s(16)} color={C.muted} />
+                </Pressable>
+                <Divider C={C} />
+                {/* Clear button */}
+                <Pressable
+                  onPress={handleContactsClear}
+                  disabled={contactsSyncing}
+                  style={({ pressed }) => [
+                    styles.settingsRow,
+                    { opacity: pressed ? 0.6 : 1 },
+                  ]}
+                >
+                  <View style={styles.rowLeft}>
+                    <View style={[styles.iconWrap, { backgroundColor: C.danger + "14" }]}>
+                      <Ionicons name="trash-outline" size={s(16)} color={C.danger} />
+                    </View>
+                    <Text style={[styles.rowLabel, { color: C.danger }]}>
+                      Clear imported contact dates
+                    </Text>
+                  </View>
+                </Pressable>
+              </>
+            )}
           </View>
 
           {/* ABOUT */}
@@ -1953,6 +2215,7 @@ export default function SettingsScreen() {
           </Text>
         </View>
       </Modal>
+      </View>{/* end centred column */}
     </SafeAreaView>
   );
 }
@@ -2055,9 +2318,14 @@ function WeeklyActivityChart({
   }[];
   C: any;
 }) {
-  const { width: screenW } = useWindowDimensions();
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  // Derive tablet without adding a new hook (avoids changing hook order).
+  const isTablet = Math.min(screenW, screenH) >= 768;
+  // On tablet the content is centred in a CONTENT_MAX_WIDTH column; cap the
+  // chart accordingly so it doesn't overflow the container.
+  const effectiveW = isTablet ? Math.min(screenW, CONTENT_MAX_WIDTH) : screenW;
   // Subtract horizontal padding: scrollContent (16*2) + card padding (14*2)
-  const CHART_W = Math.max(200, screenW - s(60));
+  const CHART_W = Math.max(200, effectiveW - s(60));
   const CHART_H = s(120);
   const P_TOP    = s(8);
   const P_BOTTOM = s(18); // space for day labels
@@ -2491,7 +2759,7 @@ const styles = StyleSheet.create({
 
   modalCard: {
     width: "100%",
-    maxWidth: s(480),
+    maxWidth: 480,
     borderRadius: s(20),
     borderWidth: s(1),
     padding: s(18),

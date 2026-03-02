@@ -11,11 +11,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { s } from "react-native-size-matters";
+import { s } from "../src/ui/ts";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../src/services/firebase";
 import { setCurrentUser } from "../src/data/storage";
 import { sendVerificationEmail } from "../src/services/emailVerification";
+import { useDeviceClass, CONTENT_MAX_WIDTH, TABLET_GUTTER, PHONE_GUTTER } from "../src/ui/responsive";
 
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../src/navigation/types";
@@ -24,6 +25,8 @@ type Props = NativeStackScreenProps<RootStackParamList, "EmailLogin">;
 
 export default function EmailLoginScreen({ navigation, route }: Props) {
   const isSignUp = route.params?.isSignUp ?? false;
+  const { isTablet } = useDeviceClass();
+  const pad = isTablet ? TABLET_GUTTER : PHONE_GUTTER;
   
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -104,6 +107,14 @@ export default function EmailLoginScreen({ navigation, route }: Props) {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardView}
       >
+        {/* Centred content column – maxWidth on iPad */}
+        <View
+          style={[
+            styles.contentColumn,
+            isTablet && { maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center" },
+            { paddingHorizontal: pad },
+          ]}
+        >
         {/* Header */}
         <View style={styles.header}>
           <Pressable
@@ -218,10 +229,16 @@ export default function EmailLoginScreen({ navigation, route }: Props) {
             </Pressable>
           )}
         </View>
+        </View>{/* end contentColumn */}
       </KeyboardAvoidingView>
 
       {/* Switch Mode - Outside KeyboardAvoidingView */}
-      <View style={styles.footer}>
+      <View
+        style={[
+          styles.footer,
+          isTablet && { maxWidth: CONTENT_MAX_WIDTH, alignSelf: "center", width: "100%" },
+        ]}
+      >
         <Text style={styles.footerText}>
           {isSignUp ? "Already have an account? " : "Don't have an account? "}
         </Text>
@@ -246,7 +263,11 @@ const styles = StyleSheet.create({
   },
   keyboardView: {
     flex: 1,
-    paddingHorizontal: s(24),
+    // paddingHorizontal applied via contentColumn (responsive)
+  },
+  contentColumn: {
+    flex: 1,
+    width: "100%",
   },
   header: {
     marginTop: s(20),
