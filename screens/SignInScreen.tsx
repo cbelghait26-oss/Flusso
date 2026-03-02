@@ -5,33 +5,41 @@ import {
   Modal,
   Pressable,
   Animated,
-  Dimensions,
   TouchableOpacity,
   Image,
+  Platform,
+  useWindowDimensions,
 } from "react-native";
 import React, { useMemo, useRef, useState } from "react";
 import LoginBox from "../src/components/ui/LoginBox";
-import { s } from "react-native-size-matters";
+import { s } from "../src/ui/ts";
 import { Fontisto, FontAwesome5, FontAwesome } from "@expo/vector-icons";
 import { Alert, ActivityIndicator } from "react-native";
 import { signInWithGoogleFirebase } from "../src/services/googleAuth";
+import { signInWithApple } from "../src/services/appleAuth";
 import { setCurrentUser, loadSetupComplete } from "../src/data/storage";
+import {
+  useDeviceClass,
+  CONTENT_MAX_WIDTH,
+  sheetHorizontalInsets,
+} from "../src/ui/responsive";
 
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../src/navigation/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SignIn">;
 
-const SCREEN_HEIGHT = Dimensions.get("window").height;
-
 type SheetType = "login" | "signup" | null;
 
 const SignInScreen = ({ navigation }: Props) => {
+  const { isTablet, width, height } = useDeviceClass();
   const [sheetType, setSheetType] = useState<SheetType>(null);
   const [visible, setVisible] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
 
-  const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  // Use dynamic height so iPad landscape doesn't break sheet animation
+  const translateY = useRef(new Animated.Value(height)).current;
 
   const options = useMemo(() => {
     if (sheetType === "login") {
@@ -51,7 +59,7 @@ const SignInScreen = ({ navigation }: Props) => {
             try {
               setGoogleLoading(true);
               console.log("SignIn: Starting Google sign-in...");
-              const userCredential = await signInWithGoogleFirebase();
+              const userCredential = (await signInWithGoogleFirebase()) as any;
               console.log("SignIn: Google sign-in successful, user ID:", userCredential.user.uid);
               
               // Set current user in storage (waits for cloud sync)
@@ -85,11 +93,43 @@ const SignInScreen = ({ navigation }: Props) => {
             }
           },
         },
-        {
+        ...(Platform.OS === 'ios' ? [{
           label: "Log in with Apple",
           icon: <FontAwesome5 name="apple" size={s(22)} color="#F4F6F2" />,
-          onPress: () => navigation.navigate("Q1NameScreen", { setup: {} }),
-        },
+          onPress: async () => {
+            try {
+              setAppleLoading(true);
+              console.log("SignIn: Starting Apple sign-in...");
+              const userCredential = (await signInWithApple()) as any;
+              if (!userCredential) {
+                setAppleLoading(false);
+                return; // user cancelled
+              }
+              console.log("SignIn: Apple sign-in successful, user ID:", userCredential.user.uid);
+
+              console.log("SignIn: Setting current user and syncing cloud data...");
+              await setCurrentUser(userCredential.user.uid);
+              console.log("SignIn: Cloud sync complete");
+
+              const setupComplete = await loadSetupComplete();
+              console.log("SignIn: Setup complete status:", setupComplete);
+
+              closeSheet();
+
+              console.log("SignIn: Navigating to", setupComplete ? "MainTabs" : "Q1NameScreen");
+              if (setupComplete) {
+                navigation.navigate("MainTabs");
+              } else {
+                navigation.navigate("Q1NameScreen", { setup: {} });
+              }
+            } catch (e: any) {
+              console.error("SignIn: Error during Apple sign-in:", e);
+              Alert.alert("Apple Sign-In failed", e?.message ?? "Unknown error");
+            } finally {
+              setAppleLoading(false);
+            }
+          },
+        }] : []),
       ];
     }
 
@@ -110,7 +150,7 @@ const SignInScreen = ({ navigation }: Props) => {
             try {
               setGoogleLoading(true);
               console.log("SignUp: Starting Google sign-up...");
-              const userCredential = await signInWithGoogleFirebase();
+              const userCredential = (await signInWithGoogleFirebase()) as any;
               console.log("SignUp: Google sign-up successful, user ID:", userCredential.user.uid);
               
               // Set current user in storage (waits for cloud sync)
@@ -144,11 +184,43 @@ const SignInScreen = ({ navigation }: Props) => {
             }
           },
         },
-        {
+        ...(Platform.OS === 'ios' ? [{
           label: "Sign up with Apple",
           icon: <FontAwesome5 name="apple" size={s(22)} color="#F4F6F2" />,
-          onPress: () => navigation.navigate("Q1NameScreen", { setup: {} }),
-        },
+          onPress: async () => {
+            try {
+              setAppleLoading(true);
+              console.log("SignUp: Starting Apple sign-up...");
+              const userCredential = (await signInWithApple()) as any;
+              if (!userCredential) {
+                setAppleLoading(false);
+                return; // user cancelled
+              }
+              console.log("SignUp: Apple sign-up successful, user ID:", userCredential.user.uid);
+
+              console.log("SignUp: Setting current user and syncing cloud data...");
+              await setCurrentUser(userCredential.user.uid);
+              console.log("SignUp: Cloud sync complete");
+
+              const setupComplete = await loadSetupComplete();
+              console.log("SignUp: Setup complete status:", setupComplete);
+
+              closeSheet();
+
+              console.log("SignUp: Navigating to", setupComplete ? "MainTabs" : "Q1NameScreen");
+              if (setupComplete) {
+                navigation.navigate("MainTabs");
+              } else {
+                navigation.navigate("Q1NameScreen", { setup: {} });
+              }
+            } catch (e: any) {
+              console.error("SignUp: Error during Apple sign-up:", e);
+              Alert.alert("Apple Sign-Up failed", e?.message ?? "Unknown error");
+            } finally {
+              setAppleLoading(false);
+            }
+          },
+        }] : []),
       ];
     }
 
@@ -158,10 +230,8 @@ const SignInScreen = ({ navigation }: Props) => {
   const openSheet = (type: Exclude<SheetType, null>) => {
     setSheetType(type);
     setVisible(true);
-
-    // Slide up to mid-screen-ish
-    const targetY = SCREEN_HEIGHT * 0.35;
-
+    // Slide up far enough that the sheet sits in the lower portion of screen
+    const targetY = height * 0.35;
     Animated.timing(translateY, {
       toValue: targetY,
       duration: 250,
@@ -171,7 +241,7 @@ const SignInScreen = ({ navigation }: Props) => {
 
   const closeSheet = () => {
     Animated.timing(translateY, {
-      toValue: SCREEN_HEIGHT,
+      toValue: height,
       duration: 250,
       useNativeDriver: true,
     }).start(() => {
@@ -180,9 +250,18 @@ const SignInScreen = ({ navigation }: Props) => {
     });
   };
 
+  // On tablet: centre the card with a maxWidth
+  const innerContentStyle = isTablet
+    ? { maxWidth: CONTENT_MAX_WIDTH, width: "100%" as any, alignSelf: "center" as const }
+    : {};
+  // Image size: capped at 300 on phone, 340 on tablet – never uses s() which explodes on iPad
+  const imageSize = isTablet ? 320 : Math.min(s(300), 320);
+  // Sheet insets – narrow on phone, centred on tablet
+  const sheetInsets = sheetHorizontalInsets(isTablet, width, CONTENT_MAX_WIDTH, 16);
+
   return (
     <View style={styles.container}>
-      <View>
+      <View style={innerContentStyle}>
         <View
           style={{
             alignItems: "center",
@@ -194,14 +273,14 @@ const SignInScreen = ({ navigation }: Props) => {
         >
           <Image
             source={require("../assets/icon.png")}
-            style={{ height: s(70), width: s(70) }}
+            style={{ height: 64, width: 64 }}
           />
           <Text style={styles.title}>Flusso</Text>
         </View>
-        <View>
+        <View style={{ alignItems: "center" }}>
           <Image
             source={require("../assets/AuthScreen.png")}
-            style={styles.image}
+            style={{ width: imageSize, height: imageSize }}
           />
         </View>
 
@@ -216,9 +295,7 @@ const SignInScreen = ({ navigation }: Props) => {
             color="#002640"
             onPress={() => openSheet("signup")}
           />
-        </View>
-        <View>
-          <Text style={styles.legalText}>
+          <Text style={[styles.legalText, { marginTop: s(52) }]}>
             By signing up, you agree to our{" "}
             <Text style={styles.linkText} onPress={() => {}}>
               Terms of Service
@@ -244,6 +321,8 @@ const SignInScreen = ({ navigation }: Props) => {
           style={[
             styles.sheet,
             {
+              left: sheetInsets.left,
+              right: sheetInsets.right,
               transform: [{ translateY }],
             },
           ]}
@@ -256,7 +335,7 @@ const SignInScreen = ({ navigation }: Props) => {
                 key={opt.label}
                 style={styles.optionBtn}
                 activeOpacity={0.85}
-                disabled={googleLoading}
+                disabled={googleLoading || appleLoading}
                 onPress={async () => {
                   await opt.onPress();
                 }}
@@ -264,7 +343,11 @@ const SignInScreen = ({ navigation }: Props) => {
                 <View style={styles.optionRow}>
                   {opt.icon}
                   <Text style={styles.optionText}>
-                    {googleLoading && isGoogle ? "Signing in..." : opt.label}
+                    {googleLoading && isGoogle
+                      ? "Signing in..."
+                      : appleLoading && opt.label.toLowerCase().includes('apple')
+                      ? "Signing in..."
+                      : opt.label}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -304,8 +387,7 @@ const styles = StyleSheet.create({
 
   sheet: {
     position: "absolute",
-    left: s(16),
-    right: s(16),
+    // left/right overridden inline via sheetInsets
     backgroundColor: "#1055BF",
     borderRadius: s(16),
     paddingHorizontal: s(18),
@@ -331,17 +413,15 @@ const styles = StyleSheet.create({
     gap: s(10),
   },
   image: {
-    width: s(300),
-    height: s(300),
-    marginLeft: s(0),
+    // kept for reference; size overridden inline
+    width: 300,
+    height: 300,
   },
   legalText: {
-    position: "absolute",
-    bottom: s(-75), // distance from bottom
-    left: s(24),
-    right: s(24),
+    marginTop: 20,
+    paddingHorizontal: s(24),
     textAlign: "center",
-    fontSize: s(12),
+    fontSize: 12,
     color: "#F4F6F2",
     opacity: 0.85,
   },
