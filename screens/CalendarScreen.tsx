@@ -20,9 +20,9 @@ import { s } from "../src/ui/ts";
 
 import { useTheme } from "../src/components/theme/theme";
 import { monthLabel, parseYMD, startOfMonth, ymd } from "../src/components/calendar/date";
-import type { YMD } from "../src/components/calendar/types";
+import type { YMD, CalItem } from "../src/components/calendar/types";
 import { useCalendarItems } from "../src/components/calendar/useCalendarItems";
-import { loadLocalEvents, saveLocalEvents, STORAGE_MODULE_ID, loadContactItems, loadContactsSettings } from "../src/data/storage";
+import { loadLocalEvents, saveLocalEvents, STORAGE_MODULE_ID, loadContactItems, loadContactsSettings, loadCloudContactEvents, saveCloudContactEvents } from "../src/data/storage";
 import { eventColor } from "../src/components/calendar/eventColors";
 import type { LocalEvent } from "../src/components/calendar/types";
 import { buildContactEventsForDefaultWindow } from "../src/services/contactsDates";
@@ -33,6 +33,7 @@ import { CreateSheet } from "../src/components/calendar/CreateSheet";
 import { SideDrawer } from "../src/components/calendar/SideDrawer";
 import { generateDefaultHolidays } from "../src/data/holidays";
 import { useDeviceClass, WIDE_MAX_WIDTH } from "../src/ui/responsive";
+import { rescheduleAllNotifications } from "../src/services/notifications";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -176,7 +177,7 @@ export default function CalendarScreenV2() {
   /** In-memory contact events derived from stored ContactDateItem[]. Never persisted to localEvents. */
   const [contactEvents, setContactEvents] = useState<LocalEvent[]>([]);
 
-  const { loading, reload, itemsByDay, events, setEvents } = useCalendarItems({
+  const { loading, reload, items, itemsByDay, events, setEvents } = useCalendarItems({
     query,
     showEvents,
     showTasks,
@@ -218,17 +219,22 @@ export default function CalendarScreenV2() {
       const loadContactEventsFromStorage = async () => {
         try {
           const settings = await loadContactsSettings();
-          if (!settings.enabled) {
-            setContactEvents([]); // clear if disabled
-            return;
+          if (settings.enabled) {
+            // This device has contacts sync — generate events from local contacts
+            const items = await loadContactItems();
+            if (items.length > 0) {
+              const generated = buildContactEventsForDefaultWindow(items);
+              setContactEvents(generated);
+              // Push to cloud so other devices (without contacts sync) can display them
+              saveCloudContactEvents(generated).catch(() => {});
+            } else {
+              setContactEvents([]);
+            }
+          } else {
+            // No contacts on this device — pull whatever another device has uploaded
+            const cloudEvents = await loadCloudContactEvents();
+            setContactEvents(cloudEvents);
           }
-          const items = await loadContactItems();
-          if (items.length === 0) {
-            setContactEvents([]);
-            return;
-          }
-          const generated = buildContactEventsForDefaultWindow(items);
-          setContactEvents(generated);
         } catch (error) {
           console.error("Failed to load contact events:", error);
         }
@@ -263,6 +269,140 @@ export default function CalendarScreenV2() {
     return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   }, [selected]);
 
+  // ── Search helpers ──────────────────────────────────────────────────────────
+  const queryTrimmed = query.trim();
+
+  /**
+   * Pending date to scroll to once the search list closes and the calendar
+   * FlatList has had a chance to remount.
+   */
+  const pendingScrollDate = useRef<YMD | null>(null);
+
+  useEffect(() => {
+    if (!queryTrimmed && pendingScrollDate.current) {
+      const target = pendingScrollDate.current;
+      pendingScrollDate.current = null;
+      // Wait for the calendar FlatList to fully remount before scrolling
+      setTimeout(() => onSelectDay(target), 120);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryTrimmed]);
+
+  /**
+   * Pick the better of two occurrences of the same recurring event:
+   * prefer the closest future date; if both past keep the most recent.
+   */
+  const pickBetter = (existing: CalItem, candidate: CalItem, todayStr: YMD): CalItem => {
+    const existFuture = existing.date >= todayStr;
+    const candFuture = candidate.date >= todayStr;
+    if (existFuture && candFuture) return candidate.date <= existing.date ? candidate : existing;
+    if (candFuture) return candidate;
+    if (existFuture) return existing;
+    return candidate.date >= existing.date ? candidate : existing;
+  };
+
+  /**
+   * Deduplicated search results: recurring events and yearly contact events
+   * (birthdays, anniversaries) are collapsed to a single row showing the
+   * next upcoming occurrence. Sorted ascending by date.
+   */
+  const searchItems = useMemo(() => {
+    if (!queryTrimmed) return [];
+    const todayStr = ymd(new Date());
+
+    const byKey = new Map<string, CalItem>();
+    for (const it of items) {
+      // Standard recurrence pattern: "event:abc_r2026-03-15" → base key "event:abc"
+      const afterColon = it.id.replace(/^[^:]+:/, "");
+      const baseId = afterColon.split("_r")[0];
+      // Contact birthday/anniversary events repeat yearly — key by kind + person name
+      const key = it.contactDateKind
+        ? `${it.contactDateKind}:${it.title}`
+        : `${it.type}:${baseId}`;
+
+      const existing = byKey.get(key);
+      byKey.set(key, existing ? pickBetter(existing, it, todayStr) : it);
+    }
+
+    return Array.from(byKey.values()).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  }, [items, queryTrimmed]);
+
+  const formatResultDate = (d: YMD): string => {
+    if (d === todayKey) return "Today";
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowKey = ymd(tomorrow);
+    if (d === tomorrowKey) return "Tomorrow";
+    return new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  };
+
+  const kindLabel = (it: CalItem): string => {
+    if (it.colorKey === "birthday" || it.contactDateKind === "birthday") return "Birthday";
+    if (it.contactDateKind === "anniversary") return "Anniversary";
+    if (it.id?.startsWith("event:holiday_")) return "Holiday";
+    if (it.type === "event") return "Event";
+    if (it.type === "task") return "Task";
+    return "Objective";
+  };
+
+  const renderSearchRow = ({ item: it }: { item: CalItem }) => {
+    const accent = it.colorKey
+      ? eventColor(theme, it.colorKey)
+      : theme.colors.accent;
+    const label = kindLabel(it);
+    const dateStr = formatResultDate(it.date);
+    const subtitle = it.location ? `${dateStr} · ${it.location}` : dateStr;
+    return (
+      <Pressable
+        onPress={() => {
+          const targetDate = it.date as YMD;
+
+          // Open the event sheet if it's a user-created event
+          if (it.type === "event") {
+            const ev = events.find((e) => `event:${e.id}` === it.id);
+            if (ev) {
+              setEditingEvent(ev);
+              setCreateOpen(true);
+            }
+          }
+
+          // Store target date then close search — the useEffect above will
+          // call onSelectDay once the calendar FlatList has remounted.
+          pendingScrollDate.current = targetDate;
+          setSearchOpen(false);
+          setQuery("");
+        }}
+        style={({ pressed }) => ([
+          styles.itemRow,
+          {
+            borderRadius: s(12),
+            borderColor: theme.colors.border,
+            backgroundColor: pressed ? theme.colors.card2 : theme.colors.card,
+            opacity: pressed ? 0.85 : 1,
+          },
+        ])}
+      >
+        <View style={[styles.itemBar, { backgroundColor: accent }]} />
+        <View style={styles.itemMain}>
+          <Text style={[styles.itemTitle, { color: theme.colors.text }]} numberOfLines={1}>{it.title}</Text>
+          <Text style={[styles.itemSubtitle, { color: theme.colors.muted }]} numberOfLines={1}>{subtitle}</Text>
+        </View>
+        <View
+          style={{
+            paddingHorizontal: s(8),
+            paddingVertical: s(3),
+            borderRadius: s(999),
+            borderWidth: s(1),
+            borderColor: theme.colors.border,
+            backgroundColor: theme.colors.chip,
+          }}
+        >
+          <Text style={{ color: theme.colors.text, fontSize: s(11), fontWeight: "800" }}>{label}</Text>
+        </View>
+      </Pressable>
+    );
+  };
+
   const onSelectDay = (k: YMD) => {
     setSelected(k);
     setAnchorMonth(startOfMonth(parseYMD(k)));
@@ -295,6 +435,7 @@ export default function CalendarScreenV2() {
     try {
       const userEvents = updatedEvents.filter((e) => !e.id?.startsWith("holiday_"));
       await saveLocalEvents(userEvents);
+      rescheduleAllNotifications().catch(() => {});
     } catch (error) {
       console.error("Failed to save events:", error);
     }
@@ -316,6 +457,7 @@ export default function CalendarScreenV2() {
     try {
       const userEvents = updatedEvents.filter((e) => !e.id?.startsWith("holiday_"));
       await saveLocalEvents(userEvents);
+      rescheduleAllNotifications().catch(() => {});
     } catch (error) {
       console.error("Failed to delete event:", error);
     }
@@ -633,7 +775,11 @@ export default function CalendarScreenV2() {
               <View style={[styles.itemBar, { backgroundColor: barColor }]} />
               <View style={styles.itemMain}>
                 <View style={styles.itemTop}>
-                  <Ionicons name={itemIconName(type, it?.contactDateKind)} size={s(16)} color={theme.colors.text} />
+                  <Ionicons
+                    name={itemIconName(type, it?.contactDateKind)}
+                    size={s(16)}
+                    color={it?.contactDateKind === "anniversary" ? "#FF3B30" : theme.colors.text}
+                  />
                   <Text style={[styles.itemTitle, { color: theme.colors.text }]} numberOfLines={1}>
                     {titleText}
                   </Text>
@@ -687,6 +833,29 @@ export default function CalendarScreenV2() {
         searchOpacity={searchOpacity}
       />
 
+      {queryTrimmed ? (
+        <FlatList
+          data={searchItems}
+          keyExtractor={(it) => it.id}
+          renderItem={renderSearchRow}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: s(12), paddingTop: s(8), paddingBottom: s(140) + insets.bottom, gap: s(8) }}
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={
+            loading ? (
+              <Text style={{ color: theme.colors.muted, fontWeight: "800", marginTop: s(16), textAlign: "center" }}>Loading…</Text>
+            ) : (
+              <View style={{ marginTop: s(32), alignItems: "center", gap: s(8) }}>
+                <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: s(16) }}>No results</Text>
+                <Text style={{ color: theme.colors.muted, fontWeight: "700", fontSize: s(13), textAlign: "center" }}>
+                  Try "holiday", "birthday", a name, or a date like "March 15".
+                </Text>
+              </View>
+            )
+          }
+        />
+      ) : (
+        <>
       {WeekStrip}
 
       <FlatList
@@ -715,6 +884,8 @@ export default function CalendarScreenV2() {
         initialNumToRender={15}
         updateCellsBatchingPeriod={50}
       />
+        </>
+      )}
 
       {/* FAB */}
       <Pressable

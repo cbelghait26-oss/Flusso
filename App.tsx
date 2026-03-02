@@ -13,6 +13,7 @@ import { getCurrentUser, setCurrentUser, clearUserData, flushPendingCloudWrites,
 import { auth } from "./src/services/firebase";
 import { bootstrapCloudForUser } from "./src/services/CloudBootstrap";
 import { initNotifications, rescheduleAllNotifications, devTestAllNotifications } from "./src/services/notifications";
+import { spotifyLoadSavedTokens } from "./src/services/SpotifyRemote";
 
 console.log("🏗️ BUILD INFO:");
 console.log("  Build timestamp: 2026-02-17 21:30 (with Spotify AppDelegate handler)");
@@ -102,6 +103,8 @@ export default function App() {
           const setupComplete = await loadSetupComplete();
           console.log("App: Setup complete:", setupComplete);
           setInitialRoute(setupComplete ? "MainTabs" : "Q1NameScreen");
+          // Silently restore Spotify session from cloud (existing login)
+          spotifyLoadSavedTokens().catch(() => {});
         } else if (firebaseUser) {
           console.log("App: Syncing Firebase user to storage and loading cloud data...");
           await setCurrentUser(firebaseUser.uid);
@@ -116,6 +119,8 @@ export default function App() {
           setInitialRoute(setupComplete ? "MainTabs" : "Q1NameScreen");
           // Reschedule after user is loaded
           rescheduleAllNotifications().catch(() => {});
+          // Silently restore Spotify session from cloud (new/re-authenticated login)
+          spotifyLoadSavedTokens().catch(() => {});
         } else {
           console.log("App: No authenticated user found");
           setInitialRoute("SignIn");
@@ -135,6 +140,8 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         await setCurrentUser(user.uid);
+        // Silently restore Spotify session on every auth state change (login / return from bg)
+        spotifyLoadSavedTokens().catch(() => {});
         if (typeof flushPendingCloudWrites === "function") {
           await flushPendingCloudWrites();
         }

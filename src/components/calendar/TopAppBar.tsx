@@ -138,7 +138,7 @@ export function TopAppBar(props: {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search events, tasks, objectives"
+            placeholder="Search events, tasks, birthdays..."
             placeholderTextColor={theme.colors.muted}
             style={{ flex: 1, color: theme.colors.text, fontWeight: "800", fontSize: s(13) }}
             autoCorrect={false}

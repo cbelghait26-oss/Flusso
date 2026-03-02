@@ -40,6 +40,7 @@ import {
   STORAGE_MODULE_ID,
   getCurrentUser
 } from "../src/data/storage";
+import { rescheduleAllNotifications } from "../src/services/notifications";
 
 
 type Mode = "tasks" | "objectives";
@@ -422,6 +423,7 @@ export default function TasksObjectivesScreen() {
       }
       closeAllSheets(); setEditingTaskId(null); setQuickTitle("");
       await refresh();
+      rescheduleAllNotifications().catch(() => {});
     } finally { setSaving(false); }
   };
 
@@ -464,6 +466,7 @@ export default function TasksObjectivesScreen() {
         if (uid) checkAchievements(uid);
       }
       await refresh();
+      rescheduleAllNotifications().catch(() => {});
     } finally { setSaving(false); }
   };
 
@@ -649,7 +652,7 @@ export default function TasksObjectivesScreen() {
                   onDelete={async (id) => {
                     if (saving) return;
                     setSaving(true);
-                    try { await deleteTask(id); await refresh(); } finally { setSaving(false); }
+                    try { await deleteTask(id); await refresh(); rescheduleAllNotifications().catch(() => {}); } finally { setSaving(false); }
                   }}
                   objectivesById={objectivesById}
                 />
@@ -717,7 +720,7 @@ export default function TasksObjectivesScreen() {
                   onDelete={async (id) => {
                     if (saving) return;
                     setSaving(true);
-                    try { await deleteTask(id); await refresh(); } finally { setSaving(false); }
+                    try { await deleteTask(id); await refresh(); rescheduleAllNotifications().catch(() => {}); } finally { setSaving(false); }
                   }}
                 />
               );
@@ -1005,7 +1008,7 @@ export default function TasksObjectivesScreen() {
           <Pressable
             onPress={async () => {
               if (!editingTaskId || saving) return; setSaving(true);
-              try { await deleteTask(editingTaskId); closeAllSheets(); setEditingTaskId(null); await refresh(); } finally { setSaving(false); }
+              try { await deleteTask(editingTaskId); closeAllSheets(); setEditingTaskId(null); await refresh(); rescheduleAllNotifications().catch(() => {}); } finally { setSaving(false); }
             }}
             style={({ pressed }) => [{ marginTop: s(10), height: s(48), borderRadius: radius.xl, borderWidth: s(1), borderColor: colors.border, backgroundColor: colors.surface2, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: s(10), opacity: saving ? 0.55 : pressed ? 0.9 : 1 }]}
           >

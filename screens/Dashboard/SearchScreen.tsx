@@ -10,7 +10,6 @@ import {
   Platform,
   ScrollView,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -19,16 +18,14 @@ import { useDeviceClass, WIDE_MAX_WIDTH } from "../../src/ui/responsive";
 import { s } from "../../src/ui/ts";
 import { loadTasks, loadObjectives, todayKey } from "../../src/data/storage";
 import type { Task, Objective } from "../../src/data/models";
-import type { LocalEvent } from "../../src/components/calendar/types";
-import { BIRTHDAY_COLOR } from "../../src/components/calendar/eventColors";
 
-type Kind = "task" | "objective" | "event" | "birthday" | "action";
+type Kind = "task" | "objective" | "action";
 type Item = { 
   id: string; 
   kind: Kind; 
   title: string; 
   subtitle?: string;
-  data?: Task | Objective | LocalEvent | ActionItem; // Store original data for navigation
+  data?: Task | Objective | ActionItem;
 };
 
 type ActionItem = {
@@ -41,8 +38,6 @@ const label = (k: Kind) => {
   switch (k) {
     case "task": return "Task";
     case "objective": return "Objective";
-    case "event": return "Event";
-    case "birthday": return "Birthday";
     case "action": return "Action";
     default: return "Item";
   }
@@ -52,8 +47,6 @@ const icon = (k: Kind): keyof typeof Ionicons.glyphMap => {
   switch (k) {
     case "task": return "checkmark-circle-outline";
     case "objective": return "flag-outline";
-    case "event": return "calendar-outline";
-    case "birthday": return "gift-outline";
     case "action": return "flash-outline";
     default: return "help-circle-outline";
   }
@@ -136,7 +129,6 @@ export default function SearchScreen({ navigation }: any) {
   
   const [tasks, setTasks] = useState<Task[]>([]);
   const [objectives, setObjectives] = useState<Objective[]>([]);
-  const [events, setEvents] = useState<LocalEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Load data when screen focuses
@@ -145,14 +137,12 @@ export default function SearchScreen({ navigation }: any) {
       const loadData = async () => {
         setLoading(true);
         try {
-          const [loadedTasks, loadedObjectives, loadedEvents] = await Promise.all([
+          const [loadedTasks, loadedObjectives] = await Promise.all([
             loadTasks(),
             loadObjectives(),
-            loadEventsFromStorage(),
           ]);
           setTasks(loadedTasks);
           setObjectives(loadedObjectives);
-          setEvents(loadedEvents);
         } catch (error) {
           console.error("Failed to load search data:", error);
         } finally {
@@ -164,15 +154,7 @@ export default function SearchScreen({ navigation }: any) {
   );
 
   // Load events from AsyncStorage (where CreateSheet saves them)
-  const loadEventsFromStorage = async (): Promise<LocalEvent[]> => {
-    try {
-      const raw = await AsyncStorage.getItem("calendar:events");
-      if (!raw) return [];
-      return JSON.parse(raw) as LocalEvent[];
-    } catch {
-      return [];
-    }
-  };
+  // NOTE: events and birthdays removed from search.
 
   // Convert all data to searchable items
   const allItems = useMemo(() => {
@@ -207,26 +189,6 @@ export default function SearchScreen({ navigation }: any) {
         });
       });
     
-    // Add events and birthdays
-    events.forEach(event => {
-      const isBirthday = event.eventType === "birthday";
-      const dateStr = new Date(event.startDate + "T00:00:00").toLocaleDateString(undefined, { 
-        month: "short", 
-        day: "numeric",
-        year: event.allDay ? undefined : "numeric"
-      });
-      const timeStr = event.allDay ? "All day" : event.startTime;
-      const subtitle = event.location ? `${dateStr} · ${event.location}` : `${dateStr} · ${timeStr}`;
-      
-      items.push({
-        id: event.id,
-        kind: isBirthday ? "birthday" : "event",
-        title: event.title,
-        subtitle,
-        data: event,
-      });
-    });
-    
     // Add action items
     ACTIONS.forEach(action => {
       items.push({
@@ -239,7 +201,7 @@ export default function SearchScreen({ navigation }: any) {
     });
     
     return items;
-  }, [tasks, objectives, events]);
+  }, [tasks, objectives]);
 
   const results = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -266,8 +228,6 @@ export default function SearchScreen({ navigation }: any) {
         action: 1,
         task: 2,
         objective: 3,
-        event: 4,
-        birthday: 5,
       };
       filtered.sort((a, b) => order[a.kind] - order[b.kind]);
     }
@@ -280,47 +240,35 @@ export default function SearchScreen({ navigation }: any) {
     
     if (item.kind === "task") {
       navigation.navigate("MainTabs", { screen: "TasksTab" });
-      setTimeout(() => navigation.goBack(), 100);
     } else if (item.kind === "objective") {
       navigation.navigate("MainTabs", { screen: "TasksTab" });
-      setTimeout(() => navigation.goBack(), 100);
-    } else if (item.kind === "event" || item.kind === "birthday") {
-      navigation.navigate("MainTabs", { screen: "CalendarTab" });
-      setTimeout(() => navigation.goBack(), 100);
     } else if (item.kind === "action" && item.data) {
       const actionData = item.data as ActionItem;
       
       switch (actionData.action) {
         case "toggle-theme":
-          // Toggle theme immediately
           setThemeMode(isDark ? "light" : "dark");
           break;
           
         case "change-accent":
-          // Navigate to settings where accent can be changed
           navigation.navigate("MainTabs", { screen: "SettingsTab" });
-          setTimeout(() => navigation.goBack(), 100);
           break;
           
         case "settings":
           navigation.navigate("MainTabs", { screen: "SettingsTab" });
-          setTimeout(() => navigation.goBack(), 100);
           break;
           
         case "focus":
           navigation.navigate("FocusZoneScreen");
-          setTimeout(() => navigation.goBack(), 100);
           break;
           
         case "calendar":
           navigation.navigate("MainTabs", { screen: "CalendarTab" });
-          setTimeout(() => navigation.goBack(), 100);
           break;
           
         case "profile":
         case "achievements":
           navigation.navigate("MainTabs", { screen: "SettingsTab" });
-          setTimeout(() => navigation.goBack(), 100);
           break;
       }
     }
@@ -449,7 +397,7 @@ export default function SearchScreen({ navigation }: any) {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={[{ flex: 1 }, isTablet && { maxWidth: WIDE_MAX_WIDTH, alignSelf: "center" as const, width: "100%" }]}>
-      {/* header */}}
+      {/* header */}
       <View style={styles.header}>
         <Pressable
           onPress={() => navigation.goBack()}
@@ -478,7 +426,7 @@ export default function SearchScreen({ navigation }: any) {
         <TextInput
           value={q}
           onChangeText={setQ}
-          placeholder="Search everything in FlowApp..."
+          placeholder="Search everything in Flusso..."
           placeholderTextColor={colors.muted}
           autoFocus
           returnKeyType="search"
@@ -498,7 +446,7 @@ export default function SearchScreen({ navigation }: any) {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filters}
         >
-          {(["all", "task", "objective", "event", "birthday", "action"] as const).map((k) => {
+          {(["all", "task", "objective", "action"] as const).map((k) => {
             const active = filter === k;
             return (
               <Pressable
@@ -532,13 +480,8 @@ export default function SearchScreen({ navigation }: any) {
             bgColor = getImportanceColor((item.data as Task).importance);
           } else if (item.kind === "objective" && item.data) {
             bgColor = getObjectiveColor((item.data as Objective).color);
-          } else if (item.kind === "event" && item.data) {
-            const event = item.data as LocalEvent;
-            bgColor = `rgba(33, 150, 243, 0.2)`; // Blue for events
-          } else if (item.kind === "birthday") {
-            bgColor = `${BIRTHDAY_COLOR}33`; // Birthday-only color with alpha
           } else if (item.kind === "action") {
-            bgColor = `rgba(156, 39, 176, 0.2)`; // Purple for actions
+            bgColor = `rgba(156, 39, 176, 0.2)`;
           }
           
           return (

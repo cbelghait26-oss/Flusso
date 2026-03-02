@@ -49,6 +49,12 @@ const KEYS = {
   // Contact date items — stored locally only, never synced to cloud (privacy)
   CONTACT_ITEMS: () => `${currentUserId}:contacts:dateItems`,
   CONTACTS_SETTINGS: () => `${currentUserId}:contacts:settings`,
+  // Generated contact calendar events — synced to cloud so other devices can display them
+  CLOUD_CONTACT_EVENTS: () => `${currentUserId}:contactEvents:generated`,
+  // Spotify OAuth tokens (refresh token is the durable one)
+  SPOTIFY_TOKENS: () => `${currentUserId}:spotify:tokens`,
+  // Notification preferences (per-user, cloud-backed)
+  NOTIF_SETTINGS: () => `${currentUserId}:notif:settings`,
 };
 
 const memoryStore = new Map<string, string>();
@@ -824,6 +830,13 @@ export async function loadTimeFormat24h(): Promise<boolean> {
     requireUserId();
     const cached = getMemoryItem(KEYS.TIME_FORMAT_24H());
     if (cached !== null) return cached === "true";
+    // Try cloud first so new devices inherit the user's preference
+    const cloud = await loadFromCloud("timeFormat24h");
+    if (cloud?.value != null) {
+      const val = Boolean(cloud.value);
+      setMemoryItem(KEYS.TIME_FORMAT_24H(), String(val));
+      return val;
+    }
     const raw = await AsyncStorage.getItem(KEYS.TIME_FORMAT_24H());
     const val = raw === "true";
     setMemoryItem(KEYS.TIME_FORMAT_24H(), String(val));
@@ -841,6 +854,7 @@ export async function saveTimeFormat24h(value: boolean): Promise<void> {
     requireUserId();
     setMemoryItem(KEYS.TIME_FORMAT_24H(), String(value));
     await AsyncStorage.setItem(KEYS.TIME_FORMAT_24H(), String(value));
+    syncToCloud("timeFormat24h", { value }).catch(() => {});
   } catch {}
 }
 
@@ -889,8 +903,9 @@ export async function saveProfilePicture(base64: string | null): Promise<void> {
 
 const CLOUD_COLLECTIONS = [
   "setup", "streak", "focusDaily", "focusSessions",
-  "objectives", "tasks", "calendarEvents", "theme",
-  "dailyGoal", "focusSettings",
+  "objectives", "tasks", "calendarEvents", "localEvents",
+  "theme", "dailyGoal", "focusSettings", "profilePicture",
+  "timeFormat24h", "contactEvents", "spotifyTokens", "notifSettings",
 ];
 
 /**
@@ -1214,5 +1229,106 @@ export async function clearContactItems(): Promise<void> {
     requireUserId();
     await AsyncStorage.removeItem(KEYS.CONTACT_ITEMS());
     await saveContactsSettings({ enabled: false, lastSyncAt: null });
+  } catch {}
+}
+
+// ── Cloud contact events ───────────────────────────────────────────────────────
+// Raw ContactDateItem[] stays device-local (privacy).
+// The generated LocalEvent objects (calendar data only, no personal info beyond
+// what's already in the event title) are synced to cloud so a second device
+// can display the birthdays/anniversaries without needing its own contacts sync.
+
+export async function loadCloudContactEvents(): Promise<any[]> {
+  try {
+    if (!currentUserId) return [];
+    const cached = getMemoryJson<any[]>(KEYS.CLOUD_CONTACT_EVENTS());
+    if (cached !== null) return cached;
+    const cloud = await loadFromCloud("contactEvents");
+    if (cloud) {
+      const arr = Array.isArray(cloud) ? cloud : [];
+      setMemoryJson(KEYS.CLOUD_CONTACT_EVENTS(), arr);
+      return arr;
+    }
+    setMemoryJson(KEYS.CLOUD_CONTACT_EVENTS(), []);
+    return [];
+  } catch { return []; }
+}
+
+export async function saveCloudContactEvents(events: any[]): Promise<void> {
+  try {
+    if (!currentUserId) return;
+    setMemoryJson(KEYS.CLOUD_CONTACT_EVENTS(), events);
+    syncToCloud("contactEvents", events).catch(() => {});
+  } catch {}
+}
+
+// ── Spotify token persistence ──────────────────────────────────────────────────
+// The refresh token is durable and is what allows silent re-authentication on
+// a new device or after an app restart without the user having to re-authorize.
+
+export type SpotifyTokenData = {
+  accessToken: string | null;
+  refreshToken: string | null;
+  expiry: number; // Unix ms — when the access token expires
+};
+
+export async function loadSpotifyTokens(): Promise<SpotifyTokenData | null> {
+  try {
+    if (!currentUserId) return null;
+    const cached = getMemoryJson<SpotifyTokenData>(KEYS.SPOTIFY_TOKENS());
+    if (cached?.refreshToken) return cached;
+    const cloud = await loadFromCloud("spotifyTokens");
+    if (cloud?.refreshToken) {
+      const data: SpotifyTokenData = {
+        accessToken: cloud.accessToken ?? null,
+        refreshToken: cloud.refreshToken,
+        expiry: Number(cloud.expiry) || 0,
+      };
+      setMemoryJson(KEYS.SPOTIFY_TOKENS(), data);
+      return data;
+    }
+    return null;
+  } catch { return null; }
+}
+
+export async function saveSpotifyTokens(data: SpotifyTokenData): Promise<void> {
+  try {
+    if (!currentUserId) return;
+    setMemoryJson(KEYS.SPOTIFY_TOKENS(), data);
+    syncToCloud("spotifyTokens", data).catch(() => {});
+  } catch {}
+}
+
+export async function clearSpotifyTokens(): Promise<void> {
+  try {
+    if (!currentUserId) return;
+    removeMemoryItem(KEYS.SPOTIFY_TOKENS());
+    syncToCloud("spotifyTokens", { accessToken: null, refreshToken: null, expiry: 0 }).catch(() => {});
+  } catch {}
+}
+
+// ── Notification preferences (per-user, cloud-backed) ────────────────────────
+// Falls back gracefully when the user is not logged in so initNotifications()
+// (called before auth) always works with the local/default settings.
+
+export async function loadNotifPrefs(): Promise<Record<string, any> | null> {
+  try {
+    if (!currentUserId) return null;
+    const cached = getMemoryJson<Record<string, any>>(KEYS.NOTIF_SETTINGS());
+    if (cached) return cached;
+    const cloud = await loadFromCloud("notifSettings");
+    if (cloud) {
+      setMemoryJson(KEYS.NOTIF_SETTINGS(), cloud);
+      return cloud as Record<string, any>;
+    }
+    return null;
+  } catch { return null; }
+}
+
+export async function saveNotifPrefs(prefs: Record<string, any>): Promise<void> {
+  try {
+    if (!currentUserId) return;
+    setMemoryJson(KEYS.NOTIF_SETTINGS(), prefs);
+    syncToCloud("notifSettings", prefs).catch(() => {});
   } catch {}
 }

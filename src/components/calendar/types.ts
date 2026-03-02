@@ -69,4 +69,10 @@ export type CalItem = {
 
   /** Filled for contact-imported events so icons can be differentiated */
   contactDateKind?: ContactDateKind;
+
+  /**
+   * Extra searchable keywords (type label, holiday/birthday, objective name,
+   * formatted date). Concatenated and lowercased during search filtering.
+   */
+  meta?: string;
 };

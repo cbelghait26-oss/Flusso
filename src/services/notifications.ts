@@ -38,6 +38,8 @@ import {
   loadLocalEvents,
   loadFocusMinutesToday,
   todayKey,
+  loadNotifPrefs,
+  saveNotifPrefs,
 } from "../data/storage";
 
 import type { LocalEvent } from "../components/calendar/types";
@@ -73,6 +75,12 @@ const KEYMAP_KEY   = "flusso:notif:keymap"; // logicalKey → expo notification 
 
 export async function loadNotifSettings(): Promise<NotifSettings> {
   try {
+    // Try user-scoped cloud-backed store first (requires login, falls back to null when N/A)
+    const cloud = await loadNotifPrefs();
+    if (cloud) return { ...DEFAULT_NOTIF_SETTINGS, ...cloud };
+  } catch {}
+  // Fallback: legacy device-local AsyncStorage key (works before login / first run)
+  try {
     const raw = await AsyncStorage.getItem(SETTINGS_KEY);
     if (raw) return { ...DEFAULT_NOTIF_SETTINGS, ...JSON.parse(raw) };
   } catch {}
@@ -80,11 +88,14 @@ export async function loadNotifSettings(): Promise<NotifSettings> {
 }
 
 export async function saveNotifSettings(s: NotifSettings): Promise<void> {
+  // 1. Local device key — instant, works before login
   try {
     await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
   } catch (e) {
-    console.warn("[Notif] saveNotifSettings error:", e);
+    console.warn("[Notif] saveNotifSettings local error:", e);
   }
+  // 2. Cloud-backed user-scoped sync — non-blocking, silently no-ops if not logged in
+  saveNotifPrefs(s as unknown as Record<string, any>).catch(() => {});
 }
 
 // ─── Keymap helpers ───────────────────────────────────────────────────────────
@@ -108,12 +119,15 @@ async function saveKeymap(map: Record<string, string>): Promise<void> {
 /**
  * Schedule a local notification with a stable logical key.
  * Any previous notification for the same key is cancelled first (deduplication).
+ *
+ * @param trigger  Date  → fires at that exact wall-clock time (preferred for fixed daily times)
+ *                 number → fires N seconds from now (use for relative timers: focus, breaks, idle)
  */
 async function scheduleNotif(
   logicalKey: string,
   title: string,
   body: string,
-  triggerSeconds: number, // seconds from now; min 1
+  trigger: Date | number, // Date = exact wall-clock time; number = seconds from now
   data?: Record<string, unknown>,
 ): Promise<string | null> {
   try {
@@ -131,8 +145,15 @@ async function scheduleNotif(
     }
 
     if (__DEV__) {
-      console.log(`[Notif] SCHEDULE  key="${logicalKey}"  title="${title}"  in ${triggerSeconds}s`);
+      const triggerDesc = trigger instanceof Date
+        ? `at ${trigger.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+        : `in ${trigger}s`;
+      console.log(`[Notif] SCHEDULE  key="${logicalKey}"  title="${title}"  ${triggerDesc}`);
     }
+
+    const notifTrigger: Notifications.NotificationTriggerInput = trigger instanceof Date
+      ? { type: Notifications.SchedulableTriggerInputTypes.DATE, date: trigger }
+      : { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: Math.max(1, trigger) };
 
     const id = await Notifications.scheduleNotificationAsync({
       content: {
@@ -141,10 +162,7 @@ async function scheduleNotif(
         data: { logicalKey, flusso: true, ...(data ?? {}) },
         sound: true,
       },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: Math.max(1, triggerSeconds),
-      },
+      trigger: notifTrigger,
     });
 
     map[logicalKey] = id;
@@ -291,8 +309,8 @@ export async function onFocusSessionCompleted(
   const settings = await loadNotifSettings();
   if (!settings.master || !settings.focus) return;
 
-  const breakSecs         = __DEV__ ? 15 : breakMinutes * 60;
-  const endingSoonSecs    = __DEV__ ? 5  : Math.max(1, (breakMinutes - 2) * 60);
+  const breakSecs      = breakMinutes * 60;
+  const endingSoonSecs = Math.max(1, (breakMinutes - 2) * 60);
 
   // ① Break started
   await scheduleNotif(
@@ -377,23 +395,28 @@ function tomorrowDateKey(): string {
 }
 
 /**
- * Seconds until the NEXT occurrence of HH:MM today.
- * If that time has already passed today, returns seconds until the same time tomorrow.
+ * Returns a Date for the next occurrence of HH:MM.
+ * If that time is still ≥ 60 s away today, returns today's occurrence;
+ * otherwise returns tomorrow's (so the notification is never scheduled in the past).
  */
-function secondsUntilTodayAt(hour: number, minute = 0): number {
-  const now = new Date();
+function nextOccurrenceAt(hour: number, minute = 0): Date {
+  const now    = new Date();
   const target = new Date(now);
   target.setHours(hour, minute, 0, 0);
-  const diff = Math.floor((target.getTime() - now.getTime()) / 1000);
-  return diff > 60 ? diff : secondsUntilTomorrowAt(hour, minute);
+  if (target.getTime() - now.getTime() < 60_000) {
+    // Time has passed (or is less than a minute away) — push to tomorrow
+    target.setDate(target.getDate() + 1);
+  }
+  return target;
 }
 
-function secondsUntilTomorrowAt(hour: number, minute = 0): number {
-  const now = new Date();
+/** Returns a Date for HH:MM tomorrow. */
+function tomorrowAt(hour: number, minute = 0): Date {
+  const now    = new Date();
   const target = new Date(now);
   target.setDate(now.getDate() + 1);
   target.setHours(hour, minute, 0, 0);
-  return Math.max(1, Math.floor((target.getTime() - now.getTime()) / 1000));
+  return target;
 }
 
 /**
@@ -425,28 +448,28 @@ export async function scheduleTaskNotifications(): Promise<void> {
   const tasksToday    = tasks.filter((t) => t.status !== "completed" && t.deadline === today);
   const tasksTomorrow = tasks.filter((t) => t.status !== "completed" && t.deadline === tomorrow);
 
-  // ── Morning summary for tasks due TODAY ──────────────────────────────────
+  // ── Morning summary for tasks due TODAY (8:00 AM) ──────────────────────
   if (tasksToday.length > 0) {
-    const count = tasksToday.length;
-    const secs  = __DEV__ ? 10 : secondsUntilTodayAt(8, 0);
+    const count   = tasksToday.length;
+    const trigger = nextOccurrenceAt(8, 0);
     await scheduleNotif(
       `task:dueTodaySummary:${today}`,
       `${count} task${count !== 1 ? "s" : ""} due today 📋`,
       count === 1
         ? `"${tasksToday[0].title}" is due today.`
         : `You have ${count} tasks due today. Let's make it count!`,
-      secs,
+      trigger,
     );
   }
 
-  // ── Per-task notification for tasks due TOMORROW (at 8 am tomorrow) ──────
+  // ── Per-task notification for tasks due TOMORROW (8:00 AM tomorrow) ──────
   for (const t of tasksTomorrow) {
-    const secs = __DEV__ ? 15 : secondsUntilTomorrowAt(8, 0);
+    const trigger = tomorrowAt(8, 0);
     await scheduleNotif(
       `task:dueSoon:${t.id}`,
       "Task due tomorrow 📅",
       `"${t.title}" is due tomorrow. Plan ahead!`,
-      secs,
+      trigger,
     );
   }
 }
@@ -521,7 +544,7 @@ export async function scheduleCalendarNotifications(): Promise<void> {
       `calendar:eventReminder:${evt.id}`,
       `${evt.title} ${humanOffset} 📅`,
       `${evt.startTime}${evt.location ? ` · ${evt.location}` : ""}`,
-      __DEV__ ? 20 : secsFromNow,
+      fireAt, // exact Date → fires precisely when the reminder is due
     );
   }
 
@@ -556,7 +579,7 @@ export async function scheduleCalendarNotifications(): Promise<void> {
       `calendar:nextUp:${curr.id}:${next.id}`,
       `Next up: ${next.title} ⏭️`,
       `Starting at ${next.startTime}${gapMin <= 1 ? " — right now" : ` — in ${gapMin} min`}`,
-      __DEV__ ? 25 : secsFromNow,
+      currEnd, // exact Date → fires the moment the current event ends
     );
   }
 }
@@ -585,14 +608,14 @@ export async function scheduleDailySummaries(): Promise<void> {
     const total   = todayTasks.length + todayEvents.length;
 
     if (total > 0) {
-      const secs = __DEV__ ? 30 : secondsUntilTodayAt(8, 0);
+      const trigger = nextOccurrenceAt(8, 0); // 8:00 AM
       await scheduleNotif(
         `daily:agenda:${today}`,
         "Good morning — here's your day ☀️",
         total === 1
           ? "1 item on your agenda today."
           : `${total} items on your agenda today. Make it count!`,
-        secs,
+        trigger,
       );
     }
   }
@@ -607,7 +630,7 @@ export async function scheduleDailySummaries(): Promise<void> {
     const tmrEvents = events.filter((e) => e.startDate === tomorrow && !e.allDay);
     const total   = tmrTasks.length + tmrEvents.length;
 
-    const secs = __DEV__ ? 35 : secondsUntilTodayAt(21, 0);
+    const trigger = nextOccurrenceAt(21, 0); // 9:00 PM
 
     await scheduleNotif(
       `daily:tomorrowPreview:${today}`,
@@ -615,7 +638,7 @@ export async function scheduleDailySummaries(): Promise<void> {
       total > 0
         ? `${total} item${total !== 1 ? "s" : ""} lined up for tomorrow.`
         : "Nothing scheduled for tomorrow. Enjoy the breathing room!",
-      secs,
+      trigger,
     );
   }
 
@@ -654,12 +677,12 @@ async function scheduleCoachNotifications(): Promise<void> {
   const tmrTotal  = tmrTasks.length + tmrEvents.length;
 
   if (tmrTotal >= 6) {
-    const secs = __DEV__ ? 40 : secondsUntilTodayAt(20, 0); // alert at 8 pm tonight
+    const trigger = nextOccurrenceAt(20, 0); // 8:00 PM
     await scheduleNotif(
       `coach:heavyTomorrow:${today}`,
       "Heavy day ahead 📊",
       `${tmrTotal} items scheduled tomorrow — consider prioritising now.`,
-      secs,
+      trigger,
     );
   }
 
@@ -675,27 +698,28 @@ async function scheduleCoachNotifications(): Promise<void> {
   );
 
   if (urgentTasks.length >= 3) {
-    const secs = __DEV__ ? 45 : secondsUntilTodayAt(9, 0); // alert at 9 am
+    const trigger = nextOccurrenceAt(9, 0); // 9:00 AM
     await scheduleNotif(
       `coach:urgentOverload:${today}`,
       "Critical tasks need attention 🚨",
       `${urgentTasks.length} critical tasks are due in the next 24 hours.`,
-      secs,
+      trigger,
     );
   }
 
   // Coach 3 — Idle reminder (no focus today, past 10 am)
+  // This one is intentionally relative (15 min from now), not a fixed clock time.
   const hour = new Date().getHours();
   if (hour >= 10) {
     try {
       const focusMinsToday = await loadFocusMinutesToday();
       if (focusMinsToday === 0) {
-        const secs = __DEV__ ? 50 : 15 * 60; // fire in 15 min
+        const trigger = 15 * 60; // 15 min from now (seconds)
         await scheduleNotif(
           `coach:idle:${today}`,
           "Time to focus? 🎯",
           "You haven't started a focus session today. Even 25 minutes makes a difference!",
-          secs,
+          trigger,
         );
       }
     } catch {}
@@ -712,12 +736,12 @@ async function scheduleCoachNotifications(): Promise<void> {
   );
 
   if (approachingTasks.length > 0) {
-    const secs = __DEV__ ? 55 : secondsUntilTodayAt(11, 0); // 11 am nudge
+    const trigger = nextOccurrenceAt(11, 0); // 11:00 AM
     await scheduleNotif(
       `coach:notStarted:${today}`,
       "Unstarted high-priority tasks ⚡",
       `${approachingTasks.length} important task${approachingTasks.length !== 1 ? "s" : ""} due soon haven't been started yet.`,
-      secs,
+      trigger,
     );
   }
 }

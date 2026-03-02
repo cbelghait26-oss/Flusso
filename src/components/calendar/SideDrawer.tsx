@@ -70,7 +70,7 @@ export function SideDrawer(props: {
         <Toggle theme={theme} label="Tasks" value={showTasks} onToggle={() => setShowTasks(!showTasks)} />
         <Toggle theme={theme} label="Birthdays" value={showBirthdays} onToggle={() => setShowBirthdays(!showBirthdays)} />
         <Toggle theme={theme} label="Holidays" value={showHolidays} onToggle={() => setShowHolidays(!showHolidays)} />
-        <Toggle theme={theme} label="Contact Dates" value={showContacts} onToggle={() => setShowContacts(!showContacts)} />
+        <Toggle theme={theme} label="Contacts" value={showContacts} onToggle={() => setShowContacts(!showContacts)} />
 
         <Text style={{ marginTop: s(18), color: theme.colors.muted, fontWeight: "900", fontSize: s(12) }}>GOOGLE CALENDAR</Text>
 

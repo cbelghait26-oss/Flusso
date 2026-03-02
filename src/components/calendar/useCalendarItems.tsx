@@ -3,6 +3,18 @@ import type { CalItem, LocalEvent, YMD } from "./types";
 import { hmToMinutes, isValidHM, ymdCompare } from "./date";
 import { loadTasks, loadObjectives } from "../../data/storage";
 
+/** Formats a YYYY-MM-DD string as searchable keywords: "march 15 2026 mar" */
+function fmtDateSearch(d: YMD): string {
+  try {
+    const dt = new Date(d + "T00:00:00");
+    const long = dt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }).toLowerCase();
+    const short = dt.toLocaleDateString("en-US", { month: "short" }).toLowerCase();
+    return `${long} ${short}`;
+  } catch {
+    return d;
+  }
+}
+
 type Params = {
   query: string;
   showEvents: boolean;
@@ -79,6 +91,7 @@ export function useCalendarItems(params: Params) {
           // FIX: holidays always get "purple"; user events use their chosen color key
           colorKey: isHoliday ? "purple" : (e.color ?? "blue"),
           location: e.location,
+          meta: `${isHoliday ? "holiday" : "event"} ${fmtDateSearch(e.startDate)} ${e.location ?? ""}`.trim(),
         });
       }
     }
@@ -109,6 +122,7 @@ export function useCalendarItems(params: Params) {
           // FIX: birthdays always use the "birthday" color key (#FF6B2C orange)
           colorKey: "birthday",
           location: e.location,
+          meta: `birthday ${fmtDateSearch(e.startDate)}`,
         });
       }
     }
@@ -166,6 +180,7 @@ export function useCalendarItems(params: Params) {
           date,
           completed: false,
           colorKey,
+          meta: `task deadline ${objective?.title ?? ""} ${fmtDateSearch(date)}`.trim(),
         });
       }
     }
@@ -191,11 +206,12 @@ export function useCalendarItems(params: Params) {
             colorKey: "birthday",
             location: e.location,
             contactDateKind: "birthday",
+            meta: `birthday contacts ${fmtDateSearch(e.startDate)}`,
           });
         } else if (isContactOther) {
-          // Anniversaries → teal; other contact dates → gray
+          // Anniversaries → pink; other contact dates → gray
           const colorKey =
-            e.contactDateKind === "anniversary" ? "teal" : "gray";
+            e.contactDateKind === "anniversary" ? "pink" : "gray";
           out.push({
             id: `event:${e.id}`,
             type: "event",
@@ -207,6 +223,7 @@ export function useCalendarItems(params: Params) {
             colorKey,
             location: e.location,
             contactDateKind: e.contactDateKind,
+            meta: `${e.contactDateKind ?? "anniversary"} contacts ${fmtDateSearch(e.startDate)} pink`,
           });
         }
       }
@@ -216,9 +233,8 @@ export function useCalendarItems(params: Params) {
     if (!q) return out;
 
     return out.filter((x) => {
-      if (x.title.toLowerCase().includes(q)) return true;
-      if (x.type === "event" && x.location && x.location.toLowerCase().includes(q)) return true;
-      return false;
+      const hay = [x.title, x.location ?? "", x.meta ?? ""].join(" ").toLowerCase();
+      return hay.includes(q);
     });
   }, [events, tasks, objectives, showEvents, showBirthdays, showTasks, showHolidays, showContacts, contactEvents, query]);
 
