@@ -1,5 +1,5 @@
 // screens/VerifyEmailScreen.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -26,15 +26,32 @@ export default function VerifyEmailScreen({ navigation, route }: Props) {
   const [resending, setResending] = useState(false);
   const [checking, setChecking] = useState(false);
   const [sent, setSent] = useState(false);
+  const [cooldown, setCooldown] = useState(0); // seconds remaining
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const user = auth.currentUser;
 
+  const startCooldown = () => {
+    setCooldown(60);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    cooldownRef.current = setInterval(() => {
+      setCooldown((c) => {
+        if (c <= 1) { clearInterval(cooldownRef.current!); return 0; }
+        return c - 1;
+      });
+    }, 1000);
+  };
+
+  useEffect(() => () => { if (cooldownRef.current) clearInterval(cooldownRef.current); }, []);
+
   const handleResend = async () => {
-    if (!user) return;
+    if (!user || cooldown > 0) return;
+    console.log('[VerifyEmail] resend — auth.currentUser.email:', user.email);
     setResending(true);
     try {
       await sendVerificationEmail(user);
       setSent(true);
+      startCooldown();
       Alert.alert("Email sent", `A verification link has been sent to ${user.email ?? "your email"}.`);
     } catch (err: any) {
       Alert.alert("Error", err?.message ?? "Could not send email. Please try again.");
@@ -95,7 +112,7 @@ export default function VerifyEmailScreen({ navigation, route }: Props) {
         <Text style={styles.subtitle}>
           {"We sent a verification link to\n"}
           <Text style={styles.email}>{user?.email ?? "your email address"}</Text>
-          {"\n\nClick the link in the email, then tap \u201cI\u2019ve verified\u201d below."}
+          {"\n\nClick the link in the email, then tap \u201cI\u2019ve verified\u201d below. If you don\u2019t see it, check your spam or junk folder."}
         </Text>
 
         {/* Primary CTA */}
@@ -121,33 +138,45 @@ export default function VerifyEmailScreen({ navigation, route }: Props) {
         {/* Resend */}
         <Pressable
           onPress={handleResend}
-          disabled={resending}
+          disabled={resending || cooldown > 0}
           style={({ pressed }) => [
             styles.btn,
             styles.btnSecondary,
-            { opacity: pressed || resending ? 0.8 : 1 },
+            { opacity: pressed || resending || cooldown > 0 ? 0.6 : 1 },
           ]}
         >
           {resending ? (
             <ActivityIndicator size="small" color="#1C7ED6" />
           ) : (
             <>
-              <Ionicons name="refresh-outline" size={s(18)} color="#1C7ED6" />
-              <Text style={[styles.btnText, { color: "#1C7ED6" }]}>
-                {sent ? "Resend email" : "Resend verification email"}
+              <Ionicons name="refresh-outline" size={s(18)} color={cooldown > 0 ? "#8B92A8" : "#1C7ED6"} />
+              <Text style={[styles.btnText, { color: cooldown > 0 ? "#8B92A8" : "#1C7ED6" }]}>
+                {cooldown > 0 ? `Resend in ${cooldown}s` : sent ? "Resend email" : "Resend verification email"}
               </Text>
             </>
           )}
         </Pressable>
 
-        {/* Logout */}
-        <Pressable
-          onPress={handleLogout}
-          style={({ pressed }) => [styles.logoutBtn, { opacity: pressed ? 0.7 : 1 }]}
-        >
-          <Ionicons name="log-out-outline" size={s(16)} color="#8B92A8" />
-          <Text style={styles.logoutText}>Log out</Text>
-        </Pressable>
+        {/* Verify Later / Logout row */}
+        <View style={{ flexDirection: "row", gap: s(12), marginTop: s(8) }}>
+          <Pressable
+            onPress={() => navigation.reset({ index: 0, routes: [{ name: afterVerifyRoute as any }] })}
+            style={({ pressed }) => [styles.logoutBtn, { opacity: pressed ? 0.7 : 1 }]}
+          >
+            <Ionicons name="arrow-forward-circle-outline" size={s(16)} color="#8B92A8" />
+            <Text style={styles.logoutText}>Verify later</Text>
+          </Pressable>
+
+          <Text style={{ color: "#8B92A844", alignSelf: "center", fontSize: s(13) }}>·</Text>
+
+          <Pressable
+            onPress={handleLogout}
+            style={({ pressed }) => [styles.logoutBtn, { opacity: pressed ? 0.7 : 1 }]}
+          >
+            <Ionicons name="log-out-outline" size={s(16)} color="#8B92A8" />
+            <Text style={styles.logoutText}>Log out</Text>
+          </Pressable>
+        </View>
       </View>
     </SafeAreaView>
   );

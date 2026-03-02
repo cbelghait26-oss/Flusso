@@ -31,7 +31,8 @@ import {
 } from "firebase/auth";
 import {
   reloadAndCheckVerified,
-  changeEmailWithReauth,
+  requestEmailChange,
+  confirmEmailChange,
 } from "../src/services/emailVerification";
 
 import { useTheme } from "../src/components/theme/theme";
@@ -328,6 +329,21 @@ export default function SettingsScreen() {
   const [changeEmailPassword, setChangeEmailPassword] = useState("");
   const [changingEmail, setChangingEmail] = useState(false);
   const [resendingVerif, setResendingVerif] = useState(false);
+  const [changeEmailPending, setChangeEmailPending] = useState(false); // waiting for user to click link
+  const [confirmingEmailChange, setConfirmingEmailChange] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const resendCooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startResendCooldown = () => {
+    setResendCooldown(60);
+    if (resendCooldownRef.current) clearInterval(resendCooldownRef.current);
+    resendCooldownRef.current = setInterval(() => {
+      setResendCooldown((c) => {
+        if (c <= 1) { clearInterval(resendCooldownRef.current!); return 0; }
+        return c - 1;
+      });
+    }, 1000);
+  };
 
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -709,16 +725,10 @@ export default function SettingsScreen() {
     if (!user) return;
     setChangingEmail(true);
     try {
-      await changeEmailWithReauth(user, changeEmailPassword, changeEmailNew.trim());
-      setChangeEmailModal(false);
-      setProfileEmail(changeEmailNew.trim());
-      setIsEmailVerified(false);
-      setChangeEmailNew("");
+      await requestEmailChange(user, changeEmailPassword, changeEmailNew.trim());
+      // Don't close the modal — switch to the pending confirmation view.
+      setChangeEmailPending(true);
       setChangeEmailPassword("");
-      Alert.alert(
-        "Verify new email",
-        `A verification link has been sent to ${changeEmailNew.trim()}. Verify it before your next login.`
-      );
     } catch (err: any) {
       let msg = "An error occurred.";
       if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") msg = "Incorrect password.";
@@ -731,12 +741,40 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleResendVerification = async () => {
+  const handleConfirmEmailChange = async () => {
     const user = auth.currentUser;
     if (!user) return;
+    setConfirmingEmailChange(true);
+    try {
+      const updatedEmail = await confirmEmailChange(user);
+      if (updatedEmail && updatedEmail !== profileEmail) {
+        setProfileEmail(updatedEmail);
+        setChangeEmailModal(false);
+        setChangeEmailPending(false);
+        setChangeEmailNew("");
+        Alert.alert("✅ Email updated", `Your email is now ${updatedEmail}.`);
+      } else {
+        Alert.alert(
+          "Not updated yet",
+          "Your email hasn’t changed. Make sure you clicked the link in the email we sent to " +
+          changeEmailNew.trim() + "."
+        );
+      }
+    } catch (err: any) {
+      Alert.alert("Error", err?.message ?? "Could not confirm email change.");
+    } finally {
+      setConfirmingEmailChange(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    const user = auth.currentUser;
+    if (!user || resendCooldown > 0) return;
+    console.log('[Settings] resend verification — auth.currentUser.email:', user.email);
     setResendingVerif(true);
     try {
       await sendEmailVerification(user);
+      startResendCooldown();
       Alert.alert("Email sent", `Verification link sent to ${user.email}.`);
     } catch (err: any) {
       Alert.alert("Error", err?.message ?? "Could not send email.");
@@ -976,7 +1014,7 @@ export default function SettingsScreen() {
               icon="pencil-outline"
               label="Change email"
               C={C}
-              onPress={() => { setChangeEmailNew(""); setChangeEmailPassword(""); setChangeEmailModal(true); }}
+              onPress={() => { setChangeEmailNew(""); setChangeEmailPassword(""); setChangeEmailPending(false); setChangeEmailModal(true); }}
             />
             <Divider C={C} />
             {/* Email verification status */}
@@ -1000,16 +1038,16 @@ export default function SettingsScreen() {
                 <View style={{ flexDirection: "row", gap: s(8), paddingLeft: s(40) }}>
                   <Pressable
                     onPress={handleResendVerification}
-                    disabled={resendingVerif}
+                    disabled={resendingVerif || resendCooldown > 0}
                     style={({ pressed }) => ({
                       paddingVertical: s(6), paddingHorizontal: s(12),
                       borderRadius: s(8), backgroundColor: "#F97316" + "18",
                       borderWidth: s(1), borderColor: "#F97316" + "44",
-                      opacity: pressed || resendingVerif ? 0.7 : 1,
+                      opacity: pressed || resendingVerif || resendCooldown > 0 ? 0.6 : 1,
                     })}
                   >
                     <Text style={{ color: "#F97316", fontSize: s(12), fontWeight: "800" }}>
-                      {resendingVerif ? "Sending…" : "Resend email"}
+                      {resendingVerif ? "Sending…" : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend email"}
                     </Text>
                   </Pressable>
                   <Pressable
@@ -1723,62 +1761,97 @@ export default function SettingsScreen() {
         visible={changeEmailModal}
         transparent
         animationType="fade"
-        onRequestClose={() => { if (!changingEmail) setChangeEmailModal(false); }}
+        onRequestClose={() => { if (!changingEmail && !confirmingEmailChange) { setChangeEmailModal(false); setChangeEmailPending(false); } }}
       >
         <View style={[styles.sheetBackdrop, { alignItems: "center", justifyContent: "center", padding: s(20) }]}>
           <View style={[styles.modalCard, { backgroundColor: C.card, borderColor: C.line }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: s(10), marginBottom: s(4) }}>
               <View style={[styles.iconWrap, { backgroundColor: C.accent + "18" }]}>
-                <Ionicons name="mail-outline" size={s(18)} color={C.accent} />
+                <Ionicons name={changeEmailPending ? "mail-unread-outline" : "mail-outline"} size={s(18)} color={C.accent} />
               </View>
-              <Text style={[styles.modalTitle, { color: C.text }]}>Change email</Text>
+              <Text style={[styles.modalTitle, { color: C.text }]}>
+                {changeEmailPending ? "Check your inbox" : "Change email"}
+              </Text>
             </View>
-            <Text style={[styles.modalSub, { color: C.muted }]}>
-              Enter your new email address and current password to confirm.
-            </Text>
 
-            <TextInput
-              style={[styles.modalInput, { color: C.text, borderColor: C.line, backgroundColor: C.card2 }]}
-              placeholder="New email address"
-              placeholderTextColor={C.muted}
-              value={changeEmailNew}
-              onChangeText={setChangeEmailNew}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!changingEmail}
-            />
-            <TextInput
-              style={[styles.modalInput, { color: C.text, borderColor: C.line, backgroundColor: C.card2, marginTop: s(10) }]}
-              placeholder="Current password"
-              placeholderTextColor={C.muted}
-              value={changeEmailPassword}
-              onChangeText={setChangeEmailPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!changingEmail}
-            />
+            {changeEmailPending ? (
+              // ── Pending: user needs to click the link in the new-email inbox ──
+              <>
+                <Text style={[styles.modalSub, { color: C.muted }]}>
+                  {"We sent a confirmation link to\n"}
+                  <Text style={{ color: C.text, fontWeight: "900" }}>{changeEmailNew.trim()}</Text>
+                  {"\n\nOpen that email and click the link to complete the change, then tap the button below."}
+                </Text>
+                <View style={styles.modalActions}>
+                  <Pressable
+                    onPress={() => { setChangeEmailModal(false); setChangeEmailPending(false); }}
+                    style={[styles.modalCancelBtn, { borderColor: C.line }]}
+                  >
+                    <Text style={[styles.modalBtnText, { color: C.muted }]}>Close</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleConfirmEmailChange}
+                    disabled={confirmingEmailChange}
+                    style={[styles.modalPrimaryBtn, { backgroundColor: C.accent }]}
+                  >
+                    {confirmingEmailChange
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={[styles.modalBtnText, { color: "#fff" }]}>I clicked the link</Text>
+                    }
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              // ── Input form ──
+              <>
+                <Text style={[styles.modalSub, { color: C.muted }]}>
+                  Enter your new email address and current password. We’ll send a confirmation link to the new address.
+                </Text>
 
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => setChangeEmailModal(false)}
-                disabled={changingEmail}
-                style={[styles.modalCancelBtn, { borderColor: C.line }]}
-              >
-                <Text style={[styles.modalBtnText, { color: C.muted }]}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={handleChangeEmail}
-                disabled={changingEmail}
-                style={[styles.modalPrimaryBtn, { backgroundColor: C.accent }]}
-              >
-                {changingEmail
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={[styles.modalBtnText, { color: "#fff" }]}>Update email</Text>
-                }
-              </Pressable>
-            </View>
+                <TextInput
+                  style={[styles.modalInput, { color: C.text, borderColor: C.line, backgroundColor: C.card2 }]}
+                  placeholder="New email address"
+                  placeholderTextColor={C.muted}
+                  value={changeEmailNew}
+                  onChangeText={setChangeEmailNew}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!changingEmail}
+                />
+                <TextInput
+                  style={[styles.modalInput, { color: C.text, borderColor: C.line, backgroundColor: C.card2, marginTop: s(10) }]}
+                  placeholder="Current password"
+                  placeholderTextColor={C.muted}
+                  value={changeEmailPassword}
+                  onChangeText={setChangeEmailPassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!changingEmail}
+                />
+
+                <View style={styles.modalActions}>
+                  <Pressable
+                    onPress={() => setChangeEmailModal(false)}
+                    disabled={changingEmail}
+                    style={[styles.modalCancelBtn, { borderColor: C.line }]}
+                  >
+                    <Text style={[styles.modalBtnText, { color: C.muted }]}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleChangeEmail}
+                    disabled={changingEmail}
+                    style={[styles.modalPrimaryBtn, { backgroundColor: C.accent }]}
+                  >
+                    {changingEmail
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={[styles.modalBtnText, { color: "#fff" }]}>Send confirmation</Text>
+                    }
+                  </Pressable>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>

@@ -38,7 +38,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
     try {
       await requestPasswordReset(email);
       setSuccessMessage(
-        "If an account exists with this email, you'll receive a password reset link shortly. Please check your inbox and spam folder."
+        "If an account exists with this email, you'll receive a password reset link shortly. Please check your inbox — and don't forget to check your spam or junk folder."
       );
       setEmail(""); // Clear the input
     } catch (error: any) {

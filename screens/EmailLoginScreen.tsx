@@ -61,7 +61,10 @@ export default function EmailLoginScreen({ navigation, route }: Props) {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         await setCurrentUser(userCredential.user.uid);
         // Send verification email and gate the user until they verify.
-        try { await sendVerificationEmail(userCredential.user); } catch {}
+        try {
+          console.log('[EmailLogin] signup — sending verification to:', userCredential.user.email);
+          await sendVerificationEmail(userCredential.user);
+        } catch {}
         navigation.navigate("VerifyEmail", { afterVerifyRoute: "Q1NameScreen" });
       } else {
         const userCredential = await signInWithEmailAndPassword(auth, email, password);

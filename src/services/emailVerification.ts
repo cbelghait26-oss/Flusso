@@ -1,7 +1,7 @@
 // src/services/emailVerification.ts
 import {
   sendEmailVerification,
-  updateEmail,
+  verifyBeforeUpdateEmail,
   EmailAuthProvider,
   reauthenticateWithCredential,
   getIdToken,
@@ -12,6 +12,7 @@ import {
  * Send (or re-send) a verification email to the current user.
  */
 export async function sendVerificationEmail(user: User): Promise<void> {
+  console.log('[emailVerification] sending to:', user.email);
   await sendEmailVerification(user);
 }
 
@@ -29,27 +30,35 @@ export async function reloadAndCheckVerified(user: User): Promise<boolean> {
 }
 
 /**
- * Change a user's email address.
- * Requires re-authentication with the current password because Firebase
- * treats email as a sensitive field.
+ * Request an email address change using the safe Firebase flow:
+ *  1. Re-authenticate with current password.
+ *  2. Call verifyBeforeUpdateEmail() — Firebase sends a link to the NEW address.
+ *  3. The email only updates in Firebase after the user clicks that link.
  *
- * Steps:
- *  1. Re-authenticate with current credential.
- *  2. Update email.
- *  3. Send verification to the NEW address.
- *
- * Throws with a descriptive `message` property on failure so callers can
- * display user-friendly error messages.
+ * The caller should NOT update local email state until the user confirms
+ * via user.reload() showing the new email.
  */
-export async function changeEmailWithReauth(
+export async function requestEmailChange(
   user: User,
   currentPassword: string,
   newEmail: string
 ): Promise<void> {
   if (!user.email) throw new Error("No email associated with this account.");
 
+  const trimmed = newEmail.trim().toLowerCase();
   const credential = EmailAuthProvider.credential(user.email, currentPassword);
   await reauthenticateWithCredential(user, credential);
-  await updateEmail(user, newEmail);
-  await sendEmailVerification(user);
+  console.log('[emailVerification] verifyBeforeUpdateEmail — sending link to:', trimmed);
+  await verifyBeforeUpdateEmail(user, trimmed);
+}
+
+/**
+ * After the user clicks the confirmation link in their new-email inbox,
+ * reload + force-refresh the token so Firebase reflects the updated email.
+ * Returns the new email from the reloaded user (or null if unchanged).
+ */
+export async function confirmEmailChange(user: User): Promise<string | null> {
+  await user.reload();
+  await getIdToken(user, true);
+  return user.email;
 }
