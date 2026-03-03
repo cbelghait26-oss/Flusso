@@ -1,4 +1,4 @@
-// src/components/SpotifyMiniPlayer.tsx
+﻿// src/components/SpotifyMiniPlayer.tsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -475,7 +475,6 @@ export function SpotifyMiniPlayer({ onTrackChange, isLandscape = false }: Props)
     const now = Date.now();
     if (nullCountRef.current === 1 && now - lastRefreshAttemptRef.current > 120_000) {
       lastRefreshAttemptRef.current = now;
-      console.log("🎵 Player null — attempting silent token refresh…");
       const newToken = await refreshAccessToken();
       if (newToken) {
         // Retry immediately after refresh

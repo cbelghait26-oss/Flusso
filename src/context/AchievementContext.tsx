@@ -1,4 +1,4 @@
-// src/context/AchievementContext.tsx
+﻿// src/context/AchievementContext.tsx
 import React, {
   createContext,
   useCallback,
@@ -254,7 +254,6 @@ export function AchievementProvider({
 
       processQueue();
     } catch (err) {
-      console.log("[AchievementContext] error:", err);
     } finally {
       checkInProgress.current = false;
     }

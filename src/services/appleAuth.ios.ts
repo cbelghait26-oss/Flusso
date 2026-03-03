@@ -1,4 +1,4 @@
-// src/services/appleAuth.ios.ts
+﻿// src/services/appleAuth.ios.ts
 // Metro automatically selects this file on iOS instead of appleAuth.ts,
 // so expo-apple-authentication (iOS-only native module) is NEVER bundled
 // for Android or web.
@@ -76,17 +76,14 @@ export async function signInWithApple() {
   let userCredential;
   if (currentUser) {
     // Existing Firebase session → link Apple credential instead of overwriting
-    console.log('[appleAuth] Linking Apple credential to existing user:', currentUser.uid);
     userCredential = await linkWithCredential(currentUser, credential);
   } else {
-    console.log('[appleAuth] Signing in fresh with Apple credential');
     userCredential = await signInWithCredential(auth, credential);
   }
 
   // Update profile display name if supplied (Apple only sends it once)
   if (displayName && !userCredential.user.displayName) {
     await updateProfile(userCredential.user, { displayName });
-    console.log('[appleAuth] Display name set:', displayName);
   }
 
   return userCredential;

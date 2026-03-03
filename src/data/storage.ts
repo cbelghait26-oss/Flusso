@@ -1,4 +1,4 @@
-export const STORAGE_MODULE_ID = "storage.ts::A_2026-02-19_1";
+﻿export const STORAGE_MODULE_ID = "storage.ts::A_2026-02-19_1";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // --- Local types for user data ---
@@ -197,10 +197,8 @@ async function attemptCloudWrite(collection: string, data: any): Promise<boolean
 
   try {
     await Promise.race([syncOp, timeout]);
-    console.log("✅ Cloud write OK:", collection, "uid=", currentUserId);
     return true;
   } catch (e) {
-    console.log("❌ Cloud write FAIL:", collection, "uid=", currentUserId, "err=", String(e));
     return false;
   }
 }
@@ -439,7 +437,6 @@ export async function addTask(input: {
   importance: Task["importance"];
   status: Task["status"];
 }) {
-  console.log("addTask() CALLED uid=", currentUserId, "title=", input.title);
   const tasks = await loadTasks();
   const t: Task = {
     id: uid("task"),
@@ -547,11 +544,9 @@ export async function loadCalendarEvents(): Promise<CalendarEvent[]> {
 
 export async function saveCalendarEvents(events: CalendarEvent[]) {
   requireUserId();
-  console.log("saveCalendarEvents() uid=", currentUserId, "count=", events.length);
   setMemoryJson(KEYS.CAL_EVENTS(), events);
   await AsyncStorage.setItem(KEYS.CAL_EVENTS(), JSON.stringify(events));
   const ok = await attemptCloudWrite("calendarEvents", events);
-  console.log("saveCalendarEvents cloud ok =", ok);
 }
 
 export async function syncCalendarFromTasks() {
@@ -578,11 +573,9 @@ export async function syncCalendarFromTasks() {
 }
 export async function saveSetupName(name: string) {
   requireUserId();
-  console.log("saveSetupName: Saving for user:", currentUserId);
   const parsed = await loadSetupPayload();
   parsed.name = name.trim();
   await saveSetupData(parsed);
-  console.log("saveSetupName: Complete");
 }
 
 export async function loadSetupName(): Promise<string | null> {
@@ -596,11 +589,9 @@ export async function loadSetupName(): Promise<string | null> {
  */
 export async function saveSetupComplete(isComplete: boolean) {
   requireUserId();
-  console.log("saveSetupComplete: Saving for user:", currentUserId);
   const parsed = await loadSetupPayload();
   parsed.setupComplete = isComplete;
   await saveSetupData(parsed);
-  console.log("saveSetupComplete: Complete");
 }
 
 /**
@@ -608,13 +599,11 @@ export async function saveSetupComplete(isComplete: boolean) {
  */
 export async function saveSetupData(setupData: any) {
   requireUserId();
-  console.log("saveSetupData: Saving for user:", currentUserId, setupData);
   setMemoryJson(KEYS.SETUP(), setupData);
   // Fire and forget - don't block on cloud sync
   syncToCloud("setup", setupData).catch((e) => {
     console.error("saveSetupData: Cloud sync failed (non-blocking):", e);
   });
-  console.log("saveSetupData: Complete");
 }
 
 /**
@@ -627,12 +616,10 @@ export async function loadSetupData(): Promise<any | null> {
     if (cached) return cached;
     const cloudData = await loadFromCloud("setup");
     if (cloudData) {
-      console.log("loadSetupData: Loaded from cloud:", cloudData);
       setMemoryJson(KEYS.SETUP(), cloudData);
       return cloudData;
     }
   } catch (error) {
-    console.log("loadSetupData: Cloud load failed");
   }
   return null;
 }
@@ -645,7 +632,6 @@ export async function loadSetupComplete(): Promise<boolean> {
   requireUserId();
   const parsed = await loadSetupPayload();
   const setupComplete = parsed.setupComplete ?? false;
-  console.log("loadSetupComplete: Loaded from cloud cache:", setupComplete);
   return setupComplete;
 }
 
@@ -1084,13 +1070,10 @@ export async function setCurrentUser(userId: string) {
   clearUserMemory();
   pendingCloudWrites.clear();
   // Migrate legacy local data once, then sync from cloud
-  console.log("setCurrentUser: Starting cloud sync...");
   try {
     await migrateLegacyLocalDataToCloud();
     await syncFromCloud();
-    console.log("setCurrentUser: Cloud sync completed");
   } catch (error) {
-    console.log("setCurrentUser: Cloud sync failed (non-blocking)", error);
   }
 }
 
@@ -1150,7 +1133,6 @@ async function loadFromCloud(collection: string): Promise<any | null> {
     return await Promise.race([loadOp, timeout]);
   } catch (error) {
     // Silently fail - app works offline
-    console.log(`loadFromCloud: ${collection} load failed (non-blocking)`);
     return null;
   }
 }

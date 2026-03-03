@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+﻿import React, { useMemo, useState } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
 import { s } from "../../src/ui/ts";
@@ -48,12 +48,9 @@ const Q5TargetScreen = ({ navigation, route }: Props) => {
     };
 
     try {
-      console.log("Q5: Starting setup completion...");
-      console.log("Q5: Setup data:", nextSetup);
       
       // Ensure currentUserId is loaded in storage module
       const userId = await getCurrentUser();
-      console.log("Q5: Current user ID:", userId);
       
       if (!userId) {
         console.error("Q5: No user ID found! Cannot save setup.");
@@ -67,23 +64,17 @@ const Q5TargetScreen = ({ navigation, route }: Props) => {
       
       // Save the user's name from setup
       if (nextSetup.name) {
-        console.log("Q5: About to save setup name:", nextSetup.name);
         await saveSetupName(nextSetup.name);
-        console.log("Q5: Saved setup name:", nextSetup.name);
       }
       
       // Save complete setup data to cloud for multi-device sync
-      console.log("Q5: Saving complete setup data");
       const setupWithCompletion = { ...nextSetup, setupComplete: true };
       await saveSetupData(setupWithCompletion);
-      console.log("Q5: Saved complete setup data");
       
-      console.log("Q5: About to navigate to MainTabs");
       
       // Use getParent to navigate on the root stack
       const rootNavigation = navigation.getParent();
       if (rootNavigation) {
-        console.log("Q5: Found root navigation, dispatching reset");
         rootNavigation.dispatch(
           CommonActions.reset({
             index: 0,
@@ -91,7 +82,6 @@ const Q5TargetScreen = ({ navigation, route }: Props) => {
           })
         );
       } else {
-        console.log("Q5: No root navigation, using direct dispatch");
         navigation.dispatch(
           CommonActions.reset({
             index: 0,
@@ -100,7 +90,6 @@ const Q5TargetScreen = ({ navigation, route }: Props) => {
         );
       }
       
-      console.log("Q5: Navigation dispatch completed");
     } catch (error) {
       console.error("Q5: Error completing setup:", error);
       Alert.alert(

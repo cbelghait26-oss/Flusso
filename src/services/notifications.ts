@@ -1,4 +1,4 @@
-/**
+﻿/**
  * src/services/notifications.ts
  * ─────────────────────────────
  * Flusso local-notification service.
@@ -148,7 +148,6 @@ async function scheduleNotif(
       const triggerDesc = trigger instanceof Date
         ? `at ${trigger.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
         : `in ${trigger}s`;
-      console.log(`[Notif] SCHEDULE  key="${logicalKey}"  title="${title}"  ${triggerDesc}`);
     }
 
     const notifTrigger: Notifications.NotificationTriggerInput = trigger instanceof Date
@@ -183,7 +182,6 @@ export async function cancelByLogicalKey(logicalKey: string): Promise<void> {
       await Notifications.cancelScheduledNotificationAsync(id);
       delete map[logicalKey];
       await saveKeymap(map);
-      if (__DEV__) console.log(`[Notif] CANCEL  key="${logicalKey}"  id=${id}`);
     }
   } catch (e) {
     console.warn(`[Notif] cancelByLogicalKey error key="${logicalKey}":`, e);
@@ -201,7 +199,6 @@ export async function cancelAllFlussoNotifications(): Promise<void> {
       try { await Notifications.cancelScheduledNotificationAsync(id); } catch {}
     }
     await saveKeymap({});
-    if (__DEV__) console.log(`[Notif] CANCEL ALL  (${ids.length} notifications cleared)`);
   } catch (e) {
     console.warn("[Notif] cancelAllFlussoNotifications error:", e);
   }
@@ -229,7 +226,6 @@ export async function initNotifications(): Promise<boolean> {
 
   // Simulators/emulators cannot receive push tokens; skip permission
   if (!Device.isDevice) {
-    if (__DEV__) console.log("[Notif] Non-physical device — skipping permission request");
     return false;
   }
 
@@ -242,7 +238,6 @@ export async function initNotifications(): Promise<boolean> {
   }
 
   if (finalStatus !== "granted") {
-    if (__DEV__) console.log("[Notif] Permission NOT granted — notifications disabled");
     return false;
   }
 
@@ -254,7 +249,6 @@ export async function initNotifications(): Promise<boolean> {
     });
   }
 
-  if (__DEV__) console.log("[Notif] Init OK — scheduling notifications in background…");
 
   // Non-blocking reschedule
   rescheduleAllNotifications().catch(() => {});
@@ -754,7 +748,6 @@ async function scheduleCoachNotifications(): Promise<void> {
  * Call after: task edit, task complete, event edit, event delete, settings change.
  */
 export async function rescheduleAllNotifications(): Promise<void> {
-  if (__DEV__) console.log("[Notif] rescheduleAllNotifications() — start");
 
   try {
     // Cancel everything except active focus-session keys
@@ -775,7 +768,6 @@ export async function rescheduleAllNotifications(): Promise<void> {
     await scheduleCalendarNotifications();
     await scheduleDailySummaries();
 
-    if (__DEV__) console.log("[Notif] rescheduleAllNotifications() — done");
   } catch (e) {
     console.warn("[Notif] rescheduleAllNotifications error:", e);
   }
@@ -789,7 +781,6 @@ export async function rescheduleAllNotifications(): Promise<void> {
  */
 export async function devTestAllNotifications(): Promise<void> {
   if (!__DEV__) return;
-  console.log("[Notif] DEV TEST — scheduling all notification types (short timers)…");
 
   await scheduleNotif("dev:1",  "① Focus done 🎯",          "Focus session complete!",              5);
   await scheduleNotif("dev:2",  "② Break start ☕",          "Break started — rest up!",             8);
@@ -807,5 +798,4 @@ export async function devTestAllNotifications(): Promise<void> {
   await scheduleNotif("dev:14", "⑭ Coach: idle 🎯",           "No focus session yet today.",         44);
   await scheduleNotif("dev:15", "⑮ Coach: not started ⚡",    "High-priority tasks not started.",   47);
 
-  console.log("[Notif] DEV TEST — all 15 notifications scheduled. Check in 5–50 seconds.");
 }

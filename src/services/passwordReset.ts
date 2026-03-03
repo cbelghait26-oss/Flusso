@@ -1,4 +1,4 @@
-// src/services/passwordReset.ts
+﻿// src/services/passwordReset.ts
 import { sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "./firebase";
 
@@ -12,11 +12,8 @@ export async function requestPasswordReset(emailRaw: string) {
 
   try {
     await sendPasswordResetEmail(auth, email);
-    console.log("✅ Password reset email sent successfully to:", email);
     return true;
   } catch (e: any) {
-    console.log("❌ RESET_PASSWORD_ERROR:", e?.code, e?.message);
-    console.log("Full error object:", e);
     throw e;
   }
 }

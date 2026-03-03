@@ -1,4 +1,4 @@
-// screens/VerifyEmailScreen.tsx
+﻿// screens/VerifyEmailScreen.tsx
 import React, { useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
@@ -48,7 +48,6 @@ export default function VerifyEmailScreen({ navigation, route }: Props) {
 
   const handleResend = async () => {
     if (!user || cooldown > 0) return;
-    console.log('[VerifyEmail] resend — auth.currentUser.email:', user.email);
     setResending(true);
     try {
       await sendVerificationEmail(user);

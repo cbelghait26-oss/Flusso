@@ -1,4 +1,4 @@
-import {
+﻿import {
   StyleSheet,
   Text,
   View,
@@ -60,23 +60,16 @@ const SignInScreen = ({ navigation }: Props) => {
           onPress: async () => {
             try {
               setGoogleLoading(true);
-              console.log("SignIn: Starting Google sign-in...");
               const userCredential = (await signInWithGoogleFirebase()) as any;
-              console.log("SignIn: Google sign-in successful, user ID:", userCredential.user.uid);
               
               // Set current user in storage (waits for cloud sync)
-              console.log("SignIn: Setting current user and syncing cloud data...");
               await setCurrentUser(userCredential.user.uid);
-              console.log("SignIn: Cloud sync complete");
               
               // Check if setup is complete (instant - reads from local storage)
-              console.log("SignIn: Checking setup completion...");
               const setupComplete = await loadSetupComplete();
-              console.log("SignIn: Setup complete status:", setupComplete);
               
               closeSheet();
               
-              console.log("SignIn: Navigating to", setupComplete ? "MainTabs" : "Q1NameScreen");
               if (setupComplete) {
                 // User has already completed setup - go to main app
                 navigation.navigate("MainTabs");
@@ -101,24 +94,18 @@ const SignInScreen = ({ navigation }: Props) => {
           onPress: async () => {
             try {
               setAppleLoading(true);
-              console.log("SignIn: Starting Apple sign-in...");
               const userCredential = (await signInWithApple()) as any;
               if (!userCredential) {
                 setAppleLoading(false);
                 return; // user cancelled
               }
-              console.log("SignIn: Apple sign-in successful, user ID:", userCredential.user.uid);
 
-              console.log("SignIn: Setting current user and syncing cloud data...");
               await setCurrentUser(userCredential.user.uid);
-              console.log("SignIn: Cloud sync complete");
 
               const setupComplete = await loadSetupComplete();
-              console.log("SignIn: Setup complete status:", setupComplete);
 
               closeSheet();
 
-              console.log("SignIn: Navigating to", setupComplete ? "MainTabs" : "Q1NameScreen");
               if (setupComplete) {
                 navigation.navigate("MainTabs");
               } else {
@@ -151,23 +138,16 @@ const SignInScreen = ({ navigation }: Props) => {
           onPress: async () => {
             try {
               setGoogleLoading(true);
-              console.log("SignUp: Starting Google sign-up...");
               const userCredential = (await signInWithGoogleFirebase()) as any;
-              console.log("SignUp: Google sign-up successful, user ID:", userCredential.user.uid);
               
               // Set current user in storage (waits for cloud sync)
-              console.log("SignUp: Setting current user and syncing cloud data...");
               await setCurrentUser(userCredential.user.uid);
-              console.log("SignUp: Cloud sync complete");
               
               // Check if setup is complete (instant - reads from local storage)
-              console.log("SignUp: Checking setup completion...");
               const setupComplete = await loadSetupComplete();
-              console.log("SignUp: Setup complete status:", setupComplete);
               
               closeSheet();
               
-              console.log("SignUp: Navigating to", setupComplete ? "MainTabs" : "Q1NameScreen");
               if (setupComplete) {
                 // User has already completed setup on another device - go to main app
                 navigation.navigate("MainTabs");
@@ -192,24 +172,18 @@ const SignInScreen = ({ navigation }: Props) => {
           onPress: async () => {
             try {
               setAppleLoading(true);
-              console.log("SignUp: Starting Apple sign-up...");
               const userCredential = (await signInWithApple()) as any;
               if (!userCredential) {
                 setAppleLoading(false);
                 return; // user cancelled
               }
-              console.log("SignUp: Apple sign-up successful, user ID:", userCredential.user.uid);
 
-              console.log("SignUp: Setting current user and syncing cloud data...");
               await setCurrentUser(userCredential.user.uid);
-              console.log("SignUp: Cloud sync complete");
 
               const setupComplete = await loadSetupComplete();
-              console.log("SignUp: Setup complete status:", setupComplete);
 
               closeSheet();
 
-              console.log("SignUp: Navigating to", setupComplete ? "MainTabs" : "Q1NameScreen");
               if (setupComplete) {
                 navigation.navigate("MainTabs");
               } else {
@@ -381,7 +355,6 @@ const SignInScreen = ({ navigation }: Props) => {
     </View>
   );
 };
-console.log("WEB CLIENT ID =", process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID);
 
 
 export default SignInScreen;

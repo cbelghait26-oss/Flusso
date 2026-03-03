@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -65,7 +65,6 @@ export default function EmailLoginScreen({ navigation, route }: Props) {
         await setCurrentUser(userCredential.user.uid);
         // Send verification email and gate the user until they verify.
         try {
-          console.log('[EmailLogin] signup — sending verification to:', userCredential.user.email);
           await sendVerificationEmail(userCredential.user);
         } catch {}
         navigation.navigate("VerifyEmail", { afterVerifyRoute: "Q1NameScreen" });

@@ -1,4 +1,4 @@
-// src/hooks/useStreakCelebration.ts
+﻿// src/hooks/useStreakCelebration.ts
 import { useState, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { updateLoginStreak, todayKey } from "../data/storage";
@@ -97,7 +97,6 @@ export function useStreakCelebration() {
       });
     } catch (err) {
       // Non-blocking: if anything fails, app continues normally
-      console.log("[useStreakCelebration] error:", err);
     }
   }, []);
 

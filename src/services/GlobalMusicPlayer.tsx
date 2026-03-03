@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+﻿import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 
 type GlobalMusicContextType = {
@@ -25,7 +25,6 @@ export function GlobalMusicProvider({ children }: { children: React.ReactNode })
 
     const initMusic = async () => {
       try {
-        console.log("GlobalMusicPlayer: Initializing...");
         
         // Set audio mode to allow mixing with other apps
         await Audio.setAudioModeAsync({
@@ -36,7 +35,6 @@ export function GlobalMusicProvider({ children }: { children: React.ReactNode })
           interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
           playThroughEarpieceAndroid: false,
         });
-        console.log("GlobalMusicPlayer: Audio mode set");
 
         // Load and start the music
         const { sound } = await Audio.Sound.createAsync(
@@ -46,12 +44,10 @@ export function GlobalMusicProvider({ children }: { children: React.ReactNode })
             volume: 0, // Start muted
           }
         );
-        console.log("GlobalMusicPlayer: Sound loaded");
 
         if (mounted) {
           soundRef.current = sound;
           await sound.playAsync();
-          console.log("GlobalMusicPlayer: Music playing (muted)");
           setLoading(false);
         }
       } catch (error) {
@@ -66,12 +62,10 @@ export function GlobalMusicProvider({ children }: { children: React.ReactNode })
 
     return () => {
       mounted = false;
-      console.log("GlobalMusicPlayer: Component unmounting");
     };
   }, []);
 
   const toggleMute = async () => {
-    console.log("GlobalMusicPlayer: toggleMute called, current isMuted:", isMuted);
     
     if (!soundRef.current) {
       console.error("GlobalMusicPlayer: No sound reference available");
@@ -81,7 +75,6 @@ export function GlobalMusicProvider({ children }: { children: React.ReactNode })
     try {
       const newMutedState = !isMuted;
       const targetVolume = newMutedState ? 0 : 0.6;
-      console.log("GlobalMusicPlayer: Transitioning to", newMutedState ? "muted" : "unmuted", "target volume:", targetVolume);
 
       // Smooth fade
       const currentStatus = await soundRef.current.getStatusAsync();
@@ -95,7 +88,6 @@ export function GlobalMusicProvider({ children }: { children: React.ReactNode })
           await soundRef.current.setVolumeAsync(newVolume);
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
-        console.log("GlobalMusicPlayer: Volume transition complete");
       }
 
       setIsMuted(newMutedState);

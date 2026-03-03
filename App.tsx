@@ -1,4 +1,4 @@
-// App.tsx
+﻿// App.tsx
 import React, { useState, useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -15,12 +15,6 @@ import { bootstrapCloudForUser } from "./src/services/CloudBootstrap";
 import { initNotifications, rescheduleAllNotifications, devTestAllNotifications } from "./src/services/notifications";
 import { spotifyLoadSavedTokens } from "./src/services/SpotifyRemote";
 
-console.log("🏗️ BUILD INFO:");
-console.log("  Build timestamp: 2026-02-17 21:30 (with Spotify AppDelegate handler)");
-console.log("  Bundle ID:", Constants.expoConfig?.ios?.bundleIdentifier);
-console.log("  Spotify Plugin: ENABLED");
-console.log("  Deep Link Handler: app.plugin.js applied");
-console.log("------------------------------------------------");
 
 import SignInScreen from "./screens/SignInScreen";
 import EmailLoginScreen from "./screens/EmailLoginScreen";
@@ -88,41 +82,33 @@ export default function App() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        console.log("App: Checking authentication...");
         const savedUserId = await getCurrentUser();
         const firebaseUser = auth.currentUser;
-        console.log("App: Saved user ID:", savedUserId, "Firebase user:", firebaseUser?.uid);
 
         if (savedUserId && firebaseUser && firebaseUser.uid === savedUserId) {
-          console.log("App: Valid session found, checking setup completion...");
           await firebaseUser.reload();
           if (!firebaseUser.emailVerified) {
             setInitialRoute("VerifyEmail");
             return;
           }
           const setupComplete = await loadSetupComplete();
-          console.log("App: Setup complete:", setupComplete);
           setInitialRoute(setupComplete ? "MainTabs" : "Q1NameScreen");
           // Silently restore Spotify session from cloud (existing login)
           spotifyLoadSavedTokens().catch(() => {});
         } else if (firebaseUser) {
-          console.log("App: Syncing Firebase user to storage and loading cloud data...");
           await setCurrentUser(firebaseUser.uid);
-          console.log("App: Cloud sync complete");
           await firebaseUser.reload();
           if (!firebaseUser.emailVerified) {
             setInitialRoute("VerifyEmail");
             return;
           }
           const setupComplete = await loadSetupComplete();
-          console.log("App: Setup complete:", setupComplete);
           setInitialRoute(setupComplete ? "MainTabs" : "Q1NameScreen");
           // Reschedule after user is loaded
           rescheduleAllNotifications().catch(() => {});
           // Silently restore Spotify session from cloud (new/re-authenticated login)
           spotifyLoadSavedTokens().catch(() => {});
         } else {
-          console.log("App: No authenticated user found");
           setInitialRoute("SignIn");
         }
       } catch (error) {

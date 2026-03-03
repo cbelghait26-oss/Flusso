@@ -1,4 +1,4 @@
-// TasksObjectivesScreen.tsx
+﻿// TasksObjectivesScreen.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Keyboard,
@@ -309,7 +309,6 @@ function ObjectiveGroup({ objective, tasks, colors, radius, saving, onToggleDone
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function TasksObjectivesScreen() {
   useEffect(() => {
-    console.log("USING STORAGE MODULE:", STORAGE_MODULE_ID);
   }, []);
   const { colors, radius, spacing } = useTheme();
   const { checkAchievements } = useAchievements();

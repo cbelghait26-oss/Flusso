@@ -1,4 +1,4 @@
-// CalendarScreen.tsx
+﻿// CalendarScreen.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -144,7 +144,6 @@ function getDayItemsFrom(itemsByDay: any, k: YMD): any[] {
 
 export default function CalendarScreenV2() {
   useEffect(() => {
-    console.log("USING STORAGE MODULE (calendar):", STORAGE_MODULE_ID);
   }, []);
 
   const theme = useTheme();

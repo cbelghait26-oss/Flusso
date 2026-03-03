@@ -1,4 +1,4 @@
-// screens/SettingsScreen.tsx
+﻿// screens/SettingsScreen.tsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   ActivityIndicator,
@@ -934,7 +934,6 @@ export default function SettingsScreen() {
   const handleResendVerification = async () => {
     const user = auth.currentUser;
     if (!user || resendCooldown > 0) return;
-    console.log('[Settings] resend verification — auth.currentUser.email:', user.email);
     setResendingVerif(true);
     try {
       await sendEmailVerification(user);

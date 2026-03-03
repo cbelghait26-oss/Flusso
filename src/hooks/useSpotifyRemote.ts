@@ -1,4 +1,4 @@
-// src/hooks/useSpotifyRemote.ts
+﻿// src/hooks/useSpotifyRemote.ts
 // Web API version — no native SDK, no App Remote connection required.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, AppStateStatus, Linking } from "react-native";
@@ -160,8 +160,8 @@ export function useSpotifyRemote() {
   // Deep link debug logging (dev only)
   useEffect(() => {
     if (!__DEV__) return;
-    const sub = Linking.addEventListener("url", ({ url }) => console.log("🔗 Deep link:", url));
-    Linking.getInitialURL().then((url) => { if (url) console.log("🔗 Initial URL:", url); });
+    const sub = Linking.addEventListener("url", () => {});
+    Linking.getInitialURL().then(() => {});
     return () => sub.remove();
   }, []);
 

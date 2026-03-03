@@ -1,4 +1,4 @@
-// screens/FocusZoneScreen.tsx updated
+﻿// screens/FocusZoneScreen.tsx updated
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -179,7 +179,7 @@ export default function FocusZoneScreen({ navigation }: any) {
       try {
         const [t, o] = await Promise.all([loadTasks(), loadObjectives()]);
         setTasks(t); setObjectives(o);
-      } catch (e) { console.log("FocusZone: task load error", e); }
+      } catch { }
     })();
   }, []);
 

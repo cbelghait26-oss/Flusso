@@ -1,4 +1,4 @@
-// src/services/SpotifyRemote.ts
+﻿// src/services/SpotifyRemote.ts
 // Pure Web API implementation — no react-native-spotify-remote dependency.
 import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
@@ -114,7 +114,6 @@ export async function refreshAccessToken(): Promise<string | null> {
     _accessToken  = json.access_token;
     _tokenExpiry  = Date.now() + json.expires_in * 1000;
     if (json.refresh_token) _refreshToken = json.refresh_token;
-    console.log("🎵 Token refreshed");
     // Persist refreshed tokens so the next session resumes without re-auth
     saveSpotifyTokens({ accessToken: _accessToken, refreshToken: _refreshToken, expiry: _tokenExpiry }).catch(() => {});
     return _accessToken;
@@ -134,14 +133,11 @@ export async function spotifyLoadSavedTokens(): Promise<void> {
     if (saved.accessToken && saved.expiry && Date.now() < saved.expiry - 60_000) {
       _accessToken = saved.accessToken;
       _tokenExpiry = saved.expiry;
-      console.log("🎵 Restored Spotify session from storage");
     } else {
       // Access token expired — silently refresh using the saved refresh token
-      console.log("🎵 Access token expired, refreshing silently…");
       await refreshAccessToken();
     }
   } catch (e) {
-    console.log("🎵 spotifyLoadSavedTokens error:", e);
   }
 }
 
@@ -171,13 +167,11 @@ export async function spotifyConnectFull(): Promise<void> {
   });
 
   const authUrl = `${AUTH_ENDPOINT}?${params.toString()}`;
-  console.log("🎵 Opening Spotify OAuth:", authUrl);
 
   const result = await WebBrowser.openAuthSessionAsync(authUrl, REDIRECT_URI, {
     showInRecents: false,
   });
 
-  console.log("🎵 WebBrowser result:", result.type);
 
   if (result.type !== "success") {
     throw new Error(
@@ -190,7 +184,6 @@ export async function spotifyConnectFull(): Promise<void> {
   if (!codeMatch?.[1]) throw new Error(`No authorization code in redirect URL: ${url}`);
 
   const code = decodeURIComponent(codeMatch[1]);
-  console.log("🎵 Exchanging code for token…");
 
   const tokenData = await exchangeCodeForToken(code, codeVerifier);
 
@@ -198,7 +191,6 @@ export async function spotifyConnectFull(): Promise<void> {
   _tokenExpiry  = Date.now() + tokenData.expires_in * 1000;
   _refreshToken = tokenData.refresh_token ?? null;
 
-  console.log(`🎵 Token OK. Expires in ${tokenData.expires_in}s. Has refresh: ${!!_refreshToken}`);
 
   // Persist tokens to cloud so future sessions restore without re-auth
   saveSpotifyTokens({ accessToken: _accessToken, refreshToken: _refreshToken, expiry: _tokenExpiry }).catch(() => {});
@@ -210,7 +202,6 @@ export async function spotifyConnectFull(): Promise<void> {
   const ps = await getPlayerState();
   if (!ps) throw new Error("no_active_device");
 
-  console.log("✅ Spotify Web API ready");
 }
 
 // ─── Connection state ─────────────────────────────────────────────────────────
@@ -247,7 +238,7 @@ async function apiCall(
   body?: object,
 ): Promise<any | null> {
   const token = await getValidAccessToken();
-  if (!token) { console.log("🎵 apiCall: no token"); return null; }
+  if (!token) return null;
   try {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method,
@@ -260,12 +251,10 @@ async function apiCall(
     if (res.status === 204) return {};
     if (!res.ok) {
       const text = await res.text();
-      console.log(`🎵 API ${method} ${endpoint} → ${res.status}:`, text);
       return null;
     }
     return await res.json();
   } catch (e) {
-    console.log("🎵 apiCall error:", e);
     return null;
   }
 }

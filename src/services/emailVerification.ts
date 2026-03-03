@@ -1,4 +1,4 @@
-// src/services/emailVerification.ts
+﻿// src/services/emailVerification.ts
 import {
   sendEmailVerification,
   verifyBeforeUpdateEmail,
@@ -12,7 +12,6 @@ import {
  * Send (or re-send) a verification email to the current user.
  */
 export async function sendVerificationEmail(user: User): Promise<void> {
-  console.log('[emailVerification] sending to:', user.email);
   await sendEmailVerification(user);
 }
 
@@ -48,7 +47,6 @@ export async function requestEmailChange(
   const trimmed = newEmail.trim().toLowerCase();
   const credential = EmailAuthProvider.credential(user.email, currentPassword);
   await reauthenticateWithCredential(user, credential);
-  console.log('[emailVerification] verifyBeforeUpdateEmail — sending link to:', trimmed);
   await verifyBeforeUpdateEmail(user, trimmed);
 }
 
