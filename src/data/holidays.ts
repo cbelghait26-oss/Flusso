@@ -137,19 +137,72 @@ function dateToYMD(date: Date): YMD {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Returns the date of the Nth occurrence of `weekday` (0=Sun … 6=Sat)
+ * in the given month/year.  Pass n=-1 for the LAST occurrence.
+ */
+function nthWeekday(year: number, month: number, weekday: number, n: number): Date {
+  if (n > 0) {
+    const first = new Date(year, month, 1);
+    const offset = (weekday - first.getDay() + 7) % 7;
+    return new Date(year, month, 1 + offset + (n - 1) * 7);
+  } else {
+    // last occurrence
+    const last = new Date(year, month + 1, 0);
+    const offset = (last.getDay() - weekday + 7) % 7;
+    return new Date(year, month, last.getDate() - offset);
+  }
+}
+
 export function generateHolidaysForYear(year: number): LocalEvent[] {
   const holidays: LocalEvent[] = [];
   
   // Fixed date holidays
   const fixedHolidays = [
-    { month: 0, day: 1, name: "New Year's Day" },
-    { month: 1, day: 14, name: "Valentine's Day" },
+    { month: 0,  day: 1,  name: "New Year's Day" },
+    { month: 1,  day: 14, name: "Valentine's Day" },
+    { month: 2,  day: 17, name: "St. Patrick's Day" },
+    { month: 3,  day: 1,  name: "April Fools' Day" },
+    { month: 3,  day: 22, name: "Earth Day" },
+    { month: 6,  day: 4,  name: "Independence Day" },
+    { month: 9,  day: 31, name: "Halloween" },
+    { month: 10, day: 11, name: "Veterans Day" },
     { month: 11, day: 24, name: "Christmas Eve" },
     { month: 11, day: 25, name: "Christmas Day" },
+    { month: 11, day: 31, name: "New Year's Eve" },
+  ];
+
+  // Floating (weekday-based) civic holidays
+  const floatingHolidays: { date: Date; name: string }[] = [
+    { date: nthWeekday(year, 0, 1, 3),  name: "Martin Luther King Jr. Day" }, // 3rd Mon Jan
+    { date: nthWeekday(year, 1, 1, 3),  name: "Presidents' Day" },             // 3rd Mon Feb
+    { date: nthWeekday(year, 4, 0, 2),  name: "Mother's Day" },                // 2nd Sun May
+    { date: nthWeekday(year, 4, 1, -1), name: "Memorial Day" },                // Last Mon May
+    { date: nthWeekday(year, 5, 0, 3),  name: "Father's Day" },                // 3rd Sun Jun
+    { date: nthWeekday(year, 8, 1, 1),  name: "Labor Day" },                   // 1st Mon Sep
+    { date: nthWeekday(year, 9, 1, 2),  name: "Columbus Day" },                // 2nd Mon Oct
+    { date: nthWeekday(year, 10, 4, 4), name: "Thanksgiving" },                // 4th Thu Nov
   ];
   
   fixedHolidays.forEach(({ month, day, name }) => {
     const date = new Date(year, month, day);
+    holidays.push({
+      id: `holiday_${year}_${name.replace(/\s+/g, '_').toLowerCase()}`,
+      title: name,
+      allDay: true,
+      startDate: dateToYMD(date),
+      startTime: "00:00",
+      endDate: dateToYMD(date),
+      endTime: "23:59",
+      color: "purple",
+      reminder: "none",
+      calendarSource: "local",
+      eventType: "event",
+      notes: "Public Holiday",
+    });
+  });
+
+  floatingHolidays.forEach(({ date, name }) => {
     holidays.push({
       id: `holiday_${year}_${name.replace(/\s+/g, '_').toLowerCase()}`,
       title: name,

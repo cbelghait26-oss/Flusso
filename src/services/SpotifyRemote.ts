@@ -3,6 +3,7 @@
 import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
 import * as Crypto from "expo-crypto";
+import { loadSpotifyTokens, saveSpotifyTokens, clearSpotifyTokens } from "../data/storage";
 
 const CLIENT_ID =
   (Constants.expoConfig?.extra as any)?.spotifyClientId ??
@@ -114,8 +115,34 @@ export async function refreshAccessToken(): Promise<string | null> {
     _tokenExpiry  = Date.now() + json.expires_in * 1000;
     if (json.refresh_token) _refreshToken = json.refresh_token;
     console.log("🎵 Token refreshed");
+    // Persist refreshed tokens so the next session resumes without re-auth
+    saveSpotifyTokens({ accessToken: _accessToken, refreshToken: _refreshToken, expiry: _tokenExpiry }).catch(() => {});
     return _accessToken;
   } catch { return null; }
+}
+
+/**
+ * Load persisted Spotify tokens from cloud storage and hydrate the in-memory
+ * token variables. Called on app startup so users don't have to re-authorize.
+ */
+export async function spotifyLoadSavedTokens(): Promise<void> {
+  try {
+    const saved = await loadSpotifyTokens();
+    if (!saved?.refreshToken) return;
+    _refreshToken = saved.refreshToken;
+    // Reuse the access token only if it hasn't expired
+    if (saved.accessToken && saved.expiry && Date.now() < saved.expiry - 60_000) {
+      _accessToken = saved.accessToken;
+      _tokenExpiry = saved.expiry;
+      console.log("🎵 Restored Spotify session from storage");
+    } else {
+      // Access token expired — silently refresh using the saved refresh token
+      console.log("🎵 Access token expired, refreshing silently…");
+      await refreshAccessToken();
+    }
+  } catch (e) {
+    console.log("🎵 spotifyLoadSavedTokens error:", e);
+  }
 }
 
 export async function getValidAccessToken(): Promise<string | null> {
@@ -173,8 +200,15 @@ export async function spotifyConnectFull(): Promise<void> {
 
   console.log(`🎵 Token OK. Expires in ${tokenData.expires_in}s. Has refresh: ${!!_refreshToken}`);
 
+  // Persist tokens to cloud so future sessions restore without re-auth
+  saveSpotifyTokens({ accessToken: _accessToken, refreshToken: _refreshToken, expiry: _tokenExpiry }).catch(() => {});
+
   const ok = await spotifyIsConnected();
   if (!ok) throw new Error("Spotify Web API unreachable — check scopes or network.");
+
+  // Check if there is an active Spotify device/player — warn if not
+  const ps = await getPlayerState();
+  if (!ps) throw new Error("no_active_device");
 
   console.log("✅ Spotify Web API ready");
 }
@@ -202,6 +236,7 @@ export async function spotifyDisconnect(): Promise<void> {
   _accessToken  = null;
   _refreshToken = null;
   _tokenExpiry  = 0;
+  clearSpotifyTokens().catch(() => {});
 }
 
 // ─── Core API helper ──────────────────────────────────────────────────────────

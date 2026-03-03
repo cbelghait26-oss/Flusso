@@ -10,6 +10,7 @@ import {
   Platform,
   useWindowDimensions,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import React, { useMemo, useRef, useState } from "react";
 import LoginBox from "../src/components/ui/LoginBox";
 import { s } from "../src/ui/ts";
@@ -261,6 +262,27 @@ const SignInScreen = ({ navigation }: Props) => {
 
   return (
     <View style={styles.container}>
+      {/* Deep ocean base */}
+      <LinearGradient
+        colors={["#03045E", "#023E8A", "#0077B6"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      {/* Cross-current flow overlay */}
+      <LinearGradient
+        colors={["transparent", "rgba(0,150,199,0.45)", "rgba(72,202,228,0.28)", "transparent"]}
+        start={{ x: 1, y: 0.15 }}
+        end={{ x: 0, y: 0.85 }}
+        style={StyleSheet.absoluteFill}
+      />
+      {/* Soft highlight sweep */}
+      <LinearGradient
+        colors={["rgba(144,224,239,0.18)", "transparent", "rgba(0,96,199,0.22)"]}
+        start={{ x: 0.6, y: 0 }}
+        end={{ x: 0.1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
       <View style={innerContentStyle}>
         <View
           style={{
@@ -366,7 +388,7 @@ export default SignInScreen;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1055BF",
+    backgroundColor: "#03045E",
     alignItems: "center",
     justifyContent: "center",
     height: "100%",

@@ -172,7 +172,6 @@ export default function CalendarScreenV2() {
   const [showTasks, setShowTasks] = useState(true);
   const [showBirthdays, setShowBirthdays] = useState(true);
   const [showHolidays, setShowHolidays] = useState(true);
-  const [showContacts, setShowContacts] = useState(true);
 
   /** In-memory contact events derived from stored ContactDateItem[]. Never persisted to localEvents. */
   const [contactEvents, setContactEvents] = useState<LocalEvent[]>([]);
@@ -183,7 +182,6 @@ export default function CalendarScreenV2() {
     showTasks,
     showBirthdays,
     showHolidays,
-    showContacts,
     contactEvents,
   });
 
@@ -658,6 +656,12 @@ export default function CalendarScreenV2() {
               anchorMonth={anchorMonth}
               selected={selected}
               onSelect={onSelectDay}
+              onChangeMonth={(d) => {
+                setAnchorMonth(d);
+                const k = ymd(d);
+                const idx = dayKeys.findIndex((x) => x === k);
+                if (idx >= 0) scrollMainToIndex(idx);
+              }}
               collapsed={monthCollapsed}
               onToggleCollapsed={() => setMonthCollapsed((v) => !v)}
               itemsByDay={itemsByDay}
@@ -929,8 +933,6 @@ export default function CalendarScreenV2() {
         setShowBirthdays={setShowBirthdays}
         showHolidays={showHolidays}
         setShowHolidays={setShowHolidays}
-        showContacts={showContacts}
-        setShowContacts={setShowContacts}
         onClose={() => setDrawerOpen(false)}
         onLinkGoogle={() => {}}
       />

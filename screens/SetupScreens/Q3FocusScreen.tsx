@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   View,
   Text,
@@ -27,7 +28,7 @@ type OptionKey =
   | "split";
 
 const ACCENT = "#FFFFFF";
-const BG = "#1055BF";
+const BG = "#03045E";
 const CARD = "#0f3f87";
 
 const Q3FocusScreen = ({ navigation, route }: Props) => {
@@ -81,6 +82,9 @@ const Q3FocusScreen = ({ navigation, route }: Props) => {
 
   return (
     <View style={styles.outerBg}>
+      <LinearGradient colors={["#03045E", "#023E8A", "#0077B6"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={["transparent", "rgba(0,150,199,0.45)", "rgba(72,202,228,0.28)", "transparent"]} start={{ x: 1, y: 0.15 }} end={{ x: 0, y: 0.85 }} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={["rgba(144,224,239,0.18)", "transparent", "rgba(0,96,199,0.22)"]} start={{ x: 0.6, y: 0 }} end={{ x: 0.1, y: 1 }} style={StyleSheet.absoluteFill} />
       <View
         style={[
           styles.container,
@@ -204,7 +208,7 @@ const styles = StyleSheet.create({
   },
 
   optionsBox: {
-    height: s(300),
+    height: s(420),
     borderRadius: s(16),
     backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: s(1),

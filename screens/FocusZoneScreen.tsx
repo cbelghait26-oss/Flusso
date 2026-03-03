@@ -148,6 +148,19 @@ export default function FocusZoneScreen({ navigation }: any) {
     }, [])
   );
 
+  // Reload tasks and objectives whenever the screen comes into focus so that
+  // tasks created or edited elsewhere appear immediately in the session picker.
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        try {
+          const [t, o] = await Promise.all([loadTasks(), loadObjectives()]);
+          setTasks(t); setObjectives(o);
+        } catch {}
+      })();
+    }, [])
+  );
+
   useEffect(() => {
     (async () => {
       const userId = await getCurrentUser();
@@ -581,7 +594,7 @@ export default function FocusZoneScreen({ navigation }: any) {
                   >
                     <Entypo name="spotify" size={s(14)} color={spotify.connected ? "#1DB954" : "#fff"}/>
                     <Text style={[styles.pillText, spotify.connected && { color:"#76eea0" }]}>
-                      {spotify.connecting ? "Connecting…" : spotify.connected ? "Spotify On" : "Spotify"}
+                      {spotify.connecting ? "Connecting…" : "Spotify"}
                     </Text>
                   </Pressable>
 
@@ -658,7 +671,7 @@ export default function FocusZoneScreen({ navigation }: any) {
                 >
                   <Entypo name="spotify" size={s(15)} color={spotify.connected?"#1DB954":"#fff"}/>
                   <Text style={[styles.pillText, spotify.connected && { color:"#76eea0" }]}>
-                    {spotify.connecting ? "Connecting…" : spotify.connected ? "On" : "Spotify"}
+                    {spotify.connecting ? "Connecting…" : "Spotify"}
                   </Text>
                 </Pressable>
                 <Pressable onPress={() => setShowSettings(true)} style={({ pressed }) => [styles.pill,{opacity:pressed?0.85:1}]}>

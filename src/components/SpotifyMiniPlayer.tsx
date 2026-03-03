@@ -30,6 +30,7 @@ import {
   spotifyGetPlaylists,
   spotifyGetPlaylistTracks,
   spotifyGetSavedTracks,
+  refreshAccessToken,
   nextRepeatMode,
   type RepeatMode,
   type QueueTrack,
@@ -395,41 +396,114 @@ const lm = StyleSheet.create({
 
 interface Props { onTrackChange?: (track: TrackInfo | null) => void; isLandscape?: boolean; }
 
-const POLL_INTERVAL_MS = 3000;
+/** Poll every 3 s while playing; slow to 15 s while paused (save battery + fewer API calls). */
+const POLL_PLAYING_MS = 3_000;
+const POLL_PAUSED_MS  = 15_000;
+/** How many consecutive null responses before we actually clear the player. */
+const NULL_TOLERANCE  = 3;
 
 export function SpotifyMiniPlayer({ onTrackChange, isLandscape = false }: Props) {
   const [track,    setTrack]    = useState<TrackInfo | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [library,  setLibrary]  = useState(false);
 
-  const expandAnim = useRef(new Animated.Value(0)).current;
-  const mountedRef = useRef(true);
-  const pollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const expandAnim   = useRef(new Animated.Value(0)).current;
+  const mountedRef   = useRef(true);
+  const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Consecutive polls that got null back from Spotify */
+  const nullCountRef = useRef(0);
+  /** Whether the last known state was paused */
+  const isPausedRef  = useRef(false);
+  /** Last valid track we received — kept so we can restore it when paused */
+  const lastKnownTrackRef = useRef<TrackInfo | null>(null);
+  /** Last time we attempted a token refresh to recover */
+  const lastRefreshAttemptRef = useRef(0);
 
   const applyState = (ps: Awaited<ReturnType<typeof getPlayerState>>) => {
     if (!ps || !mountedRef.current) return;
+    nullCountRef.current = 0; // got a real response — reset error counter
+    isPausedRef.current  = !ps.isPlaying;
     const t: TrackInfo = {
       name: ps.trackName, artist: ps.artistName, albumArtUrl: ps.albumArtUrl,
       trackUri: ps.trackUri, isPaused: !ps.isPlaying,
       durationMs: ps.durationMs, positionMs: ps.positionMs,
       shuffleState: ps.shuffleState, repeatState: ps.repeatState,
     };
+    lastKnownTrackRef.current = t;
     setTrack(t); onTrackChange?.(t);
   };
+
+  /**
+   * Reschedule the poll interval — called whenever the playing/paused state
+   * changes so we use a faster interval while playing and a slow one while
+   * paused (reduces unnecessary API calls and prevents the "disconnects when
+   * paused too long" appearance).
+   */
+  const reschedulePoll = useCallback((paused: boolean) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(poll, paused ? POLL_PAUSED_MS : POLL_PLAYING_MS);
+  }, []);
 
   const poll = useCallback(async () => {
     const ps = await getPlayerState();
     if (!mountedRef.current) return;
-    if (ps) applyState(ps);
-    else { setTrack(null); onTrackChange?.(null); }
+
+    if (ps) {
+      // Reschedule at the appropriate rate if playing state changed
+      const waspaused = isPausedRef.current;
+      applyState(ps);
+      if (waspaused !== !ps.isPlaying) reschedulePoll(!ps.isPlaying);
+      return;
+    }
+
+    // ps === null: Spotify returned no active device
+
+    // If the user intentionally paused we should NOT treat this as a
+    // disconnection. Spotify's /me/player endpoint returns 204 (→ null here)
+    // when the device goes idle after a pause.  Keep showing the last known
+    // paused state so the user can resume without re-connecting.
+    if (isPausedRef.current && lastKnownTrackRef.current) {
+      // Restore the last good paused state — keeps the mini-player visible
+      if (mountedRef.current) setTrack(lastKnownTrackRef.current);
+      return;
+    }
+
+    nullCountRef.current += 1;
+
+    // Before giving up, try a silent token refresh — the access token may have
+    // expired (they last 1 h). Only attempt once every 2 minutes.
+    const now = Date.now();
+    if (nullCountRef.current === 1 && now - lastRefreshAttemptRef.current > 120_000) {
+      lastRefreshAttemptRef.current = now;
+      console.log("🎵 Player null — attempting silent token refresh…");
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        // Retry immediately after refresh
+        const retryPs = await getPlayerState();
+        if (!mountedRef.current) return;
+        if (retryPs) { applyState(retryPs); return; }
+      }
+    }
+
+    // Only clear the player UI after NULL_TOLERANCE consecutive failures so a
+    // brief network blip or Spotify API hiccup doesn't flash the player away.
+    if (nullCountRef.current >= NULL_TOLERANCE) {
+      setTrack(null);
+      onTrackChange?.(null);
+    }
   }, []);
 
   useEffect(() => {
     mountedRef.current = true;
     poll();
-    pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
+    pollRef.current = setInterval(poll, POLL_PLAYING_MS);
     return () => { mountedRef.current = false; if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
+
+  // Reschedule when track.isPaused changes so the interval rate adapts
+  useEffect(() => {
+    if (track) reschedulePoll(track.isPaused);
+  }, [track?.isPaused]);
 
   useEffect(() => {
     Animated.spring(expandAnim, { toValue: expanded ? 1 : 0, useNativeDriver: false, tension: 90, friction: 14 }).start();

@@ -229,10 +229,12 @@ function FocusRingCard({
   focusMinToday,
   dailyFocusMinutes,
   C,
+  onPress,
 }: {
   focusMinToday: number;
   dailyFocusMinutes: number;
   C: any;
+  onPress?: () => void;
 }) {
   const pct = dailyFocusMinutes > 0
     ? Math.min(100, Math.round((focusMinToday / dailyFocusMinutes) * 100))
@@ -244,7 +246,14 @@ function FocusRingCard({
   const dashOffset = CIRC * (1 - pct / 100);
 
   return (
-    <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.statCard, { backgroundColor: C.card, borderColor: C.line, opacity: pressed ? 0.75 : 1 }]}
+    >
+      {/* edit hint */}
+      <View style={{ position: "absolute", top: s(6), right: s(6) }}>
+        <Ionicons name="pencil" size={s(10)} color={C.muted} />
+      </View>
       <Svg width={s(56)} height={s(56)} viewBox="0 0 56 56">
         {/* Track */}
         <Circle
@@ -279,7 +288,7 @@ function FocusRingCard({
       <Text style={[styles.statLabel, { color: C.muted }]} numberOfLines={2}>
         Focus goal
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -1073,26 +1082,6 @@ export default function SettingsScreen() {
               <Text style={[styles.identityName, { color: C.text }]} numberOfLines={2}>
                 {profileName || "Your name"}
               </Text>
-              <Pressable
-                onPress={copyEmail}
-                onLongPress={copyEmail}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: s(4),
-                  marginTop: s(2),
-                }}
-              >
-                <Text
-                  style={[styles.identityEmail, { color: C.muted }]}
-                  numberOfLines={1}
-                >
-                  {profileEmail || "No email set"}
-                </Text>
-                {!!profileEmail && (
-                  <Ionicons name="copy-outline" size={s(12)} color={C.muted} />
-                )}
-              </Pressable>
             </View>
             <Pressable
               onPress={() => { setEditNameDraft(profileName); setEditPicDraft(profilePic); setEditProfileModal(true); }}
@@ -1102,7 +1091,7 @@ export default function SettingsScreen() {
               ]}
             >
               <Ionicons name="pencil" size={s(12)} color={C.accent} />
-              <Text style={{ color: C.accent, fontSize: s(11), fontWeight: "800" }}>Edit</Text>
+              
             </Pressable>
           </View>
 
@@ -1112,6 +1101,7 @@ export default function SettingsScreen() {
               focusMinToday={focusMinToday}
               dailyFocusMinutes={dailyFocusMinutes}
               C={C}
+              onPress={openFocusGoalEditor}
             />
             <StatCard
               value={`${streakDays}d`}
@@ -2326,11 +2316,11 @@ function WeeklyActivityChart({
   const effectiveW = isTablet ? Math.min(screenW, CONTENT_MAX_WIDTH) : screenW;
   // Subtract horizontal padding: scrollContent (16*2) + card padding (14*2)
   const CHART_W = Math.max(200, effectiveW - s(60));
-  const CHART_H = s(120);
-  const P_TOP    = s(8);
-  const P_BOTTOM = s(18); // space for day labels
-  const P_LEFT   = s(4);
-  const P_RIGHT  = s(4);
+  const CHART_H = s(150);
+  const P_TOP    = s(10);
+  const P_BOTTOM = s(20); // space for day labels
+  const P_LEFT   = s(28); // space for left y-axis labels (focus mins)
+  const P_RIGHT  = s(28); // space for right y-axis labels (tasks)
   const PLOT_W   = CHART_W - P_LEFT - P_RIGHT;
   const PLOT_H   = CHART_H - P_TOP - P_BOTTOM;
 
@@ -2338,9 +2328,15 @@ function WeeklyActivityChart({
   const maxFocus = Math.max(1, ...data.map((d) => d.focusMin));
   const maxTasks = Math.max(1, ...data.map((d) => d.tasksDone));
 
-  const xOf   = (i: number) => P_LEFT + (i / (n - 1)) * PLOT_W;
+  const xOf    = (i: number) => P_LEFT + (i / (n - 1)) * PLOT_W;
+  // Focus uses left axis (full plot height)
   const yFocus = (v: number) => P_TOP + PLOT_H - (v / maxFocus) * PLOT_H;
-  const yTasks = (v: number) => P_TOP + PLOT_H - (v / maxTasks) * PLOT_H;
+  // Tasks use right axis — compressed to top 60 % so the two lines are
+  // visually separated even when their normalised shapes are similar.
+  const TASKS_RANGE = PLOT_H * 0.6;
+  const TASKS_OFFSET = PLOT_H * 0.05; // push tasks band slightly above baseline
+  const yTasks = (v: number) =>
+    P_TOP + PLOT_H - TASKS_OFFSET - (v / maxTasks) * TASKS_RANGE;
 
   // Clamp future points to the baseline
   const focusPoints = data
@@ -2374,11 +2370,17 @@ function WeeklyActivityChart({
       {/* Legend */}
       <View style={wStyles.legend}>
         <View style={wStyles.legendItem}>
-          <View style={[wStyles.legendDot, { backgroundColor: C.accent }]} />
+          {/* Solid line swatch for focus */}
+          <View style={[wStyles.legendLine, { backgroundColor: C.accent }]} />
           <Text style={[wStyles.legendLabel, { color: C.muted }]}>Focus mins</Text>
         </View>
         <View style={wStyles.legendItem}>
-          <View style={[wStyles.legendDot, { backgroundColor: C.success }]} />
+          {/* Dashed line swatch for tasks */}
+          <View style={wStyles.legendDashRow}>
+            {[0, 1, 2].map((k) => (
+              <View key={k} style={[wStyles.legendDash, { backgroundColor: C.success }]} />
+            ))}
+          </View>
           <Text style={[wStyles.legendLabel, { color: C.muted }]}>Tasks done</Text>
         </View>
       </View>
@@ -2409,6 +2411,36 @@ function WeeklyActivityChart({
                 strokeDasharray="3,5"
               />
             ))}
+            {/* Left y-axis labels — focus minutes */}
+            {[0.33, 0.66, 1.0].map((t, i) => (
+              <SvgText
+                key={`fl-${i}`}
+                x={P_LEFT - s(3)}
+                y={P_TOP + PLOT_H - t * PLOT_H + s(3.5)}
+                textAnchor="end"
+                fill={C.accent}
+                fontSize={s(8)}
+                fontWeight="600"
+                fillOpacity={0.75}
+              >
+                {Math.round(maxFocus * t)}
+              </SvgText>
+            ))}
+            {/* Right y-axis labels — tasks */}
+            {[0.33, 0.66, 1.0].map((t, i) => (
+              <SvgText
+                key={`tl-${i}`}
+                x={P_LEFT + PLOT_W + s(3)}
+                y={P_TOP + PLOT_H - TASKS_OFFSET - t * TASKS_RANGE + s(3.5)}
+                textAnchor="start"
+                fill={C.success}
+                fontSize={s(8)}
+                fontWeight="600"
+                fillOpacity={0.75}
+              >
+                {Math.round(maxTasks * t)}
+              </SvgText>
+            ))}
             {/* Focus line */}
             <Polyline
               points={focusPoints}
@@ -2418,7 +2450,7 @@ function WeeklyActivityChart({
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            {/* Tasks line */}
+            {/* Tasks line — dashed so it's visually distinct from the focus line */}
             <Polyline
               points={taskPoints}
               fill="none"
@@ -2426,6 +2458,7 @@ function WeeklyActivityChart({
               strokeWidth={s(2)}
               strokeLinecap="round"
               strokeLinejoin="round"
+              strokeDasharray={`${s(5)},${s(3)}`}
             />
             {/* Dots + labels */}
             {data.map((d, i) => {
@@ -2488,6 +2521,9 @@ const wStyles = StyleSheet.create({
   },
   legendItem: { flexDirection: "row", alignItems: "center", gap: s(5) },
   legendDot: { width: s(8), height: s(8), borderRadius: s(4) },
+  legendLine: { width: s(16), height: s(2), borderRadius: s(1) },
+  legendDashRow: { flexDirection: "row", alignItems: "center", gap: s(2) },
+  legendDash: { width: s(4), height: s(2), borderRadius: s(1) },
   legendLabel: { fontSize: s(11), fontWeight: "700" },
   empty: {
     alignItems: "center",

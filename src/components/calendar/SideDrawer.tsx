@@ -18,13 +18,10 @@ export function SideDrawer(props: {
   setShowBirthdays: (v: boolean) => void;
   showHolidays: boolean;
   setShowHolidays: (v: boolean) => void;
-  showContacts: boolean;
-  setShowContacts: (v: boolean) => void;
-
   onClose: () => void;
   onLinkGoogle: () => void;
 }) {
-  const { theme, visible, width, insets, showEvents, setShowEvents, showTasks, setShowTasks, showBirthdays, setShowBirthdays, showHolidays, setShowHolidays, showContacts, setShowContacts, onClose, onLinkGoogle } = props;
+  const { theme, visible, width, insets, showEvents, setShowEvents, showTasks, setShowTasks, showBirthdays, setShowBirthdays, showHolidays, setShowHolidays, onClose, onLinkGoogle } = props;
 
   const x = useRef(new Animated.Value(width)).current;
 
@@ -70,34 +67,6 @@ export function SideDrawer(props: {
         <Toggle theme={theme} label="Tasks" value={showTasks} onToggle={() => setShowTasks(!showTasks)} />
         <Toggle theme={theme} label="Birthdays" value={showBirthdays} onToggle={() => setShowBirthdays(!showBirthdays)} />
         <Toggle theme={theme} label="Holidays" value={showHolidays} onToggle={() => setShowHolidays(!showHolidays)} />
-        <Toggle theme={theme} label="Contacts" value={showContacts} onToggle={() => setShowContacts(!showContacts)} />
-
-        <Text style={{ marginTop: s(18), color: theme.colors.muted, fontWeight: "900", fontSize: s(12) }}>GOOGLE CALENDAR</Text>
-
-        <Pressable
-          onPress={onLinkGoogle}
-          style={{
-            marginTop: s(10),
-            borderRadius: s(16),
-            borderWidth: s(1),
-            borderColor: theme.colors.border,
-            backgroundColor: theme.colors.card2,
-            padding: s(12),
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: s(10) }}>
-            <View style={{ width: s(34), height: s(34), borderRadius: s(12), alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.card, borderWidth: s(1), borderColor: theme.colors.border }}>
-              <Ionicons name="logo-google" size={s(16)} color={theme.colors.text} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: s(13) }}>Link Google Calendar</Text>
-              <Text style={{ color: theme.colors.muted, fontWeight: "800", fontSize: s(12), marginTop: s(2) }} numberOfLines={2}>
-                Sync events into Flusso’s agenda.
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={s(16)} color={theme.colors.muted} />
-          </View>
-        </Pressable>
       </Animated.View>
     </>
   );

@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   View,
   Text,
@@ -22,7 +23,7 @@ const Q2OrganizeScreen = ({ navigation, route }: Props) => {
   const insets = useSafeAreaInsets();
   const { isTablet } = useDeviceClass();
 
-  const [selected, setSelected] = useState<OptionKey | null>(null);
+  const [selected, setSelected] = useState<Set<OptionKey>>(new Set());
 
 
 
@@ -55,12 +56,23 @@ const Q2OrganizeScreen = ({ navigation, route }: Props) => {
   );
 
   const onSelect = (key: OptionKey) => {
-    setSelected(key);
-    animateCheck();
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+        animateCheck();
+      }
+      return next;
+    });
   };
 
   return (
     <View style={styles.outerBg}>
+      <LinearGradient colors={["#03045E", "#023E8A", "#0077B6"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={["transparent", "rgba(0,150,199,0.45)", "rgba(72,202,228,0.28)", "transparent"]} start={{ x: 1, y: 0.15 }} end={{ x: 0, y: 0.85 }} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={["rgba(144,224,239,0.18)", "transparent", "rgba(0,96,199,0.22)"]} start={{ x: 0.6, y: 0 }} end={{ x: 0.1, y: 1 }} style={StyleSheet.absoluteFill} />
       <View
         style={[
           styles.container,
@@ -82,7 +94,7 @@ const Q2OrganizeScreen = ({ navigation, route }: Props) => {
 
         <View style={styles.list}>
           {options.map((opt) => {
-            const isSelected = selected === opt.key;
+            const isSelected = selected.has(opt.key);
 
             return (
               <TouchableOpacity
@@ -112,9 +124,9 @@ const Q2OrganizeScreen = ({ navigation, route }: Props) => {
         style={[
           styles.nextFixed,
           { bottom: insets.bottom + s(16) },
-          !selected && styles.nextDisabled,
+          !selected.size && styles.nextDisabled,
         ]}
-        disabled={!selected}
+        disabled={!selected.size}
         onPress={onNavigateToQ3}
       >
         <Text style={styles.nextText}>Next</Text>
@@ -128,7 +140,7 @@ const Q2OrganizeScreen = ({ navigation, route }: Props) => {
 export default Q2OrganizeScreen;
 
 const ACCENT = "#FFFFFF";
-const BG = "#1055BF";
+const BG = "#03045E";
 const CARD = "#0f3f87";
 
 const styles = StyleSheet.create({

@@ -969,13 +969,17 @@ export async function loadTasksDueToday(): Promise<number> {
 export async function loadTasksCompletedDueToday(): Promise<number> {
   const tasks = await loadTasks();
   const today = todayKey();
-  
-  const completedDueToday = tasks.filter((t) => {
-    // Only count completed tasks with today's deadline
-    return t.status === "completed" && t.deadline === today;
+
+  const completedToday = tasks.filter((t) => {
+    if (t.status !== "completed") return false;
+    // Prefer completedAt timestamp; fall back to deadline for legacy tasks
+    const dateKey = t.completedAt
+      ? t.completedAt.slice(0, 10)
+      : t.deadline;
+    return dateKey === today;
   });
-  
-  return completedDueToday.length;
+
+  return completedToday.length;
 }
 
 // ========== Theme Settings (User-Specific, Cloud-Backed) ==========

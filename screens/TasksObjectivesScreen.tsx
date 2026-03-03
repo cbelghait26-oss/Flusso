@@ -105,6 +105,7 @@ function smartBucket(deadline?: string) {
 type TaskRowProps = {
   t: Task;
   objTitle?: string;
+  objColor?: string;
   dueLabel: string;
   dueTone: "danger" | "today" | "neutral";
   colors: any;
@@ -116,7 +117,7 @@ type TaskRowProps = {
 };
 
 const TaskRow = React.memo(function TaskRow(props: TaskRowProps) {
-  const { t, objTitle, dueLabel, dueTone, colors, radius, onToggleDone, onEdit, onDelete, onToggleStar } = props;
+  const { t, objTitle, objColor, dueLabel, dueTone, colors, radius, onToggleDone, onEdit, onDelete, onToggleStar } = props;
 
   const [completing, setCompleting] = useState(false);
   const scaleAnim   = useState(new Animated.Value(1))[0];
@@ -171,7 +172,7 @@ const TaskRow = React.memo(function TaskRow(props: TaskRowProps) {
           disabled={completing}
           style={({ pressed }) => [{
             width: s(26), height: s(26), borderRadius: s(13), borderWidth: s(2),
-            borderColor: completing ? "#4CAF50" : colors.border,
+            borderColor: completing ? "#4CAF50" : (objColor ?? colors.border),
             alignItems: "center", justifyContent: "center", marginTop: s(2),
             opacity: pressed ? 0.85 : 1,
             backgroundColor: completing ? "#4CAF50" : "transparent",
@@ -183,7 +184,12 @@ const TaskRow = React.memo(function TaskRow(props: TaskRowProps) {
 
         <Pressable onPress={() => onEdit(t)} style={({ pressed }) => [{ flex: 1, opacity: pressed ? 0.92 : 1 }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: s(6) }}>
-            <Text style={{ color: colors.text, fontWeight: "900", fontSize: s(15), flex: 1 }} numberOfLines={1}>
+            <Text
+              style={{ color: colors.text, fontWeight: "600", fontSize: s(15), flex: 1 }}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.65}
+            >
               {t.title}
             </Text>
             <Pressable onPress={(e) => { e.stopPropagation(); onEdit(t); }} style={({ pressed }) => [{ padding: s(4), opacity: pressed ? 0.8 : 1 }]} hitSlop={s(8)}>
@@ -194,33 +200,29 @@ const TaskRow = React.memo(function TaskRow(props: TaskRowProps) {
             </Pressable>
           </View>
 
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: s(10), marginTop: s(8) }}>
-            <View style={metaPill(colors, radius)}>
-              <Ionicons name="bookmark-outline" size={s(14)} color={colors.muted}/>
-              <Text style={metaText(colors)} numberOfLines={1}>{objTitle ?? "Objective"}</Text>
+          <View style={{ flexDirection: "row", flexWrap: "nowrap", alignItems: "center", gap: s(6), marginTop: s(5) }}>
+            <View style={[metaPill(colors, radius), { flexShrink: 1, minWidth: 0 }]}>
+              <Ionicons name="bookmark-outline" size={s(12)} color={colors.muted}/>
+              <Text style={metaText(colors)} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{objTitle ?? "Objective"}</Text>
             </View>
 
-            <View style={{ paddingVertical: s(6), paddingHorizontal: s(10), borderRadius: s(999), backgroundColor: dueBg, borderWidth: s(1), borderColor: dueBd, flexDirection: "row", alignItems: "center", gap: s(8) }}>
-              <Ionicons name="calendar-outline" size={s(14)} color={colors.muted}/>
-              <Text style={metaText(colors)}>{dueLabel}</Text>
+            <View style={{ paddingVertical: s(4), paddingHorizontal: s(8), borderRadius: s(999), backgroundColor: dueBg, borderWidth: s(1), borderColor: dueBd, flexDirection: "row", alignItems: "center", gap: s(6), flexShrink: 0 }}>
+              <Ionicons name="calendar-outline" size={s(12)} color={colors.muted}/>
+              <Text style={metaText(colors)} numberOfLines={1}>{dueLabel}</Text>
             </View>
 
             <Pressable
               onPress={(e) => { e.stopPropagation(); onDelete(t.id); }}
-              style={({ pressed }) => [{ paddingVertical: s(6), paddingHorizontal: s(10), borderRadius: s(999), flexDirection: "row", alignItems: "center", gap: s(8), opacity: pressed ? 0.85 : 1 }]}
+              style={({ pressed }) => [{ paddingVertical: s(4), paddingHorizontal: s(8), borderRadius: s(999), flexDirection: "row", alignItems: "center", gap: s(6), opacity: pressed ? 0.85 : 1, flexShrink: 0 }]}
               hitSlop={s(8)}
             >
               {({ pressed }) => (
-                <Ionicons name="trash-outline" size={s(14)} color={pressed ? "#FF5050" : colors.muted}/>
+                <Ionicons name="trash-outline" size={s(13)} color={pressed ? "#FF5050" : colors.muted}/>
               )}
             </Pressable>
           </View>
 
-          {!!t.description && (
-            <Text style={{ color: colors.muted, fontWeight: "700", marginTop: s(8), lineHeight: s(18) }} numberOfLines={2}>
-              {t.description}
-            </Text>
-          )}
+
         </Pressable>
       </View>
     </Animated.View>
@@ -275,6 +277,7 @@ function ObjectiveGroup({ objective, tasks, colors, radius, saving, onToggleDone
       {/* Task rows — indented, only when open and tasks exist */}
       {open && tasks.map((t) => {
         const objTitle = objectivesById.get(t.objectiveId)?.title;
+        const objColorVal = OBJECTIVE_COLORS.find((x) => x.value === objectivesById.get(t.objectiveId)?.color)?.hex;
         const dueLabel = !t.deadline ? "No date"
           : isToday(t.deadline)   ? "Today"
           : isOverdue(t.deadline) ? `Overdue · ${fmtShortDay(t.deadline)}`
@@ -286,6 +289,7 @@ function ObjectiveGroup({ objective, tasks, colors, radius, saving, onToggleDone
             <TaskRow
               t={t}
               objTitle={objTitle}
+              objColor={objColorVal}
               dueLabel={dueLabel}
               dueTone={dueTone}
               colors={colors}
@@ -700,6 +704,7 @@ export default function TasksObjectivesScreen() {
             }}
             renderItem={({ item }) => {
               const objTitle = objectivesById.get(item.objectiveId)?.title;
+              const objColorVal = OBJECTIVE_COLORS.find((x) => x.value === objectivesById.get(item.objectiveId)?.color)?.hex;
               const dueLabel = !item.deadline ? "No date"
                 : isToday(item.deadline)   ? "Today"
                 : isOverdue(item.deadline) ? `Overdue • ${fmtShortDay(item.deadline)}`
@@ -710,6 +715,7 @@ export default function TasksObjectivesScreen() {
                 <TaskRow
                   t={item}
                   objTitle={objTitle}
+                  objColor={objColorVal}
                   dueLabel={dueLabel}
                   dueTone={dueTone}
                   colors={colors}
@@ -789,58 +795,62 @@ export default function TasksObjectivesScreen() {
           renderItem={({ item: o }) => {
             const p = objectiveProgress(o.id);
             const miscLocked = o.title.trim().toLowerCase() === "miscellaneous";
+            const objColorHex = OBJECTIVE_COLORS.find((x) => x.value === o.color)?.hex ?? "#007AFF";
             return (
-              <View style={{ borderRadius: radius.xl, borderWidth: s(1), borderColor: colors.border, backgroundColor: colors.surface, padding: s(14), gap: s(10) }}>
-                <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: s(10) }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: colors.text, fontWeight: "900", fontSize: s(16) }}>{o.title}</Text>
-                    {!!o.description && (
-                      <Text style={{ color: colors.muted, fontWeight: "700", marginTop: s(6), lineHeight: s(18) }}>{o.description}</Text>
-                    )}
-                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: s(10), marginTop: s(10) }}>
-                      <View style={metaPill(colors, radius)}>
-                        <Ionicons name="pricetag-outline" size={s(14)} color={colors.muted}/>
-                        <Text style={metaText(colors)}>{o.category}</Text>
-                      </View>
-                      <View style={metaPill(colors, radius)}>
-                        <View style={{ width: s(12), height: s(12), borderRadius: s(6), backgroundColor: OBJECTIVE_COLORS.find((x) => x.value === o.color)?.hex ?? "#3b82f6" }}/>
-                        <Text style={metaText(colors)}>{OBJECTIVE_COLORS.find((x) => x.value === o.color)?.label ?? "Blue"}</Text>
-                      </View>
-                      <View style={metaPill(colors, radius)}>
-                        <Ionicons name="analytics-outline" size={s(14)} color={colors.muted}/>
-                        <Text style={metaText(colors)}>{p.pct}% ({p.done}/{p.total})</Text>
-                      </View>
-                      <View style={metaPill(colors, radius)}>
-                        <Ionicons name="calendar-outline" size={s(14)} color={colors.muted}/>
-                        <Text style={metaText(colors)}>{o.deadline ? fmtShortDay(o.deadline) : "No date"}</Text>
-                      </View>
-                    </View>
-                    <View style={{ marginTop: s(12), height: s(10), borderRadius: s(999), backgroundColor: colors.surface2, borderWidth: s(1), borderColor: colors.border, overflow: "hidden" }}>
-                      <View style={{ height: "100%", width: `${p.pct}%`, backgroundColor: colors.accent }}/>
-                    </View>
-                  </View>
-                  <View style={{ flexDirection: "row", gap: s(4) }}>
-                    <Pressable onPress={() => openEditObjective(o)} style={({ pressed }) => [{ padding: s(6), opacity: pressed ? 0.8 : 1 }]}>
-                      <Ionicons name="create-outline" size={s(18)} color={colors.muted}/>
+              <View style={{ borderRadius: radius.xl, borderWidth: s(1), borderColor: colors.border, backgroundColor: colors.surface, padding: s(10), gap: s(6), borderLeftWidth: s(3), borderLeftColor: objColorHex }}>
+                {/* Row 1: title + actions */}
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: s(8) }}>
+                  <Text
+                    style={{ color: colors.text, fontWeight: "600", fontSize: s(15), flex: 1 }}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.65}
+                  >
+                    {o.title}
+                  </Text>
+                  <View style={{ flexDirection: "row", gap: s(2) }}>
+                    <Pressable onPress={() => openEditObjective(o)} style={({ pressed }) => [{ padding: s(4), opacity: pressed ? 0.8 : 1 }]}>
+                      <Ionicons name="create-outline" size={s(16)} color={colors.muted}/>
                     </Pressable>
                     <Pressable
                       onPress={async () => {
                         if (miscLocked || saving) return; setSaving(true);
                         try { await deleteObjective(o.id); await refresh(); } finally { setSaving(false); }
                       }}
-                      style={({ pressed }) => [{ padding: s(6), opacity: pressed ? 0.8 : 1 }]}
+                      style={({ pressed }) => [{ padding: s(4), opacity: pressed ? 0.8 : 1 }]}
                     >
-                      <Ionicons name="trash-outline" size={s(18)} color={miscLocked ? "rgba(255,255,255,0.25)" : colors.muted}/>
+                      <Ionicons name="trash-outline" size={s(16)} color={miscLocked ? "rgba(255,255,255,0.25)" : colors.muted}/>
                     </Pressable>
                   </View>
                 </View>
 
+                {/* Row 2: meta pills */}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: s(5) }}>
+                  <View style={metaPill(colors, radius)}>
+                    <Ionicons name="pricetag-outline" size={s(12)} color={colors.muted}/>
+                    <Text style={metaText(colors)}>{o.category}</Text>
+                  </View>
+                  <View style={metaPill(colors, radius)}>
+                    <Ionicons name="analytics-outline" size={s(12)} color={colors.muted}/>
+                    <Text style={metaText(colors)}>{p.pct}% ({p.done}/{p.total})</Text>
+                  </View>
+                  <View style={metaPill(colors, radius)}>
+                    <Ionicons name="calendar-outline" size={s(12)} color={colors.muted}/>
+                    <Text style={metaText(colors)}>{o.deadline ? fmtShortDay(o.deadline) : "No date"}</Text>
+                  </View>
+                </View>
+
+                {/* Progress bar */}
+                <View style={{ height: s(5), borderRadius: s(999), backgroundColor: colors.surface2, borderWidth: s(1), borderColor: colors.border, overflow: "hidden" }}>
+                  <View style={{ height: "100%", width: `${p.pct}%`, backgroundColor: objColorHex }}/>
+                </View>
+
                 {!miscLocked && (
-                  <View style={{ gap: s(8) }}>
+                  <View style={{ gap: s(6) }}>
                     {p.total > 0 && p.done < p.total && (
-                      <View style={{ height: s(46), borderRadius: radius.xl, borderWidth: s(1), borderColor: "rgba(255,255,255,0.2)", backgroundColor: "rgba(255,255,255,0.08)", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: s(8) }}>
-                        <Ionicons name="lock-closed" size={s(18)} color={colors.muted}/>
-                        <Text style={{ fontWeight: "900", color: colors.muted }}>Complete all tasks ({p.done}/{p.total})</Text>
+                      <View style={{ height: s(40), borderRadius: radius.xl, borderWidth: s(1), borderColor: "rgba(255,255,255,0.2)", backgroundColor: "rgba(255,255,255,0.08)", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: s(8) }}>
+                        <Ionicons name="lock-closed" size={s(16)} color={colors.muted}/>
+                        <Text style={{ fontWeight: "600", fontSize: s(13), color: colors.muted }}>Complete all tasks ({p.done}/{p.total})</Text>
                       </View>
                     )}
                     <Pressable
@@ -850,14 +860,14 @@ export default function TasksObjectivesScreen() {
                       }}
                       disabled={p.total > 0 && p.done < p.total}
                       style={({ pressed }) => [{
-                        height: s(46), borderRadius: radius.xl, borderWidth: s(1), borderColor: colors.border,
+                        height: s(40), borderRadius: radius.xl, borderWidth: s(1), borderColor: colors.border,
                         backgroundColor: p.total > 0 && p.done < p.total ? "rgba(255,255,255,0.08)" : colors.accent,
                         alignItems: "center", justifyContent: "center", flexDirection: "row", gap: s(8),
                         opacity: p.total > 0 && p.done < p.total ? 0.5 : pressed ? 0.88 : 1,
                       }]}
                     >
-                      <Ionicons name="checkmark" size={s(18)} color={p.total > 0 && p.done < p.total ? colors.muted : colors.bg}/>
-                      <Text style={{ fontWeight: "900", color: p.total > 0 && p.done < p.total ? colors.muted : colors.bg }}>
+                      <Ionicons name="checkmark" size={s(16)} color={p.total > 0 && p.done < p.total ? colors.muted : colors.bg}/>
+                      <Text style={{ fontWeight: "600", fontSize: s(13), color: p.total > 0 && p.done < p.total ? colors.muted : colors.bg }}>
                         {p.total === 0 ? "Mark completed" : p.done === p.total ? "Mark completed" : "Locked"}
                       </Text>
                     </Pressable>
@@ -1240,10 +1250,10 @@ const styles = StyleSheet.create({
 });
 
 function metaPill(colors: any, radius: any) {
-  return { paddingVertical: s(6), paddingHorizontal: s(10), borderRadius: s(999), backgroundColor: "rgba(0,0,0,0.16)", borderWidth: s(1), borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: s(8), maxWidth: s(220) } as const;
+  return { paddingVertical: s(4), paddingHorizontal: s(8), borderRadius: s(999), backgroundColor: "rgba(0,0,0,0.16)", borderWidth: s(1), borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: s(6) } as const;
 }
 function metaText(colors: any) {
-  return { color: colors.muted, fontWeight: "900", fontSize: s(12) } as const;
+  return { color: colors.muted, fontWeight: "500", fontSize: s(11) } as const;
 }
 function inputWrap(colors: any, radius: any) {
   return { marginTop: s(8), borderWidth: s(1), borderColor: colors.border, backgroundColor: colors.surface2, borderRadius: radius.xl, paddingHorizontal: s(12) } as const;

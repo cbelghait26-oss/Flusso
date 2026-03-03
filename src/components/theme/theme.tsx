@@ -3,6 +3,8 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { useColorScheme } from "react-native";
 import { s } from "../../ui/ts";
 import { loadThemeMode, saveThemeMode, loadThemeAccent, saveThemeAccent } from "../../data/storage";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "../../services/firebase";
 
 // ✅ Updated brand colors - Primary Flow Blue
 export const BRAND = {
@@ -147,7 +149,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [themeMode, setThemeModeState] = useState<ThemeMode>("dark");
   const [accent, setAccentState] = useState<string>(BRAND.ACCENT);
 
-  // load persisted prefs
+  // load persisted prefs on mount
   useEffect(() => {
     (async () => {
       try {
@@ -161,6 +163,25 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         // ignore
       }
     })();
+  }, []);
+
+  // Re-load theme from cloud whenever the user signs in so the accent they
+  // chose on another device (or in a previous session) is applied immediately.
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+      try {
+        const [m, a] = await Promise.all([
+          loadThemeMode(),
+          loadThemeAccent(),
+        ]);
+        if (m === "system" || m === "light" || m === "dark") setThemeModeState(m as ThemeMode);
+        if (a && /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(a)) setAccentState(a);
+      } catch {
+        // ignore — keep current accent if cloud is unavailable
+      }
+    });
+    return () => unsub();
   }, []);
 
   const isDark = themeMode === "system" ? systemIsDark : themeMode === "dark";
