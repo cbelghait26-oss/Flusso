@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flusso — Structure Your Focus.</title>
+    <meta
+      name="description"
+      content="Flusso connects daily tasks to meaningful objectives — transforming productivity from reaction to intention."
+    />
+    <meta property="og:title" content="Flusso — Structure Your Focus." />
+    <meta property="og:description" content="Link tasks to objectives. Focus with structure. Track what matters." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="assets/app-mockup.svg" />
+    <meta name="theme-color" content="#5CC8FF" />
+    <link rel="icon" href="assets/flusso-mark.svg" type="image/svg+xml" />
+
+    <style>
+      :root{
+        --bg0:#071a2b;
+        --bg1:#0b2841;
+        --bg2:#0a3650;
+
+        --card: rgba(255,255,255,.07);
+        --card2: rgba(255,255,255,.10);
+        --stroke: rgba(255,255,255,.14);
+        --stroke2: rgba(255,255,255,.20);
+
+        --text: rgba(255,255,255,.92);
+        --muted: rgba(255,255,255,.70);
+        --muted2: rgba(255,255,255,.55);
+
+        --accent: #5CC8FF;
+        --accent2:#9DE8FF;
+
+        --shadow: 0 24px 60px rgba(0,0,0,.35);
+        --shadow2: 0 16px 40px rgba(0,0,0,.28);
+
+        --r1: 24px;
+        --r2: 18px;
+
+        --max: 1120px;
+
+        --h1: clamp(2.2rem, 4vw, 3.6rem);
+        --h2: clamp(1.45rem, 2.2vw, 2.1rem);
+        --p: 1.06rem;
+      }
+
+      *{box-sizing:border-box}
+      html,body{margin:0;padding:0}
+      body{
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(1000px 700px at 15% 10%, rgba(92,200,255,.20), transparent 60%),
+          radial-gradient(900px 600px at 90% 20%, rgba(157,232,255,.18), transparent 55%),
+          radial-gradient(900px 700px at 55% 100%, rgba(92,200,255,.16), transparent 55%),
+          linear-gradient(180deg, var(--bg0), var(--bg1) 45%, var(--bg2));
+        min-height:100vh;
+      }
+
+      a{color:inherit;text-decoration:none}
+      .container{width:min(var(--max), calc(100% - 48px)); margin:0 auto}
+
+      header{
+        position:sticky; top:0; z-index:50;
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        background: linear-gradient(180deg, rgba(7,26,43,.85), rgba(7,26,43,.55));
+        border-bottom:1px solid rgba(255,255,255,.10);
+      }
+      .nav{
+        display:flex; align-items:center; justify-content:space-between;
+        padding:14px 0; gap:16px;
+      }
+      .brand{
+        display:flex; align-items:center; gap:12px;
+        font-weight:900; letter-spacing:-.02em;
+        min-width: 190px;
+      }
+      .brand img{width:34px;height:34px}
+      .links{
+        display:flex; align-items:center; gap:18px;
+      }
+      .links a{
+        color: var(--muted);
+        padding:8px 10px;
+        border-radius: 12px;
+        font-weight:700;
+        font-size:.96rem;
+      }
+      .links a:hover{background: rgba(92,200,255,.12); color: var(--text)}
+      .nav-cta{display:flex; gap:10px; align-items:center; justify-content:flex-end; min-width:240px}
+
+      .btn{
+        display:inline-flex; align-items:center; justify-content:center;
+        gap:10px;
+        border:1px solid rgba(255,255,255,.16);
+        background: rgba(255,255,255,.08);
+        color: var(--text);
+        padding:11px 14px;
+        border-radius:999px;
+        font-weight:800;
+        font-size:.96rem;
+        box-shadow: 0 10px 28px rgba(0,0,0,.22);
+        transition: transform 180ms ease, background 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+        user-select:none;
+      }
+      .btn:hover{transform: translateY(-1px); background: rgba(255,255,255,.10); box-shadow: 0 14px 36px rgba(0,0,0,.28)}
+      .btn.primary{
+        border-color: rgba(92,200,255,.45);
+        background: linear-gradient(180deg, rgba(92,200,255,.32), rgba(157,232,255,.18));
+      }
+
+      .pill{
+        display:inline-flex; align-items:center; gap:8px;
+        padding:6px 10px;
+        border-radius:999px;
+        border:1px solid rgba(92,200,255,.35);
+        background: rgba(92,200,255,.12);
+        color: rgba(255,255,255,.82);
+        font-weight:900;
+        font-size:.82rem;
+        white-space:nowrap;
+      }
+
+      /* HERO */
+      .hero{
+        padding: 90px 0 72px;
+        text-align: center;
+        display:flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      h1{
+        margin: 0 0 18px;
+        font-size: var(--h1);
+        line-height: 1.05;
+        letter-spacing:-.035em;
+        max-width: 18ch;
+      }
+      .lead{
+        margin: 0 0 32px;
+        max-width: 52ch;
+        font-size: clamp(1.02rem, 1.15vw, 1.18rem);
+        line-height: 1.7;
+        color: var(--muted);
+      }
+      .hero-actions{
+        display:flex;
+        gap: 12px;
+        flex-wrap:wrap;
+        align-items:center;
+        justify-content: center;
+        margin-bottom: 16px;
+      }
+      .micro{
+        color: var(--muted2);
+        font-size:.95rem;
+        line-height:1.55;
+      }
+
+      /* App preview section */
+      .preview-section{
+        padding: 10px 0 80px;
+      }
+      .preview-kicker{
+        text-align: center;
+        margin-bottom: 48px;
+        color: var(--muted2);
+        font-size: .86rem;
+        font-weight: 900;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+      }
+      .phones-grid{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 32px;
+        align-items: flex-start;
+        max-width: 860px;
+        margin: 0 auto;
+      }
+      .phone-card{
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+      .phone-title{
+        font-size: clamp(1.25rem, 2vw, 1.65rem);
+        font-weight: 900;
+        letter-spacing: -.025em;
+        text-align: center;
+        line-height: 1.2;
+      }
+      .phone-img{
+        width: min(100%, 270px);
+        height: auto;
+        border-radius: 36px;
+        filter: drop-shadow(0 32px 56px rgba(0,0,0,.55));
+      }
+      .phone-placeholder{
+        width: min(100%, 270px);
+        aspect-ratio: 9/19.5;
+        border-radius: 36px;
+        border: 1px solid rgba(255,255,255,.14);
+        background: rgba(255,255,255,.05);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        color: var(--muted2);
+        font-size: .9rem;
+        text-align: center;
+        padding: 24px;
+      }
+      .phone-placeholder-icon{
+        font-size: 2rem;
+        opacity: .5;
+      }
+
+      /* Sections */
+      section{padding: 58px 0}
+      .section-head{
+        display:flex; align-items:flex-end; justify-content:space-between;
+        gap:18px; margin-bottom: 18px;
+      }
+      .kicker{
+        margin: 0 0 10px;
+        color: rgba(255,255,255,.70);
+        font-weight:900;
+        font-size:.86rem;
+        letter-spacing:.12em;
+        text-transform:uppercase;
+      }
+      h2{
+        margin:0;
+        font-size: var(--h2);
+        letter-spacing:-.02em;
+      }
+      .desc{
+        margin: 10px 0 0;
+        color: var(--muted);
+        max-width: 78ch;
+        line-height: 1.7;
+        font-size: var(--p);
+      }
+
+      .grid{
+        display:grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 14px;
+      }
+      .card{
+        grid-column: span 6;
+        border-radius: var(--r2);
+        border: 1px solid var(--stroke);
+        background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.05));
+        box-shadow: var(--shadow2);
+        padding: 18px;
+      }
+      .card h3{
+        margin:0 0 8px;
+        font-size: 1.06rem;
+        letter-spacing:-.01em;
+      }
+      .card p{
+        margin:0;
+        color: var(--muted);
+        line-height:1.65;
+        font-size: .99rem;
+      }
+
+      /* Psychology (brain only here) */
+      .psy{
+        grid-column: span 12;
+        border-radius: var(--r1);
+        border: 1px solid rgba(92,200,255,.22);
+        background: linear-gradient(180deg, rgba(92,200,255,.14), rgba(255,255,255,.04));
+        padding: 18px;
+        display:grid;
+        grid-template-columns: 0.42fr 0.58fr;
+        gap: 16px;
+        align-items:center;
+      }
+      .brain-wrap{
+        border-radius: 18px;
+        border: 1px solid rgba(255,255,255,.12);
+        background: rgba(0,0,0,.14);
+        padding: 14px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        min-height: 180px;
+        overflow:hidden;
+      }
+      .brain{
+        width: min(100%, 320px);
+        height:auto;
+        opacity:.92;
+        filter: contrast(1.08) brightness(1.05) drop-shadow(0 18px 34px rgba(0,0,0,.45));
+        mix-blend-mode: screen;
+      }
+      .psy p{
+        margin: 0;
+        color: rgba(255,255,255,.80);
+        line-height: 1.7;
+      }
+      .psy strong{color: rgba(255,255,255,.92)}
+      .psy small{display:block; margin-top:10px; color: var(--muted2); line-height:1.6}
+
+      /* Footer */
+      footer{
+        padding: 28px 0 44px;
+        border-top: 1px solid rgba(255,255,255,.10);
+        background: rgba(0,0,0,.12);
+        backdrop-filter: blur(16px);
+      }
+      .footer-grid{
+        display:grid;
+        grid-template-columns: 1.15fr .85fr;
+        gap: 18px;
+        align-items:center;
+      }
+      .footer-links{
+        display:flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        justify-content:flex-end;
+      }
+      .footer-links a{
+        color: var(--muted);
+        padding: 7px 10px;
+        border-radius: 12px;
+        border: 1px solid transparent;
+      }
+      .footer-links a:hover{
+        background: rgba(92,200,255,.10);
+        color: var(--text);
+        border-color: rgba(255,255,255,.10);
+      }
+
+      /* Reveal */
+      .reveal{
+        opacity:0;
+        transform: translateY(14px);
+        transition: opacity 650ms ease, transform 650ms ease;
+      }
+      .reveal.visible{opacity:1; transform: translateY(0)}
+
+      @media (max-width: 920px){
+        .nav-cta{min-width: unset}
+        .psy{grid-template-columns: 1fr}
+      }
+      @media (max-width: 700px){
+        .phones-grid{grid-template-columns: 1fr; max-width: 340px}
+      }
+      @media (max-width: 720px){
+        .links{display:none}
+        .card{grid-column: span 12}
+        .footer-grid{grid-template-columns: 1fr}
+        .footer-links{justify-content:flex-start}
+      }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <div class="container">
+        <nav class="nav" aria-label="Main navigation">
+          <a class="brand" href="index.html" aria-label="Flusso home">
+            <img src="assets/flusso-mark.svg" alt="Flusso logo mark" />
+            <span>Flusso</span>
+            <span class="pill">Website • Phase 1</span>
+          </a>
+
+          <div class="links" role="navigation">
+            <a href="#method">Method</a>
+            <a href="#features">Features</a>
+            <a href="#web">Web</a>
+            <a href="about.html">About</a>
+          </div>
+
+          <div class="nav-cta">
+            <a class="btn" href="about.html">Learn more</a>
+            <a class="btn primary" href="#download">Download</a>
+          </div>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <!-- HERO -->
+      <div class="container hero reveal">
+        <h1>Structure your focus.<br />Align your actions.</h1>
+        <p class="lead">
+          Flusso connects your daily tasks to meaningful objectives — transforming productivity from reaction to intention.
+        </p>
+        <div class="hero-actions" id="download">
+          <a class="btn primary" href="#" onclick="return false;">Download on the App Store</a>
+          <a class="btn" href="#method">See the method</a>
+        </div>
+        <div class="micro">Minimal interface. Structured execution. Measurable focus.</div>
+      </div>
+
+      <!-- APP PREVIEW -->
+      <section class="preview-section">
+        <div class="container">
+          <div class="preview-kicker">App Preview</div>
+          <div class="phones-grid">
+            <div class="phone-card reveal">
+              <div class="phone-title">Act with<br />intention</div>
+              <img class="phone-img" src="assets/app-mockup.svg" alt="Flusso tasks screen" />
+            </div>
+            <div class="phone-card reveal">
+              <div class="phone-title">Control your<br />Environment</div>
+              <img class="phone-img" src="assets/preview focus.png" alt="Flusso focus room screen" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PROBLEM -->
+      <section id="problem">
+        <div class="container">
+          <div class="section-head reveal">
+            <div>
+              <div class="kicker">Problem</div>
+              <h2>Most productivity apps isolate tasks from meaning.</h2>
+              <p class="desc">
+                When tasks are disconnected from objectives, prioritization becomes reactive and focus becomes fragile.
+              </p>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="card reveal">
+              <h3>Lists grow. Clarity shrinks.</h3>
+              <p>Without a higher objective, tasks compete for attention and urgency wins.</p>
+            </div>
+            <div class="card reveal">
+              <h3>Motivation drops faster.</h3>
+              <p>When the “why” is missing, persistence decreases and the system turns into noise.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- METHOD -->
+      <section id="method">
+        <div class="container">
+          <div class="section-head reveal">
+            <div>
+              <div class="kicker">Method</div>
+              <h2>The Flusso method</h2>
+              <p class="desc">
+                Define objectives, link tasks, execute structured focus sessions, then reinforce alignment through feedback.
+              </p>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="card reveal">
+              <h3>1) Objectives define direction</h3>
+              <p>Set what you want to move forward (weekly, monthly, long-term).</p>
+            </div>
+            <div class="card reveal">
+              <h3>2) Tasks link to objectives</h3>
+              <p>Every task has context — improving prioritization and reducing friction.</p>
+            </div>
+            <div class="card reveal">
+              <h3>3) Focus sessions execute</h3>
+              <p>Timer/Pomodoro structure to reduce context switching and drift.</p>
+            </div>
+            <div class="card reveal">
+              <h3>4) Measure what you do</h3>
+              <p>Track focused time and completed actions to calibrate the system.</p>
+            </div>
+          </div>
+
+          <!-- Brain ONLY here -->
+          <div class="grid" style="margin-top:14px">
+            <div class="psy reveal">
+              <div class="brain-wrap">
+                <img class="brain" src="assets/brain.png" alt="Brain illustration" />
+              </div>
+              <div>
+                <p>
+                  <strong>Psychology:</strong> Flusso’s task→objective linking matches a core idea from
+                  <strong>Goal Systems Theory (Kruglanski)</strong>: when lower-level actions are connected to higher-order goals,
+                  people tend to persist longer and experience more meaning in execution.
+                </p>
+                <small>
+                  Practical translation: tasks feel lighter when they clearly serve something bigger.
+                </small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FEATURES -->
+      <section id="features">
+        <div class="container">
+          <div class="section-head reveal">
+            <div>
+              <div class="kicker">Mobile app</div>
+              <h2>Core features</h2>
+              <p class="desc">Phase 1 website describes the current mobile experience accurately.</p>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="card reveal">
+              <h3>Objective hierarchy</h3>
+              <p>Define direction first. Then execute.</p>
+            </div>
+            <div class="card reveal">
+              <h3>Task linking</h3>
+              <p>Tasks stay attached to what they serve.</p>
+            </div>
+            <div class="card reveal">
+              <h3>Focus Zone</h3>
+              <p>Structured Timer/Pomodoro sessions.</p>
+            </div>
+            <div class="card reveal">
+              <h3>Time focused tracking</h3>
+              <p>Measure real output, not intention.</p>
+            </div>
+            <div class="card reveal">
+              <h3>Calendar integration</h3>
+              <p>Plan around real constraints.</p>
+            </div>
+            <div class="card reveal">
+              <h3>Structured daily view</h3>
+              <p>Lower decision fatigue for “today”.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- WEB TEASER -->
+      <section id="web">
+        <div class="container">
+          <div class="section-head reveal">
+            <div>
+              <div class="kicker">Next</div>
+              <h2>Web platform (later phase)</h2>
+              <p class="desc">Web unlocks larger-screen workflows while keeping the same method.</p>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="card reveal">
+              <h3>Personal AI agent</h3>
+              <p>Assisted planning and reflection (later phase).</p>
+            </div>
+            <div class="card reveal">
+              <h3>Documents in Focus Zone</h3>
+              <p>Upload/view documents during sessions.</p>
+            </div>
+            <div class="card reveal">
+              <h3>Whiteboards & notes</h3>
+              <p>Visual thinking linked to objectives.</p>
+            </div>
+            <div class="card reveal">
+              <h3>Deeper analytics</h3>
+              <p>Execution patterns across time.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="container">
+        <div class="footer-grid">
+          <div style="color: var(--muted); line-height: 1.6">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom: 6px">
+              <img src="assets/flusso-mark.svg" alt="" style="width:26px;height:26px" />
+              <strong style="color: var(--text)">Flusso</strong>
+            </div>
+            <div>Structured productivity through task→objective alignment.</div>
+            <div style="margin-top: 10px; font-size: .95rem">
+              Contact: <a href="mailto:support@yourdomain.com">support@yourdomain.com</a>
+            </div>
+            <div style="margin-top: 8px; font-size: .92rem">© <span id="year"></span> Flusso</div>
+          </div>
+
+          <div class="footer-links" aria-label="Footer links">
+            <a href="about.html">About</a>
+            <a href="privacy-policy.html">Privacy Policy</a>
+            <a href="terms-and-conditions.html">Terms & Conditions</a>
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById("year").textContent = new Date().getFullYear();
+
+      // Smooth scroll for in-page anchors
+      document.querySelectorAll('a[href^="#"]').forEach((a) => {
+        a.addEventListener("click", (e) => {
+          const href = a.getAttribute("href");
+          if (!href || href === "#") return;
+          const el = document.querySelector(href);
+          if (!el) return;
+          e.preventDefault();
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
+
+      // Reveal on scroll
+      const revealEls = Array.from(document.querySelectorAll(".reveal"));
+      const io = new IntersectionObserver(
+        (entries) => entries.forEach((entry) => entry.isIntersecting && entry.target.classList.add("visible")),
+        { threshold: 0.12 }
+      );
+      revealEls.forEach((el) => io.observe(el));
+    </script>
+  </body>
+</html>

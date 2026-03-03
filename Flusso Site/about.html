@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About — Flusso</title>
+    <meta name="description" content="Why Flusso exists, the method, and the long-term vision." />
+    <meta name="theme-color" content="#5CC8FF" />
+    <link rel="icon" href="assets/flusso-mark.svg" type="image/svg+xml" />
+    <style>
+      :root{
+        --bg0:#071a2b; --bg1:#0b2841; --bg2:#0a3650;
+        --stroke: rgba(255,255,255,.14);
+        --text: rgba(255,255,255,.92);
+        --muted: rgba(255,255,255,.70);
+        --muted2: rgba(255,255,255,.55);
+        --accent:#5CC8FF;
+        --shadow: 0 24px 60px rgba(0,0,0,.35);
+        --r1:24px; --r2:18px;
+        --max: 920px;
+        --h1: clamp(2.0rem, 3.4vw, 2.9rem);
+        --h2: clamp(1.25rem, 2.1vw, 1.7rem);
+      }
+      *{box-sizing:border-box}
+      body{
+        margin:0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(900px 650px at 15% 10%, rgba(92,200,255,.20), transparent 60%),
+          radial-gradient(800px 600px at 90% 20%, rgba(157,232,255,.16), transparent 55%),
+          linear-gradient(180deg, var(--bg0), var(--bg1) 45%, var(--bg2));
+        min-height:100vh;
+      }
+      a{color:inherit;text-decoration:none}
+      .container{width:min(var(--max), calc(100% - 48px)); margin:0 auto}
+
+      header{
+        position:sticky; top:0; z-index:50;
+        backdrop-filter: blur(18px);
+        background: linear-gradient(180deg, rgba(7,26,43,.85), rgba(7,26,43,.55));
+        border-bottom:1px solid rgba(255,255,255,.10);
+      }
+      .nav{display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 0}
+      .brand{display:flex; align-items:center; gap:12px; font-weight:900; letter-spacing:-.02em}
+      .brand img{width:34px;height:34px}
+      .links{display:flex; gap:14px; align-items:center}
+      .links a{color: var(--muted); padding:8px 10px; border-radius:12px; font-weight:800}
+      .links a:hover{background: rgba(92,200,255,.12); color: var(--text)}
+
+      main{padding: 44px 0 64px}
+      .hero{
+        border-radius: var(--r1);
+        border: 1px solid var(--stroke);
+        background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.05));
+        box-shadow: var(--shadow);
+        padding: 22px;
+      }
+      h1{margin:0 0 10px; font-size: var(--h1); letter-spacing:-.035em}
+      p{margin:0; color: var(--muted); line-height:1.75; font-size: 1.05rem}
+
+      .stack{display:grid; gap:14px; margin-top:14px}
+      .card{
+        border-radius: var(--r2);
+        border: 1px solid var(--stroke);
+        background: rgba(0,0,0,.16);
+        padding: 18px;
+      }
+      h2{margin:0 0 8px; font-size: var(--h2); letter-spacing:-.02em}
+      ul{margin:10px 0 0; padding-left:18px; color: var(--muted); line-height:1.75}
+
+      footer{
+        padding: 26px 0 42px;
+        border-top: 1px solid rgba(255,255,255,.10);
+        background: rgba(0,0,0,.12);
+        backdrop-filter: blur(16px);
+      }
+      .footer-row{display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap}
+      .footer-row a{color: var(--muted); padding:7px 10px; border-radius:12px}
+      .footer-row a:hover{background: rgba(92,200,255,.10); color: var(--text)}
+      @media (max-width:640px){ .links{display:none} }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <div class="container">
+        <nav class="nav">
+          <a class="brand" href="index.html"><img src="assets/flusso-mark.svg" alt="Flusso" />Flusso</a>
+          <div class="links">
+            <a href="index.html#method">Method</a>
+            <a href="index.html#features">Features</a>
+            <a href="index.html#web">Web</a>
+          </div>
+          <a class="links" href="index.html" style="color: rgba(255,255,255,.85); font-weight:900">Home</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+      <div class="hero">
+        <h1>About Flusso</h1>
+
+      </div>
+
+      <div class="stack">
+        <div class="card">
+          <h2>Why it exists</h2>
+          <p>
+            Traditional task managers are good at collecting actions but weak at providing direction. Flusso keeps daily work
+            connected to higher-level goals so prioritization is clearer and follow-through is more stable.
+          </p>
+        </div>
+
+        <div class="card">
+          <h2>The method</h2>
+          <ul>
+            <li>Define objectives that set direction.</li>
+            <li>Link tasks to objectives to keep meaning attached.</li>
+            <li>Execute through structured focus sessions.</li>
+            <li>Track focused time and completed actions to calibrate.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h2>Psychology</h2>
+          <p>
+            Flusso’s core mechanic is task→objective alignment, aligned with ideas discussed under
+            <strong>Goal Systems Theory (Kruglanski)</strong>: linking lower-level actions to higher-order goals can increase
+            persistence and perceived meaning.
+          </p>
+        </div>
+
+        <div class="card">
+          <h2>Vision</h2>
+          <p>
+            Long term: a full web platform expanding beyond mobile constraints — advanced planning surfaces, document workflows
+            inside focus sessions, whiteboards/notes, deeper analytics, and a personal AI agent.
+          </p>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <div class="container footer-row">
+        <div style="color: var(--muted2)">© <span id="year"></span> Flusso</div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap">
+          <a href="privacy-policy.html">Privacy Policy</a>
+          <a href="terms-and-conditions.html">Terms & Conditions</a>
+          <a href="mailto:support@yourdomain.com">Contact</a>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById("year").textContent = new Date().getFullYear();
+    </script>
+  </body>
+</html>
