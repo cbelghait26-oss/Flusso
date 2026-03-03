@@ -1478,14 +1478,14 @@ export default function SettingsScreen() {
               icon="shield-checkmark-outline"
               label="Privacy policy"
               C={C}
-              onPress={() => Alert.alert("Privacy Policy", "Coming soon.")}
+              onPress={() => Linking.openURL("https://flussoapp.com/privacy-policy.html")}
             />
             <Divider C={C} />
             <ActionRow
               icon="document-text-outline"
               label="Terms and conditions"
               C={C}
-              onPress={() => Alert.alert("Terms and Conditions", "Coming soon.")}
+              onPress={() => Linking.openURL("https://flussoapp.com/terms-and-conditions")}
             />
             <Divider C={C} />
             <ActionRow

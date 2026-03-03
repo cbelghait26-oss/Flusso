@@ -9,6 +9,7 @@ import {
   Image,
   Platform,
   useWindowDimensions,
+  Linking,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useMemo, useRef, useState } from "react";
@@ -319,11 +320,11 @@ const SignInScreen = ({ navigation }: Props) => {
           />
           <Text style={[styles.legalText, { marginTop: s(52) }]}>
             By signing up, you agree to our{" "}
-            <Text style={styles.linkText} onPress={() => {}}>
+            <Text style={styles.linkText} onPress={() => Linking.openURL("https://flussoapp.com/terms-and-conditions")}>
               Terms of Service
-            </Text>{" "}
-            and{" "}
-            <Text style={styles.linkText} onPress={() => {}}>
+            </Text>{"\ "}
+            and{"\ "}
+            <Text style={styles.linkText} onPress={() => Linking.openURL("https://flussoapp.com/privacy-policy.html")}>
               Privacy Policy
             </Text>
             .
