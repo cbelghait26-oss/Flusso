@@ -1,8 +1,19 @@
 import { registerRootComponent } from 'expo';
+import { TurboModuleRegistry } from 'react-native';
 
-import App from './App';
+// Firebase JS SDK v12 calls NativeJSLogger.addListener() at module-init time.
+// On Legacy Architecture the native stub may not expose addListener, crashing
+// before AppRegistry.registerComponent runs. Guard it here via the public API.
+try {
+  const jsLogger = TurboModuleRegistry.get('JSLogger');
+  if (jsLogger && typeof jsLogger.addListener !== 'function') {
+    jsLogger.addListener = () => {};
+    jsLogger.removeListeners = () => {};
+  }
+} catch (_) {}
 
-// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
-// It also ensures that whether you load the app in Expo Go or in a native build,
-// the environment is set up appropriately
+// Must use require (not import) so this executes AFTER the polyfill above.
+// ES module `import` statements are hoisted and would load Firebase before the patch.
+const App = require('./App').default;
+
 registerRootComponent(App);

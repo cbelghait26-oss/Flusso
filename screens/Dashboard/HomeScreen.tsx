@@ -266,18 +266,15 @@ export default function HomeScreen({ navigation, route }: any) {
         >
         {/* ── Header ── */}
         <View style={styles.header}>
-          <View>
+          <View style={{ flex: 1, marginRight: s(12) }}>
             <Text style={[styles.title, { color: colors.text }]}>Dashboard</Text>
-            <Text style={[styles.subtitle, { color: colors.muted }]}>
+            <Text style={[styles.subtitle, { color: colors.muted }]} numberOfLines={1}>
               {greeting}, {name}
             </Text>
           </View>
           <View style={styles.headerActions}>
             <IconCircleButton onPress={openSearch}>
               <Ionicons name="search" size={s(20)} color={colors.text} />
-            </IconCircleButton>
-            <IconCircleButton onPress={openAddTask}>
-              <Ionicons name="add" size={s(22)} color={colors.text} />
             </IconCircleButton>
           </View>
         </View>
@@ -954,7 +951,7 @@ const styles = StyleSheet.create({
   },
   headerActions: { flexDirection: "row", gap: s(10) },
   title: { fontSize: s(28), fontWeight: "700" },
-  subtitle: { marginTop: s(2), fontSize: s(16), fontWeight: "500" },
+  subtitle: { marginTop: s(2), fontSize: s(15), fontWeight: "500" },
 
   quote: {
     fontSize: s(16),

@@ -75,7 +75,8 @@ const SignInScreen = ({ navigation }: Props) => {
                 navigation.navigate("MainTabs");
               } else {
                 // User needs to complete setup
-                navigation.navigate("Q1NameScreen", { setup: {} });
+                const displayName = userCredential.user.displayName ?? "";
+                navigation.navigate("Q1NameScreen", { setup: { name: displayName } });
               }
             } catch (e: any) {
               console.error("SignIn: Error during Google sign-in:", e);
@@ -109,7 +110,8 @@ const SignInScreen = ({ navigation }: Props) => {
               if (setupComplete) {
                 navigation.navigate("MainTabs");
               } else {
-                navigation.navigate("Q1NameScreen", { setup: {} });
+                const displayName = userCredential.user.displayName ?? "";
+                navigation.navigate("Q1NameScreen", { setup: { name: displayName } });
               }
             } catch (e: any) {
               console.error("SignIn: Error during Apple sign-in:", e);
@@ -153,7 +155,8 @@ const SignInScreen = ({ navigation }: Props) => {
                 navigation.navigate("MainTabs");
               } else {
                 // User needs to complete setup
-                navigation.navigate("Q1NameScreen", { setup: {} });
+                const displayName = userCredential.user.displayName ?? "";
+                navigation.navigate("Q1NameScreen", { setup: { name: displayName } });
               }
             } catch (e: any) {
               console.error("SignUp: Error during Google sign-up:", e);
@@ -187,7 +190,8 @@ const SignInScreen = ({ navigation }: Props) => {
               if (setupComplete) {
                 navigation.navigate("MainTabs");
               } else {
-                navigation.navigate("Q1NameScreen", { setup: {} });
+                const displayName = userCredential.user.displayName ?? "";
+                navigation.navigate("Q1NameScreen", { setup: { name: displayName } });
               }
             } catch (e: any) {
               console.error("SignUp: Error during Apple sign-up:", e);

@@ -41,6 +41,8 @@ import {
   getCurrentUser
 } from "../src/data/storage";
 import { rescheduleAllNotifications } from "../src/services/notifications";
+import { ObjectiveTutorial } from "../src/components/ui/ObjectiveTutorial";
+import { loadTutorialSeen, saveTutorialSeen } from "../src/data/storage";
 
 
 type Mode = "tasks" | "objectives";
@@ -308,8 +310,16 @@ function ObjectiveGroup({ objective, tasks, colors, radius, saving, onToggleDone
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function TasksObjectivesScreen() {
+  const [showTutorial, setShowTutorial] = useState(false);
+
   useEffect(() => {
+    loadTutorialSeen().then((seen) => { if (!seen) setShowTutorial(true); }).catch(() => {});
   }, []);
+
+  const handleTutorialDone = async () => {
+    setShowTutorial(false);
+    await saveTutorialSeen().catch(() => {});
+  };
   const { colors, radius, spacing } = useTheme();
   const { checkAchievements } = useAchievements();
   const { isTablet } = useDeviceClass();
@@ -1171,6 +1181,8 @@ export default function TasksObjectivesScreen() {
           </View>
         )}
       </BottomSheet>
+
+      <ObjectiveTutorial visible={showTutorial} onDone={handleTutorialDone} />
       </View>{/* end centering column */}
     </SafeAreaView>
   );

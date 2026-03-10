@@ -40,7 +40,10 @@ import {
   getCurrentUser,
   loadSetupData,
   loadTimeFormat24h,
+  loadFocusRoomTutorialSeen,
+  saveFocusRoomTutorialSeen,
 } from "../src/data/storage";
+import { FocusRoomTutorial } from "../src/components/ui/FocusRoomTutorial";
 import {
   generateFocusSessionId,
   onFocusWorkPhaseStarted,
@@ -81,6 +84,8 @@ export default function FocusZoneScreen({ navigation }: any) {
   const [isInRoom,         setIsInRoom]         = useState(false);
   const [currentRoom,      setCurrentRoom]      = useState(BACKGROUNDS[0]);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [showFocusTutorial, setShowFocusTutorial] = useState(false);
+  const [tutorialTargetMins, setTutorialTargetMins] = useState(60);
 
   // Timer config
   const [focusMinutes,   setFocusMinutes]   = useState(25);
@@ -179,6 +184,9 @@ export default function FocusZoneScreen({ navigation }: any) {
       try {
         const [t, o] = await Promise.all([loadTasks(), loadObjectives()]);
         setTasks(t); setObjectives(o);
+        // Cache target minutes for tutorial
+        const setup = await loadSetupData().catch(() => null);
+        if (setup?.targetMinutesPerDay) setTutorialTargetMins(setup.targetMinutesPerDay);
       } catch { }
     })();
   }, []);
@@ -450,7 +458,14 @@ export default function FocusZoneScreen({ navigation }: any) {
     "Show Timer";
 
   /* ── ROOM NAVIGATION ────────────────────────────────────────────────────── */
-  const enterRoom  = (room: typeof BACKGROUNDS[0]) => { setCurrentRoom(room); setIsInRoom(true); };
+  const enterRoom  = (room: typeof BACKGROUNDS[0]) => {
+    setCurrentRoom(room);
+    setIsInRoom(true);
+    // Show tutorial once per user
+    loadFocusRoomTutorialSeen().then((seen) => {
+      if (!seen) setShowFocusTutorial(true);
+    }).catch(() => {});
+  };
   const leaveRoom  = () => {
     void cancelFocusSessionNotifs(focusNotifSessionRef.current);
     focusNotifSessionRef.current = "";
@@ -773,6 +788,16 @@ export default function FocusZoneScreen({ navigation }: any) {
             </View>
           </View>
         </Modal>
+
+        {/* ── Focus Room Tutorial ── */}
+        <FocusRoomTutorial
+          visible={showFocusTutorial}
+          targetMinutes={tutorialTargetMins}
+          onDone={() => {
+            setShowFocusTutorial(false);
+            saveFocusRoomTutorialSeen().catch(() => {});
+          }}
+        />
 
         {/* ── Settings sheet ── */}
         <BottomSheet visible={showSettings} onClose={() => setShowSettings(false)} title="Settings">

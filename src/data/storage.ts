@@ -584,6 +584,32 @@ export async function loadSetupName(): Promise<string | null> {
   return parsed.name || null;
 }
 
+// ── Tutorial seen flag (local-only, per user) ──────────────────────────────
+
+export async function loadTutorialSeen(): Promise<boolean> {
+  requireUserId();
+  const key = `${currentUserId}:ui:tutorialSeen`;
+  const raw = await AsyncStorage.getItem(key);
+  return raw === "true";
+}
+
+export async function saveTutorialSeen() {
+  requireUserId();
+  const key = `${currentUserId}:ui:tutorialSeen`;
+  await AsyncStorage.setItem(key, "true");
+}
+
+export async function loadFocusRoomTutorialSeen(): Promise<boolean> {
+  requireUserId();
+  const raw = await AsyncStorage.getItem(`${currentUserId}:ui:focusRoomTutorialSeen`);
+  return raw === "true";
+}
+
+export async function saveFocusRoomTutorialSeen() {
+  requireUserId();
+  await AsyncStorage.setItem(`${currentUserId}:ui:focusRoomTutorialSeen`, "true");
+}
+
 /**
  * Save setup completion status to cloud and local storage
  */

@@ -23,7 +23,9 @@
         "LSApplicationQueriesSchemes": [
           "spotify",
           "spotify-action"
-        ]
+        ],
+        "NSCameraUsageDescription": "Flusso uses the camera to let you take a photo for your profile picture, for example capturing a new photo to set as your account avatar.",
+        "NSPhotoLibraryUsageDescription": "Flusso allows you to select a photo from your library to use as your profile picture, for example choosing an existing image as your account avatar."
       }
     },
     "android": {
@@ -50,11 +52,19 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Flusso allows you to select a photo from your library to use as your profile picture, for example choosing an existing image as your account avatar.",
+          "cameraPermission": "Flusso uses the camera to let you take a photo for your profile picture, for example capturing a new photo to set as your account avatar."
+        }
+      ],
+      [
         "expo-contacts",
         {
-          "contactsPermission": "Allow Flusso to access your contacts to import birthdays and anniversaries into your calendar."
+          "contactsPermission": "Flusso accesses your contacts to detect birthdays and other saved dates and add them to your calendar, for example showing a reminder for a contact's birthday."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "extra": {
       "googleWebClientId": "402208533063-jk5a2gdeqina4u0lb5cjpd7f1kh8a4k4.apps.googleusercontent.com",

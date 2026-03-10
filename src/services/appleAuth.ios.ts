@@ -59,12 +59,6 @@ export async function signInWithApple() {
   }
 
   const provider = new OAuthProvider('apple.com');
-  const credential = provider.credential({
-    idToken: appleCredential.identityToken,
-    rawNonce,
-  });
-
-  // Store display name if Apple provides it (only on first sign-in)
   const { fullName } = appleCredential;
   const displayName =
     fullName?.givenName && fullName?.familyName
@@ -73,12 +67,30 @@ export async function signInWithApple() {
 
   const currentUser = auth.currentUser;
 
+  // Helper to build a fresh credential — OAuthCredential is single-use, so
+  // we must reconstruct it rather than reusing the same object after a failure.
+  const buildCredential = () =>
+    provider.credential({ idToken: appleCredential.identityToken!, rawNonce });
+
   let userCredential;
   if (currentUser) {
-    // Existing Firebase session → link Apple credential instead of overwriting
-    userCredential = await linkWithCredential(currentUser, credential);
+    // Existing Firebase session → try to link Apple credential.
+    // Falls back to a fresh sign-in if the credential is already linked.
+    try {
+      userCredential = await linkWithCredential(currentUser, buildCredential());
+    } catch (linkErr: any) {
+      if (
+        linkErr?.code === 'auth/provider-already-linked' ||
+        linkErr?.code === 'auth/credential-already-in-use'
+      ) {
+        // Build a NEW credential — the previous one was consumed by the failed link attempt.
+        userCredential = await signInWithCredential(auth, buildCredential());
+      } else {
+        throw linkErr;
+      }
+    }
   } else {
-    userCredential = await signInWithCredential(auth, credential);
+    userCredential = await signInWithCredential(auth, buildCredential());
   }
 
   // Update profile display name if supplied (Apple only sends it once)

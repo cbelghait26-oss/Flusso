@@ -282,7 +282,7 @@ function FocusRingCard({
           fontWeight="900"
           fill={ringColor}
         >
-          {pct}%
+          {pct} %
         </SvgText>
       </Svg>
       <Text style={[styles.statLabel, { color: C.muted }]} numberOfLines={2}>
@@ -1493,7 +1493,7 @@ export default function SettingsScreen() {
               C={C}
               onPress={() =>
                 Linking.openURL(
-                  "mailto:admin@flussoapp.com?subject=Flusso%20Support&body=For%20any%20question%20or%20to%20report%20a%20bug%2C%20please%20contact%20us%20at%20admin%40flussoapp.com"
+                  "mailto:support@flussoapp.com?subject=Flusso%20Support&body=For%20any%20question%20or%20to%20report%20a%20bug%2C%20please%20contact%20us%20at%20support%40flussoapp.com"
                 )
               }
             />

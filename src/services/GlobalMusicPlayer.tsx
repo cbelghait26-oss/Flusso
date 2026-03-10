@@ -25,7 +25,6 @@ export function GlobalMusicProvider({ children }: { children: React.ReactNode })
 
     const initMusic = async () => {
       try {
-        
         // Set audio mode to allow mixing with other apps
         await Audio.setAudioModeAsync({
           playsInSilentModeIOS: true,
