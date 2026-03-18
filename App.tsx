@@ -9,25 +9,32 @@ import { onAuthStateChanged } from "firebase/auth";
 import { ThemeProvider, useTheme } from "./src/components/theme/theme";
 import { GlobalMusicProvider } from "./src/services/GlobalMusicPlayer";
 import { AchievementProvider } from "./src/context/AchievementContext";
-import { getCurrentUser, setCurrentUser, clearUserData, flushPendingCloudWrites, loadSetupComplete } from "./src/data/storage";
+import { setCurrentUser, clearUserData, flushPendingCloudWrites, loadSetupComplete, loadSetupName } from "./src/data/storage";
 import { auth } from "./src/services/firebase";
-import { bootstrapCloudForUser } from "./src/services/CloudBootstrap";
 import { initNotifications, rescheduleAllNotifications, devTestAllNotifications } from "./src/services/notifications";
 import { spotifyLoadSavedTokens } from "./src/services/SpotifyRemote";
+import { ensureUserProfile } from "./src/services/SocialService";
 
 
 import SignInScreen from "./screens/SignInScreen";
 import EmailLoginScreen from "./screens/EmailLoginScreen";
 import ForgotPasswordScreen from "./screens/ForgotPasswordScreen";
 import VerifyEmailScreen from "./screens/VerifyEmailScreen";
+import Q0WelcomeScreen from "./screens/SetupScreens/Q0WelcomeScreen";
 import Q1NameScreen from "./screens/SetupScreens/Q1NameScreen";
-import Q2OrganizeScreen from "./screens/SetupScreens/Q2OrganizeScreen";
+import Q2MovementScreen from "./screens/SetupScreens/Q2MovementScreen";
+import Q3WhyScreen from "./screens/SetupScreens/Q3WhyScreen";
 import Q4QuoteScreen from "./screens/SetupScreens/Q4QuoteScreen";
-import Q3FocusScreen from "./screens/SetupScreens/Q3FocusScreen";
-import Q5TargetScreen from "./screens/SetupScreens/Q5TargetScreen";
+import Q5ReflectionScreen from "./screens/SetupScreens/Q5ReflectionScreen";
+import Q6DirectedFocusScreen from "./screens/SetupScreens/Q6DirectedFocusScreen";
+import Q7ModelScreen from "./screens/SetupScreens/Q7ModelScreen";
+import Q8FocusCommitScreen from "./screens/SetupScreens/Q8FocusCommitScreen";
+import Q9ClosingScreen from "./screens/SetupScreens/Q9ClosingScreen";
 import SearchScreen from "./screens/Dashboard/SearchScreen";
 import AppTabs from "./src/navigation/AppTabs";
 import FocusZoneScreen from "./screens/FocusZoneScreen";
+import SocialScreen from "./screens/Social/SocialScreen";
+import AddFriendScreen from "./screens/Social/AddFriendScreen";
 
 import type { RootStackParamList } from "./src/navigation/types";
 
@@ -44,20 +51,37 @@ function AppInner({ initialRoute }: { initialRoute: keyof RootStackParamList }) 
           <Stack.Navigator
             id="RootStack"
             initialRouteName={initialRoute}
-            screenOptions={{ headerShown: false, gestureEnabled: false }}
+            screenOptions={{ headerShown: false, gestureEnabled: false, contentStyle: { backgroundColor: "#000612" } }}
           >
             <Stack.Screen name="SignIn" component={SignInScreen} />
             <Stack.Screen name="EmailLogin" component={EmailLoginScreen} />
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-            <Stack.Screen name="Q1NameScreen" component={Q1NameScreen} />
-            <Stack.Screen name="Q2OrganizeScreen" component={Q2OrganizeScreen} />
-            <Stack.Screen name="Q4QuoteScreen" component={Q4QuoteScreen} />
-            <Stack.Screen name="Q3FocusScreen" component={Q3FocusScreen} />
-            <Stack.Screen name="Q5TargetScreen" component={Q5TargetScreen} />
+            <Stack.Screen name="Q0WelcomeScreen" component={Q0WelcomeScreen}
+              options={{ animation: "fade", contentStyle: { backgroundColor: "#000612" } }} />
+            <Stack.Screen name="Q1NameScreen" component={Q1NameScreen}
+              options={{ animation: "fade", contentStyle: { backgroundColor: "#000612" } }} />
+            <Stack.Screen name="Q2MovementScreen" component={Q2MovementScreen}
+              options={{ animation: "fade", contentStyle: { backgroundColor: "#000612" } }} />
+            <Stack.Screen name="Q3WhyScreen" component={Q3WhyScreen}
+              options={{ animation: "fade", contentStyle: { backgroundColor: "#000612" } }} />
+            <Stack.Screen name="Q4QuoteScreen" component={Q4QuoteScreen}
+              options={{ animation: "fade", contentStyle: { backgroundColor: "#000612" } }} />
+            <Stack.Screen name="Q5ReflectionScreen" component={Q5ReflectionScreen}
+              options={{ animation: "fade", contentStyle: { backgroundColor: "#000612" } }} />
+            <Stack.Screen name="Q6DirectedFocusScreen" component={Q6DirectedFocusScreen}
+              options={{ animation: "fade", contentStyle: { backgroundColor: "#000612" } }} />
+            <Stack.Screen name="Q7ModelScreen" component={Q7ModelScreen}
+              options={{ animation: "fade", contentStyle: { backgroundColor: "#000612" } }} />
+            <Stack.Screen name="Q8FocusCommitScreen" component={Q8FocusCommitScreen}
+              options={{ animation: "fade", contentStyle: { backgroundColor: "#000612" } }} />
+            <Stack.Screen name="Q9ClosingScreen" component={Q9ClosingScreen}
+              options={{ animation: "fade", contentStyle: { backgroundColor: "#000612" } }} />
             <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
             <Stack.Screen name="FocusZoneScreen" component={FocusZoneScreen} />
             <Stack.Screen name="MainTabs" component={AppTabs} />
             <Stack.Screen name="Search" component={SearchScreen} />
+            <Stack.Screen name="Social" component={SocialScreen} options={{ animation: "slide_from_right" }} />
+            <Stack.Screen name="AddFriend" component={AddFriendScreen} options={{ animation: "slide_from_right" }} />
           </Stack.Navigator>
         </NavigationContainer>
       </GlobalMusicProvider>
@@ -70,77 +94,100 @@ export default function App() {
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>("SignIn");
 
   useEffect(() => {
-    // Initialise notifications early — sets foreground handler + requests permission.
-    // Non-blocking: failures are gracefully suppressed inside initNotifications.
     initNotifications().catch(() => {});
-    // Expose test helper to Hermes debugger console in dev builds.
     if (__DEV__) {
       (global as any).devTestNotifs = devTestAllNotifications;
     }
   }, []);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const savedUserId = await getCurrentUser();
-        const firebaseUser = auth.currentUser;
+    // Use onAuthStateChanged for the initial route decision.
+    // Firebase restores the persisted token asynchronously, so reading
+    // auth.currentUser directly at mount is a race condition — the listener
+    // fires only after Firebase has definitively resolved the auth state.
+    let resolved = false;
 
-        if (savedUserId && firebaseUser && firebaseUser.uid === savedUserId) {
-          await firebaseUser.reload();
-          if (!firebaseUser.emailVerified) {
-            setInitialRoute("VerifyEmail");
-            return;
-          }
-          const setupComplete = await loadSetupComplete();
-          setInitialRoute(setupComplete ? "MainTabs" : "Q1NameScreen");
-          // Silently restore Spotify session from cloud (existing login)
-          spotifyLoadSavedTokens().catch(() => {});
-        } else if (firebaseUser) {
-          await setCurrentUser(firebaseUser.uid);
-          await firebaseUser.reload();
-          if (!firebaseUser.emailVerified) {
-            setInitialRoute("VerifyEmail");
-            return;
-          }
-          const setupComplete = await loadSetupComplete();
-          setInitialRoute(setupComplete ? "MainTabs" : "Q1NameScreen");
-          // Reschedule after user is loaded
-          rescheduleAllNotifications().catch(() => {});
-          // Silently restore Spotify session from cloud (new/re-authenticated login)
-          spotifyLoadSavedTokens().catch(() => {});
-        } else {
-          setInitialRoute("SignIn");
-        }
-      } catch (error) {
-        console.error("App: Error checking auth:", error);
+    // Safety fallback: if Firebase or the network is completely unresponsive,
+    // show sign-in after 8 s instead of leaving the user on the loading spinner.
+    const masterTimeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
         setInitialRoute("SignIn");
-      } finally {
         setInitializing(false);
       }
-    };
+    }, 8000);
 
-    checkAuth();
-  }, []);
-
-  useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        await setCurrentUser(user.uid);
-        // Silently restore Spotify session on every auth state change (login / return from bg)
-        spotifyLoadSavedTokens().catch(() => {});
-        if (typeof flushPendingCloudWrites === "function") {
-          await flushPendingCloudWrites();
+      try {
+        if (user) {
+          // setCurrentUser sets currentUserId synchronously before its first await,
+          // so requireUserId() will work immediately. Run the async parts in the background
+          // so they never block the routing decision.
+          setCurrentUser(user.uid).catch(() => {});
+          spotifyLoadSavedTokens().catch(() => {});
+          // Ensure the user has a public profile + friend tag in Firestore.
+          // Load the name the user chose during setup (email/password accounts
+          // have no displayName in Firebase Auth).
+          ;(async () => {
+            try {
+              const storedName = await loadSetupName();
+              await ensureUserProfile(
+                storedName ?? user.displayName ?? null,
+                user.photoURL ?? null
+              );
+            } catch {}
+          })();
+          if (typeof flushPendingCloudWrites === "function") {
+            flushPendingCloudWrites().catch(() => {});
+          }
+
+          // Only set the initial route once (first listener call)
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(masterTimeout);
+
+            // Give user.reload() at most 3 s — skip if the network is slow/offline.
+            await Promise.race([
+              user.reload().catch(() => {}),
+              new Promise<void>(res => setTimeout(res, 3000)),
+            ]);
+
+            if (!user.emailVerified) {
+              setInitialRoute("VerifyEmail");
+            } else {
+              const setupComplete = await loadSetupComplete();
+              setInitialRoute(setupComplete ? "MainTabs" : "Q1NameScreen");
+              rescheduleAllNotifications().catch(() => {});
+            }
+            setInitializing(false);
+          }
+        } else {
+          // Signed out — clear app-level data in the background
+          if (typeof clearUserData === "function") {
+            clearUserData().catch(() => {});
+          }
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(masterTimeout);
+            setInitialRoute("SignIn");
+            setInitializing(false);
+          }
         }
-        const name = user.displayName ?? "";
-        const email = user.email ?? "";
-        await bootstrapCloudForUser({ name, email });
-      } else {
-        if (typeof clearUserData === "function") {
-          await clearUserData();
+      } catch (error) {
+        console.error("App: auth state error:", error);
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(masterTimeout);
+          setInitialRoute("SignIn");
+          setInitializing(false);
         }
       }
     });
-    return () => unsub();
+
+    return () => {
+      clearTimeout(masterTimeout);
+      unsub();
+    };
   }, []);
 
   if (initializing) {

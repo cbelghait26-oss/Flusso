@@ -181,6 +181,7 @@ export function useCalendarItems(params: Params) {
           completed: false,
           colorKey,
           meta: `task deadline ${objective?.title ?? ""} ${fmtDateSearch(date)}`.trim(),
+          trainingPlanId: (t as any).trainingPlanId ?? undefined,
         });
       }
     }

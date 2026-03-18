@@ -1,6 +1,7 @@
 ﻿// CalendarScreen.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   FlatList,
   InteractionManager,
@@ -34,6 +35,8 @@ import { SideDrawer } from "../src/components/calendar/SideDrawer";
 import { generateDefaultHolidays } from "../src/data/holidays";
 import { useDeviceClass, WIDE_MAX_WIDTH } from "../src/ui/responsive";
 import { rescheduleAllNotifications } from "../src/services/notifications";
+import { auth } from "../src/services/firebase";
+import { getFriends, createSharedEvent, getMySharedEvents, leaveSharedEvent, kickParticipantFromEvent, setHideParticipants, updateSharedEvent, sendFriendRequest, type SharedEvent } from "../src/services/SocialService";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -175,6 +178,26 @@ export default function CalendarScreenV2() {
   /** In-memory contact events derived from stored ContactDateItem[]. Never persisted to localEvents. */
   const [contactEvents, setContactEvents] = useState<LocalEvent[]>([]);
 
+  const [calFriends, setCalFriends] = useState<{ uid: string; displayName: string; friendTag: string }[]>([]);
+  const friendUids = useMemo(() => new Set(calFriends.map((f) => f.uid)), [calFriends]);
+
+  const [myUid, setMyUid] = useState(auth.currentUser?.uid ?? "");
+  useEffect(() => {
+    return auth.onAuthStateChanged((u) => setMyUid(u?.uid ?? ""));
+  }, []);
+  const sharedEventMapRef = useRef<Map<string, SharedEvent>>(new Map());
+  const [editingSharedEvent, setEditingSharedEvent] = useState<SharedEvent | null>(null);
+
+  useEffect(() => {
+    getFriends().then((fs) => {
+      setCalFriends(fs.map((f) => ({
+        uid: f.profile.uid,
+        displayName: f.profile.displayName,
+        friendTag: f.profile.friendTag ?? "",
+      })));
+    }).catch(() => {});
+  }, []);
+
   const { loading, reload, items, itemsByDay, events, setEvents } = useCalendarItems({
     query,
     showEvents,
@@ -183,6 +206,24 @@ export default function CalendarScreenV2() {
     showHolidays,
     contactEvents,
   });
+
+  const sharedEventsRef = useRef<LocalEvent[]>([]);
+
+  function sharedEvtToLocal(e: SharedEvent): LocalEvent {
+    const isMine = e.creator_id === (auth.currentUser?.uid ?? "");
+    return {
+      id: `shared_${e.id}`,
+      title: isMine ? e.title : `${e.title}${e.creator_name ? " · " + e.creator_name : ""}`,
+      allDay: true,
+      startDate: e.date,
+      startTime: "00:00",
+      endDate: e.date,
+      endTime: "23:59",
+      color: "teal",
+      reminder: "none",
+      calendarSource: "local",
+    };
+  }
 
   // Load events from storage on mount
   useEffect(() => {
@@ -197,7 +238,15 @@ export default function CalendarScreenV2() {
         );
         const newHolidays = holidays.filter((h) => !existingHolidayIds.has(h.id));
 
-        setEvents([...userEvents, ...newHolidays]);
+        // Load shared events (events friends have shared with me)
+        try {
+          const shared = await getMySharedEvents();
+          sharedEventMapRef.current = new Map(shared.map((e) => [e.id, e]));
+          const uid = auth.currentUser?.uid ?? "";
+          sharedEventsRef.current = shared.filter((e) => e.creator_id !== uid).map(sharedEvtToLocal);
+        } catch {}
+
+        setEvents([...userEvents, ...newHolidays, ...sharedEventsRef.current]);
       } catch (error) {
         console.error("Failed to load events:", error);
       }
@@ -245,6 +294,22 @@ export default function CalendarScreenV2() {
     React.useCallback(() => {
       reload();
     }, [reload])
+  );
+
+  // Refresh shared events when screen comes into focus (new shares may have arrived)
+  useFocusEffect(
+    React.useCallback(() => {
+      getMySharedEvents().then((shared) => {
+        sharedEventMapRef.current = new Map(shared.map((e) => [e.id, e]));
+        const uid = auth.currentUser?.uid ?? "";
+        sharedEventsRef.current = shared.filter((e) => e.creator_id !== uid).map(sharedEvtToLocal);
+        setEvents((prev) => {
+          const withoutShared = prev.filter((e) => !e.id?.startsWith("shared_"));
+          return [...withoutShared, ...sharedEventsRef.current];
+        });
+      }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
   );
 
   // Search animation
@@ -321,7 +386,17 @@ export default function CalendarScreenV2() {
       byKey.set(key, existing ? pickBetter(existing, it, todayStr) : it);
     }
 
-    return Array.from(byKey.values()).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const deduped = Array.from(byKey.values()).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+    // For training-plan tasks, keep only the earliest upcoming one per plan
+    const planMap = new Map<string, CalItem>();
+    const nonPlan: CalItem[] = [];
+    for (const it of deduped) {
+      if (!it.trainingPlanId) { nonPlan.push(it); continue; }
+      const ex = planMap.get(it.trainingPlanId);
+      if (!ex || it.date < ex.date) planMap.set(it.trainingPlanId, it);
+    }
+    return [...nonPlan, ...planMap.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }, [items, queryTrimmed]);
 
   const formatResultDate = (d: YMD): string => {
@@ -359,6 +434,15 @@ export default function CalendarScreenV2() {
             const ev = events.find((e) => `event:${e.id}` === it.id);
             if (ev) {
               setEditingEvent(ev);
+              if (ev.id?.startsWith("shared_")) {
+                const firestoreId = ev.id.replace(/^shared_/, "").split("_r")[0];
+                setEditingSharedEvent(sharedEventMapRef.current.get(firestoreId) ?? null);
+              } else {
+                const matchingShared = [...sharedEventMapRef.current.values()].find(
+                  (e) => e.creator_id === myUid && e.title === ev.title && e.date === ev.startDate
+                );
+                setEditingSharedEvent(matchingShared ?? null);
+              }
               setCreateOpen(true);
             }
           }
@@ -429,8 +513,19 @@ export default function CalendarScreenV2() {
 
     setEvents(updatedEvents);
 
+    // If creator is editing a shared event, sync title/date to Firestore
+    if (editingSharedEvent && editingSharedEvent.creator_id === myUid) {
+      const cleanTitle = firstEvent.title.replace(/\s*[·].*$/i, "").trim();
+      updateSharedEvent(editingSharedEvent.id, { title: cleanTitle, date: firstEvent.startDate })
+        .then(() => {
+          const updated = { ...editingSharedEvent, title: cleanTitle, date: firstEvent.startDate };
+          sharedEventMapRef.current.set(editingSharedEvent.id, updated);
+        })
+        .catch(() => {});
+    }
+
     try {
-      const userEvents = updatedEvents.filter((e) => !e.id?.startsWith("holiday_"));
+      const userEvents = updatedEvents.filter((e) => !e.id?.startsWith("holiday_") && !e.id?.startsWith("shared_"));
       await saveLocalEvents(userEvents);
       rescheduleAllNotifications().catch(() => {});
     } catch (error) {
@@ -440,7 +535,15 @@ export default function CalendarScreenV2() {
 
   // Delete an event (and all its recurrence instances) by base ID
   const deleteEvent = async (eventToDelete: any) => {
-    const baseId = eventToDelete?.id?.split("_r")[0] ?? eventToDelete?.id;
+    const rawId: string = eventToDelete?.id ?? "";
+    const baseId = rawId.split("_r")[0];
+
+    // Shared events: remove self from participants on Firestore; deletion is local only
+    if (rawId.startsWith("shared_")) {
+      const firestoreId = rawId.replace(/^shared_/, "");
+      leaveSharedEvent(firestoreId).catch(() => {});
+    }
+
     const updatedEvents = events.filter((e) => {
       if (!e.id) return true;
       const eBaseId = e.id.split("_r")[0];
@@ -452,7 +555,7 @@ export default function CalendarScreenV2() {
     setEditingEvent(null);
 
     try {
-      const userEvents = updatedEvents.filter((e) => !e.id?.startsWith("holiday_"));
+      const userEvents = updatedEvents.filter((e) => !e.id?.startsWith("holiday_") && !e.id?.startsWith("shared_"));
       await saveLocalEvents(userEvents);
       rescheduleAllNotifications().catch(() => {});
     } catch (error) {
@@ -764,6 +867,17 @@ export default function CalendarScreenV2() {
                   setEditingEvent(fullEvent);
                 }
 
+                // Track shared event metadata for participant management
+                if (fullEvent.id?.startsWith("shared_")) {
+                  const firestoreId = fullEvent.id.replace(/^shared_/, "").split("_r")[0];
+                  setEditingSharedEvent(sharedEventMapRef.current.get(firestoreId) ?? null);
+                } else {
+                  const matchingShared = [...sharedEventMapRef.current.values()].find(
+                    (e) => e.creator_id === myUid && e.title === fullEvent.title && e.date === fullEvent.startDate
+                  );
+                  setEditingSharedEvent(matchingShared ?? null);
+                }
+
                 setCreateOpen(true);
               }}
               style={[
@@ -894,6 +1008,7 @@ export default function CalendarScreenV2() {
       <Pressable
         onPress={() => {
           setEditingEvent(null);
+          setEditingSharedEvent(null);
           setCreateOpen(true);
         }}
         onLongPress={() => setDrawerOpen(true)}
@@ -944,10 +1059,58 @@ export default function CalendarScreenV2() {
         onClose={() => {
           setCreateOpen(false);
           setEditingEvent(null);
+          setEditingSharedEvent(null);
         }}
         onSaveEvent={saveEvent}
         onDeleteEvent={deleteEvent}
         editingEvent={editingEvent}
+        friends={calFriends}
+        onShare={(inviteeUids, title, date) => {
+          createSharedEvent(title, date, inviteeUids).catch(() => {});
+        }}
+        myUid={myUid}
+        friendUids={friendUids}
+        sharedEventData={editingSharedEvent ? {
+          creator_id: editingSharedEvent.creator_id,
+          participants: editingSharedEvent.participants,
+          hideParticipants: editingSharedEvent.hideParticipants,
+        } : null}
+        onKickParticipant={(targetUid) => {
+          if (!editingSharedEvent) return;
+          kickParticipantFromEvent(editingSharedEvent.id, targetUid)
+            .then(() => {
+              // Update local map
+              const updated = {
+                ...editingSharedEvent,
+                participantUids: editingSharedEvent.participantUids.filter((u) => u !== targetUid),
+                participants: editingSharedEvent.participants.filter((p) => p.uid !== targetUid),
+              };
+              sharedEventMapRef.current.set(editingSharedEvent.id, updated);
+              setEditingSharedEvent(updated);
+            })
+            .catch(() => {});
+        }}
+        onToggleHideParticipants={(hide) => {
+          if (!editingSharedEvent) return;
+          setHideParticipants(editingSharedEvent.id, hide)
+            .then(() => {
+              const updated = { ...editingSharedEvent, hideParticipants: hide };
+              sharedEventMapRef.current.set(editingSharedEvent.id, updated);
+              setEditingSharedEvent(updated);
+            })
+            .catch(() => {});
+        }}
+        onLeaveSharedEvent={() => {
+          if (editingEvent) deleteEvent(editingEvent);
+        }}
+        onAddFriend={(uid) => {
+          sendFriendRequest(uid)
+            .then((res) => {
+              if (res.ok) Alert.alert("Request sent", "Friend request sent!");
+              else Alert.alert("Already connected", res.error ?? "Request already sent.");
+            })
+            .catch(() => {});
+        }}
       />
     </SafeAreaView>
   );

@@ -35,7 +35,7 @@ type Step = {
   title: string;
   body: string;
   /** The animated "mock UI card" rendered beneath the text */
-  visual: "objective" | "task" | "progress";
+  visual: "objective" | "task" | "progress" | "training";
 };
 
 const STEPS: Step[] = [
@@ -59,6 +59,13 @@ const STEPS: Step[] = [
     title: "Watch your progress grow",
     body: "Flusso automatically tracks how many tasks you complete per objective, so you always know how close you are to achieving it.",
     visual: "progress",
+  },
+  {
+    icon: "barbell-outline",
+    iconColor: "#AF52DE",
+    title: "Train with a plan",
+    body: "Under any Health & Fitness objective you can attach a Training Plan. Choose a cycle split (Push/Pull/Legs…) or a weekly schedule — Flusso generates your workouts as tasks automatically, showing only the next one at a time.",
+    visual: "training",
   },
 ];
 
@@ -121,6 +128,40 @@ function ProgressCard({ colors, radius, pulse }: { colors: any; radius: any; pul
         <Text style={[styles.mockSmallText, { color: colors.muted }]}>4 / 6 tasks done</Text>
         <Text style={[styles.mockSmallText, { color: "#007AFF", fontWeight: "700" }]}>67 %</Text>
       </View>
+    </View>
+  );
+}
+
+function TrainingCard({ colors, radius, pulse }: { colors: any; radius: any; pulse: Animated.Value }) {
+  const translateY = pulse.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
+  const DAYS = ["Push", "Pull", "Legs", "Rest"];
+  const COLORS = ["#AF52DE", "#007AFF", "#34C759", colors.border];
+  return (
+    <View style={[styles.mockCard, { backgroundColor: colors.surface, borderRadius: radius.lg, flexDirection: "column", alignItems: "flex-start", gap: s(8) }]}>
+      {/* Plan header */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: s(8), width: "100%" }}>
+        <Ionicons name="barbell-outline" size={s(16)} color="#AF52DE" />
+        <View style={[styles.mockLine, { flex: 1, backgroundColor: colors.text, opacity: 0.8 }]} />
+        <View style={{ paddingHorizontal: s(8), paddingVertical: s(2), borderRadius: s(999), backgroundColor: "#AF52DE22" }}>
+          <Text style={{ color: "#AF52DE", fontSize: s(10), fontWeight: "800" }}>Cycle</Text>
+        </View>
+      </View>
+      {/* Cycle day chips */}
+      <View style={{ flexDirection: "row", gap: s(6), flexWrap: "wrap" }}>
+        {DAYS.map((label, i) => (
+          <View key={label} style={{ paddingHorizontal: s(8), paddingVertical: s(4), borderRadius: s(999), backgroundColor: COLORS[i] + "22", borderWidth: s(1), borderColor: COLORS[i] + "55" }}>
+            <Text style={{ color: COLORS[i], fontSize: s(11), fontWeight: "800" }}>{label}</Text>
+          </View>
+        ))}
+      </View>
+      {/* Next workout task */}
+      <Animated.View style={{ flexDirection: "row", alignItems: "center", gap: s(8), width: "100%", transform: [{ translateY }] }}>
+        <Ionicons name="checkmark-circle-outline" size={s(18)} color="#AF52DE" />
+        <View style={[styles.mockLine, { flex: 1, backgroundColor: colors.text, opacity: 0.7 }]} />
+        <View style={{ paddingHorizontal: s(6), paddingVertical: s(2), borderRadius: s(999), backgroundColor: "#AF52DE15" }}>
+          <Text style={{ color: "#AF52DE", fontSize: s(10), fontWeight: "700" }}>Next</Text>
+        </View>
+      </Animated.View>
     </View>
   );
 }
@@ -230,6 +271,7 @@ export function ObjectiveTutorial({ visible, onDone }: Props) {
               {current.visual === "objective" && <ObjectiveCard colors={colors} radius={radius} pulse={pulseAnim} />}
               {current.visual === "task"      && <TaskCard      colors={colors} radius={radius} pulse={pulseAnim} />}
               {current.visual === "progress"  && <ProgressCard  colors={colors} radius={radius} pulse={pulseAnim} />}
+              {current.visual === "training"  && <TrainingCard  colors={colors} radius={radius} pulse={pulseAnim} />}
             </View>
           </Animated.View>
 

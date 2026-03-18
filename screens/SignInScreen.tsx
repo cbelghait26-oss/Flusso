@@ -76,7 +76,7 @@ const SignInScreen = ({ navigation }: Props) => {
               } else {
                 // User needs to complete setup
                 const displayName = userCredential.user.displayName ?? "";
-                navigation.navigate("Q1NameScreen", { setup: { name: displayName } });
+                navigation.navigate("Q0WelcomeScreen", { setup: { name: displayName } });
               }
             } catch (e: any) {
               console.error("SignIn: Error during Google sign-in:", e);
@@ -111,7 +111,7 @@ const SignInScreen = ({ navigation }: Props) => {
                 navigation.navigate("MainTabs");
               } else {
                 const displayName = userCredential.user.displayName ?? "";
-                navigation.navigate("Q1NameScreen", { setup: { name: displayName } });
+                navigation.navigate("Q0WelcomeScreen", { setup: { name: displayName } });
               }
             } catch (e: any) {
               console.error("SignIn: Error during Apple sign-in:", e);
@@ -156,7 +156,7 @@ const SignInScreen = ({ navigation }: Props) => {
               } else {
                 // User needs to complete setup
                 const displayName = userCredential.user.displayName ?? "";
-                navigation.navigate("Q1NameScreen", { setup: { name: displayName } });
+                navigation.navigate("Q0WelcomeScreen", { setup: { name: displayName } });
               }
             } catch (e: any) {
               console.error("SignUp: Error during Google sign-up:", e);
@@ -191,7 +191,7 @@ const SignInScreen = ({ navigation }: Props) => {
                 navigation.navigate("MainTabs");
               } else {
                 const displayName = userCredential.user.displayName ?? "";
-                navigation.navigate("Q1NameScreen", { setup: { name: displayName } });
+                navigation.navigate("Q0WelcomeScreen", { setup: { name: displayName } });
               }
             } catch (e: any) {
               console.error("SignUp: Error during Apple sign-up:", e);
@@ -429,5 +429,19 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
     fontWeight: "600",
     color: "#F4F6F2",
+  },
+  devButton: {
+    marginTop: s(16),
+    paddingVertical: s(8),
+    paddingHorizontal: s(20),
+    borderRadius: s(8),
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  devButtonText: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: s(13),
+    fontWeight: "500",
   },
 });

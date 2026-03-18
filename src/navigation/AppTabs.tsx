@@ -23,6 +23,21 @@ import CalendarScreenV2 from "../../screens/CalendarScreen";
 import SettingsScreen from "../../screens/SettingsScreen";
 import { s } from "../ui/ts";
 import { useTheme } from "../components/theme/theme";
+import { auth } from "../services/firebase";
+import { getIncomingRequests, getMySharedInvites } from "../services/SocialService";
+
+// Module-level setter so FlussoTabBar can receive updates without prop drilling
+let setPendingBadgeCount: ((n: number) => void) | null = null;
+
+export function refreshPendingBadge() {
+  if (!auth.currentUser) return;
+  Promise.all([
+    getIncomingRequests().catch(() => []),
+    getMySharedInvites().catch(() => []),
+  ]).then(([reqs, invites]) => {
+    setPendingBadgeCount?.((reqs.length + invites.length));
+  }).catch(() => {});
+}
 
 type TabsParamList = {
   HomeTab: { setupData?: any } | undefined;
@@ -76,6 +91,13 @@ function getTabIcon(routeName: keyof TabsParamList) {
  */
 function FlussoTabBar({ state, descriptors, navigation, resetTimerFn }: BottomTabBarProps & { resetTimerFn: () => void }) {
   const { colors } = useTheme();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    setPendingBadgeCount = setPendingCount;
+    refreshPendingBadge();
+    return () => { if (setPendingBadgeCount === setPendingCount) setPendingBadgeCount = null; };
+  }, []);
 
   return (
     <View style={styles.wrap} pointerEvents="box-none">
@@ -151,6 +173,7 @@ function FlussoTabBar({ state, descriptors, navigation, resetTimerFn }: BottomTa
           // Normal tabs
           const label = getTabLabel(name);
           const iconName = getTabIcon(name) as any;
+          const showBadge = name === "SettingsTab" && pendingCount > 0;
 
           return (
             <Pressable
@@ -174,14 +197,28 @@ function FlussoTabBar({ state, descriptors, navigation, resetTimerFn }: BottomTa
                     },
                   ]}
                 >
-                  <Ionicons name={iconName} size={18} color={colors.text} />
+                  <View>
+                    <Ionicons name={iconName} size={18} color={colors.text} />
+                    {showBadge && (
+                      <View style={{ position: "absolute", top: -4, right: -6, minWidth: s(15), height: s(15), borderRadius: s(8), backgroundColor: "#FF3B30", alignItems: "center", justifyContent: "center", paddingHorizontal: s(2) }}>
+                        <Text style={{ color: "#fff", fontSize: s(9), fontWeight: "900" }}>{pendingCount > 99 ? "99+" : pendingCount}</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={[styles.activeLabel, { color: colors.text }]}>
                     {label}
                   </Text>
                 </View>
               ) : (
                 <View style={styles.inactiveIconWrap}>
-                  <Ionicons name={iconName} size={22} color={colors.muted} />
+                  <View>
+                    <Ionicons name={iconName} size={22} color={colors.muted} />
+                    {showBadge && (
+                      <View style={{ position: "absolute", top: -4, right: -4, minWidth: s(16), height: s(16), borderRadius: s(8), backgroundColor: "#FF3B30", alignItems: "center", justifyContent: "center", paddingHorizontal: s(2) }}>
+                        <Text style={{ color: "#fff", fontSize: s(9), fontWeight: "900" }}>{pendingCount > 99 ? "99+" : pendingCount}</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
               )}
             </Pressable>

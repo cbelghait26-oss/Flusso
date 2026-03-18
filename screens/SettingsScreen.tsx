@@ -52,6 +52,7 @@ import {
   loadSetupData,
   saveSetupData,
   clearUserData,
+  flushPendingCloudWrites,
   deleteAllCloudData,
   getCurrentUser,
   todayKey,
@@ -90,6 +91,7 @@ import {
   type NotifSettings,
   DEFAULT_NOTIF_SETTINGS,
 } from "../src/services/notifications";
+import { getMyProfile, ensureUserProfile, tagFromUid } from "../src/services/SocialService";
 
 type TabKey = "profile" | "settings" | "achievements";
 
@@ -302,6 +304,11 @@ export default function SettingsScreen() {
   // ── Data ──────────────────────────────────────────────────────────────────
   const [profileName, setProfileNameState] = useState<string>("");
   const [profileEmail, setProfileEmail] = useState<string>("");
+  // Derive the tag immediately from the UID — deterministic, no Firestore call needed.
+  const [friendTag] = useState<string>(() => {
+    const uid = auth.currentUser?.uid;
+    return uid ? tagFromUid(uid) : "";
+  });
   const [completedCount, setCompletedCount] = useState<number>(0);
   const [focusMinToday, setFocusMinToday] = useState<number>(0);
   const [streakDays, setStreakDays] = useState<number>(0);
@@ -351,6 +358,7 @@ export default function SettingsScreen() {
   const [accentSheetVisible, setAccentSheetVisible] = useState(false);
 
   // ── Email verification ────────────────────────────────────────────────────
+  const [emailDetailModal, setEmailDetailModal] = useState(false);
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [changeEmailModal, setChangeEmailModal] = useState(false);
   const [changeEmailNew, setChangeEmailNew] = useState("");
@@ -432,6 +440,12 @@ export default function SettingsScreen() {
 
     const pic = await loadProfilePicture();
     setProfilePic(pic);
+
+    // Sync profile to Firestore using the locally-loaded name & pic
+    // (email/password accounts have displayName == null and photoURL == null in Firebase Auth)
+    if (auth.currentUser) {
+      ensureUserProfile(n || null, pic || null).catch(() => {});
+    }
 
     // ── Weekly chart data ─────────────────────────────────────────────────
     const today = todayKey();
@@ -719,11 +733,11 @@ export default function SettingsScreen() {
 
   // ── Tabs ──────────────────────────────────────────────────────────────────
   const tabs: { key: TabKey; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-    { key: "profile", label: "Profile", icon: "person-circle-outline" },
     { key: "settings", label: "Settings", icon: "settings-outline" },
+    { key: "profile", label: "Profile", icon: "person-circle-outline" },
     { key: "achievements", label: "Achievements", icon: "trophy-outline" },
   ];
-  const [tab, setTab] = useState<TabKey>("settings");
+  const [tab, setTab] = useState<TabKey>("profile");
 
   // ── Name editor ───────────────────────────────────────────────────────────
   const [nameModal, setNameModal] = useState(false);
@@ -742,6 +756,7 @@ export default function SettingsScreen() {
               const v = (value ?? "").trim();
               setProfileNameState(v);
               await saveSetupName(v);
+              ensureUserProfile(v || null, auth.currentUser?.photoURL ?? null).catch(() => {});
             },
           },
         ],
@@ -759,6 +774,7 @@ export default function SettingsScreen() {
     setProfileNameState(v);
     setNameModal(false);
     await saveSetupName(v);
+    ensureUserProfile(v || null, auth.currentUser?.photoURL ?? null).catch(() => {});
   };
 
   // ── Daily focus goal editor ──────────────────────────────────────────────
@@ -861,6 +877,8 @@ export default function SettingsScreen() {
         style: "destructive",
         onPress: async () => {
           try {
+            // Flush any pending cloud writes (e.g. setup data) before clearing local state
+            await flushPendingCloudWrites();
             await clearUserData();
             await auth.signOut();
             navigation.reset({ index: 0, routes: [{ name: "SignIn" }] });
@@ -1010,7 +1028,12 @@ export default function SettingsScreen() {
             {profileName || profileEmail || "Your profile & settings"}
           </Text>
         </View>
-        <ProfileAvatar pic={profilePic} name={profileName} accent={C.accent} size={40} />
+        <Pressable
+          onPress={() => setTab("profile")}
+          style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+        >
+          <ProfileAvatar pic={profilePic} name={profileName} accent={C.accent} size={40} />
+        </Pressable>
       </View>
 
       {/* ══ Segmented tabs ══ */}
@@ -1081,6 +1104,25 @@ export default function SettingsScreen() {
               <Text style={[styles.identityName, { color: C.text }]} numberOfLines={2}>
                 {profileName || "Your name"}
               </Text>
+              {!!profileEmail && (
+                <Text style={{ color: C.muted, fontSize: s(12), fontWeight: "600", marginTop: s(2) }} numberOfLines={1}>
+                  {profileEmail}
+                </Text>
+              )}
+              {friendTag ? (
+                <Pressable
+                  onPress={() => {
+                    Clipboard.setString(`#${friendTag}`);
+                    Alert.alert("Copied", `#${friendTag} copied to clipboard.`);
+                  }}
+                  style={{ flexDirection: "row", alignItems: "center", gap: s(4), marginTop: s(3) }}
+                >
+                  <Text style={{ color: C.accent, fontSize: s(13), fontWeight: "800", letterSpacing: 0.5 }}>
+                    #{friendTag}
+                  </Text>
+                  <Ionicons name="copy-outline" size={s(12)} color={C.accent + "99"} />
+                </Pressable>
+              ) : null}
             </View>
             <Pressable
               onPress={() => { setEditNameDraft(profileName); setEditPicDraft(profilePic); setEditProfileModal(true); }}
@@ -1128,6 +1170,18 @@ export default function SettingsScreen() {
           {/* Activity chart */}
           <SectionHeader title="This week's activity" C={C} />
           <WeeklyActivityChart data={weeklyData} C={C} />
+
+          {/* Social */}
+          <SectionHeader title="Social" C={C} />
+          <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
+            <ActionRow
+              icon="people-outline"
+              label="Friends & Leaderboard"
+              value="Social Hub"
+              C={C}
+              onPress={() => navigation.navigate("Social")}
+            />
+          </View>
         </ScrollView>
       )}
 
@@ -1153,68 +1207,10 @@ export default function SettingsScreen() {
             <ActionRow
               icon="mail-outline"
               label="Email"
-              value={profileEmail ? "Tap to copy" : "Not set"}
+              value={profileEmail || "Not set"}
               C={C}
-              onPress={copyEmail}
-              showChevron={false}
-              right={<Ionicons name="copy-outline" size={s(16)} color={C.muted} />}
+              onPress={() => setEmailDetailModal(true)}
             />
-            <Divider C={C} />
-            {/* Change email */}
-            <ActionRow
-              icon="pencil-outline"
-              label="Change email"
-              C={C}
-              onPress={() => { setChangeEmailNew(""); setChangeEmailPassword(""); setChangeEmailPending(false); setChangeEmailModal(true); }}
-            />
-            <Divider C={C} />
-            {/* Email verification status */}
-            <View style={[styles.settingsRow, { height: "auto" as any, paddingVertical: s(12), flexDirection: "column", alignItems: "flex-start", gap: s(8) }]}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: s(10) }}>
-                <View style={[styles.iconWrap, { backgroundColor: (isEmailVerified ? C.success : "#F97316") + "20" }]}>
-                  <Ionicons
-                    name={isEmailVerified ? "shield-checkmark-outline" : "shield-outline"}
-                    size={s(16)}
-                    color={isEmailVerified ? C.success : "#F97316"}
-                  />
-                </View>
-                <View>
-                  <Text style={[styles.rowLabel, { color: C.text }]}>Email verification</Text>
-                  <Text style={{ fontSize: s(12), fontWeight: "700", color: isEmailVerified ? C.success : "#F97316", marginTop: s(1) }}>
-                    {isEmailVerified ? "Verified ✓" : "Not verified"}
-                  </Text>
-                </View>
-              </View>
-              {!isEmailVerified && (
-                <View style={{ flexDirection: "row", gap: s(8), paddingLeft: s(40) }}>
-                  <Pressable
-                    onPress={handleResendVerification}
-                    disabled={resendingVerif || resendCooldown > 0}
-                    style={({ pressed }) => ({
-                      paddingVertical: s(6), paddingHorizontal: s(12),
-                      borderRadius: s(8), backgroundColor: "#F97316" + "18",
-                      borderWidth: s(1), borderColor: "#F97316" + "44",
-                      opacity: pressed || resendingVerif || resendCooldown > 0 ? 0.6 : 1,
-                    })}
-                  >
-                    <Text style={{ color: "#F97316", fontSize: s(12), fontWeight: "800" }}>
-                      {resendingVerif ? "Sending…" : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend email"}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={handleRefreshVerification}
-                    style={({ pressed }) => ({
-                      paddingVertical: s(6), paddingHorizontal: s(12),
-                      borderRadius: s(8), backgroundColor: C.accent + "18",
-                      borderWidth: s(1), borderColor: C.accent + "44",
-                      opacity: pressed ? 0.7 : 1,
-                    })}
-                  >
-                    <Text style={{ color: C.accent, fontSize: s(12), fontWeight: "800" }}>I verified</Text>
-                  </Pressable>
-                </View>
-              )}
-            </View>
             <Divider C={C} />
             {/* Notifications – expandable chevron row */}
             <Pressable
@@ -1992,6 +1988,8 @@ export default function SettingsScreen() {
                 if (editPicDraft !== profilePic) {
                   await saveProfilePicture(editPicDraft);
                 }
+                // Pass the actual pic (base64), not Firebase Auth photoURL which is always null
+                ensureUserProfile(v || null, editPicDraft ?? null).catch(() => {});
                 setEditProfileModal(false);
               }}
               style={{
@@ -2002,6 +2000,67 @@ export default function SettingsScreen() {
               }}
             >
               <Text style={{ color: "#fff", fontSize: s(15), fontWeight: "900" }}>Save changes</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Email detail modal */}
+      <Modal
+        visible={emailDetailModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEmailDetailModal(false)}
+      >
+        <View style={[styles.sheetBackdrop, { alignItems: "center", justifyContent: "center", padding: s(20) }]}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setEmailDetailModal(false)} />
+          <View style={[styles.modalCard, { backgroundColor: C.card, width: "100%" }]}>
+            {/* Header */}
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: s(18) }}>
+              <Text style={{ color: C.text, fontWeight: "900", fontSize: s(16) }}>Email</Text>
+              <Pressable onPress={() => setEmailDetailModal(false)} hitSlop={s(10)}>
+                <Ionicons name="close" size={s(20)} color={C.text} />
+              </Pressable>
+            </View>
+            {/* Email address */}
+            <View style={{ borderRadius: s(12), backgroundColor: C.card2, borderWidth: s(1), borderColor: C.line, paddingHorizontal: s(14), paddingVertical: s(12), marginBottom: s(14) }}>
+              <Text style={{ color: C.muted, fontSize: s(11), fontWeight: "700", marginBottom: s(3) }}>LINKED EMAIL</Text>
+              <Text style={{ color: C.text, fontSize: s(14), fontWeight: "800" }} selectable>{profileEmail || "Not set"}</Text>
+            </View>
+            {/* Verification status */}
+            <View style={{ borderRadius: s(12), backgroundColor: (isEmailVerified ? C.success : "#F97316") + "12", borderWidth: s(1), borderColor: (isEmailVerified ? C.success : "#F97316") + "40", paddingHorizontal: s(14), paddingVertical: s(12), marginBottom: s(14) }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: s(8) }}>
+                <Ionicons name={isEmailVerified ? "shield-checkmark" : "shield-outline"} size={s(18)} color={isEmailVerified ? C.success : "#F97316"} />
+                <Text style={{ color: isEmailVerified ? C.success : "#F97316", fontWeight: "900", fontSize: s(13) }}>
+                  {isEmailVerified ? "Email verified" : "Email not verified"}
+                </Text>
+              </View>
+              {!isEmailVerified && (
+                <View style={{ flexDirection: "row", gap: s(8), marginTop: s(10) }}>
+                  <Pressable
+                    onPress={handleResendVerification}
+                    disabled={resendingVerif || resendCooldown > 0}
+                    style={({ pressed }) => ({ paddingVertical: s(7), paddingHorizontal: s(14), borderRadius: s(8), backgroundColor: "#F97316" + "18", borderWidth: s(1), borderColor: "#F97316" + "44", opacity: pressed || resendingVerif || resendCooldown > 0 ? 0.6 : 1 })}
+                  >
+                    <Text style={{ color: "#F97316", fontSize: s(12), fontWeight: "800" }}>
+                      {resendingVerif ? "Sending…" : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend email"}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleRefreshVerification}
+                    style={({ pressed }) => ({ paddingVertical: s(7), paddingHorizontal: s(14), borderRadius: s(8), backgroundColor: C.accent + "18", borderWidth: s(1), borderColor: C.accent + "44", opacity: pressed ? 0.7 : 1 })}
+                  >
+                    <Text style={{ color: C.accent, fontSize: s(12), fontWeight: "800" }}>I verified</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+            {/* Change email button */}
+            <Pressable
+              onPress={() => { setEmailDetailModal(false); setChangeEmailNew(""); setChangeEmailPassword(""); setChangeEmailPending(false); setChangeEmailModal(true); }}
+              style={({ pressed }) => ({ height: s(48), borderRadius: s(12), backgroundColor: C.accent, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.85 : 1 })}
+            >
+              <Text style={{ color: "#fff", fontWeight: "900", fontSize: s(14) }}>Change email</Text>
             </Pressable>
           </View>
         </View>

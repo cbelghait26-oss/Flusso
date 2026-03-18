@@ -41,6 +41,7 @@ import {
   loadNotifPrefs,
   saveNotifPrefs,
 } from "../data/storage";
+import { storePushToken } from "./SocialService";
 
 import type { LocalEvent } from "../components/calendar/types";
 
@@ -249,6 +250,16 @@ export async function initNotifications(): Promise<boolean> {
     });
   }
 
+  // Register for remote push notifications and persist the token to Firestore
+  // so other users can send notifications to this device.
+  try {
+    const { data: token } = await Notifications.getExpoPushTokenAsync({
+      projectId: "a60164e5-2286-47bb-a7ad-5b579567b662",
+    });
+    storePushToken(token).catch(() => {});
+  } catch {
+    // Fails on simulators or when not logged in yet — safe to ignore
+  }
 
   // Non-blocking reschedule
   rescheduleAllNotifications().catch(() => {});

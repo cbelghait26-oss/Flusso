@@ -19,7 +19,7 @@ export type FocusSettingsData = {
 };
 import { doc, setDoc, getDoc, collection, getDocs, writeBatch, deleteDoc } from "firebase/firestore";
 import { db } from "../services/firebase";
-import type { Objective, Task, CalendarEvent } from "./models";
+import type { Objective, Task, CalendarEvent, TrainingPlan } from "./models";
 
 const STATIC_KEYS = {
   CURRENT_USER: "auth:currentUser",
@@ -55,6 +55,8 @@ const KEYS = {
   SPOTIFY_TOKENS: () => `${currentUserId}:spotify:tokens`,
   // Notification preferences (per-user, cloud-backed)
   NOTIF_SETTINGS: () => `${currentUserId}:notif:settings`,
+  // Training plans
+  TRAINING_PLANS: () => `${currentUserId}:data:trainingPlans`,
 };
 
 const memoryStore = new Map<string, string>();
@@ -207,6 +209,15 @@ async function loadSetupPayload(): Promise<any> {
   requireUserId();
   const cached = getMemoryJson<any>(KEYS.SETUP());
   if (cached) return cached;
+  // Check durable AsyncStorage copy before hitting Firestore (survives memory clears)
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.SETUP());
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      setMemoryJson(KEYS.SETUP(), parsed);
+      return parsed;
+    }
+  } catch {}
   const cloud = await loadFromCloud("setup");
   if (cloud) {
     setMemoryJson(KEYS.SETUP(), cloud);
@@ -529,6 +540,84 @@ export async function setObjectiveCompleted(objectiveId: string, completed: bool
   await updateObjective(objectiveId, { status: completed ? "completed" : "active" });
 }
 
+// ── Training plans ────────────────────────────────────────────────────────────
+
+export async function loadTrainingPlans(): Promise<TrainingPlan[]> {
+  requireUserId();
+  const cached = getMemoryJson<TrainingPlan[]>(KEYS.TRAINING_PLANS());
+  if (cached !== null) return cached;
+
+  const localRaw = await AsyncStorage.getItem(KEYS.TRAINING_PLANS());
+  if (localRaw) {
+    try {
+      const local = JSON.parse(localRaw) as TrainingPlan[];
+      const arr = Array.isArray(local) ? local : [];
+      setMemoryJson(KEYS.TRAINING_PLANS(), arr);
+      return arr;
+    } catch {}
+  }
+
+  const cloud = await loadFromCloud("trainingPlans");
+  if (cloud) {
+    setMemoryJson(KEYS.TRAINING_PLANS(), cloud);
+    await AsyncStorage.setItem(KEYS.TRAINING_PLANS(), JSON.stringify(cloud));
+    return cloud as TrainingPlan[];
+  }
+
+  setMemoryJson(KEYS.TRAINING_PLANS(), []);
+  await AsyncStorage.setItem(KEYS.TRAINING_PLANS(), JSON.stringify([]));
+  return [];
+}
+
+export async function saveTrainingPlans(plans: TrainingPlan[]) {
+  requireUserId();
+  setMemoryJson(KEYS.TRAINING_PLANS(), plans);
+  await AsyncStorage.setItem(KEYS.TRAINING_PLANS(), JSON.stringify(plans));
+  syncToCloud("trainingPlans", plans).catch(() => {});
+}
+
+export async function addTrainingPlan(plan: TrainingPlan) {
+  const plans = await loadTrainingPlans();
+  await saveTrainingPlans([...plans, plan]);
+}
+
+export async function updateTrainingPlan(id: string, patch: Partial<TrainingPlan>) {
+  const plans = await loadTrainingPlans();
+  await saveTrainingPlans(plans.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+}
+
+export async function deleteTrainingPlan(id: string) {
+  const plans = await loadTrainingPlans();
+  await saveTrainingPlans(plans.filter((p) => p.id !== id));
+  // Remove generated tasks
+  const tasks = await loadTasks();
+  await saveTasks(tasks.filter((t) => t.trainingPlanId !== id));
+  await syncCalendarFromTasks();
+}
+
+/** Replace all future (not yet completed) generated tasks for a plan with new ones. */
+export async function replacePlanTasks(
+  planId: string,
+  newTasks: Array<Omit<Task, "id" | "createdAt">>
+) {
+  const tasks = await loadTasks();
+  const today = new Date().toISOString().split("T")[0];
+  // Keep completed plan tasks and non-plan tasks; discard future pending plan tasks
+  const kept = tasks.filter(
+    (t) =>
+      t.trainingPlanId !== planId ||
+      t.status === "completed" ||
+      (t.deadline ?? "") < today
+  );
+  const created: Task[] = newTasks.map((t) => ({
+    ...t,
+    id: uid("task"),
+    createdAt: new Date().toISOString(),
+  }));
+  await saveTasks([...kept, ...created]);
+  await syncCalendarFromTasks();
+}
+
 export async function loadCalendarEvents(): Promise<CalendarEvent[]> {
   requireUserId();
   const cached = getMemoryJson<CalendarEvent[]>(KEYS.CAL_EVENTS());
@@ -626,6 +715,8 @@ export async function saveSetupComplete(isComplete: boolean) {
 export async function saveSetupData(setupData: any) {
   requireUserId();
   setMemoryJson(KEYS.SETUP(), setupData);
+  // Persist to AsyncStorage so setup status survives memory clears and app restarts
+  await AsyncStorage.setItem(KEYS.SETUP(), JSON.stringify(setupData));
   // Fire and forget - don't block on cloud sync
   syncToCloud("setup", setupData).catch((e) => {
     console.error("saveSetupData: Cloud sync failed (non-blocking):", e);
@@ -1113,7 +1204,8 @@ export async function clearUserData() {
   if (!currentUserId) return;
   
   const userKeys = [
-    KEYS.SETUP(),
+    // KEYS.SETUP() intentionally excluded — setup payload is user-scoped and kept in
+    // AsyncStorage so the same user logging back in skips the Firestore round-trip.
     KEYS.OBJECTIVES(),
     KEYS.TASKS(),
     KEYS.CAL_EVENTS(),

@@ -2,13 +2,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { auth } from "./firebase";
 
-// Lazy-require breaks the circular dependency:
-// FlussoStore → CloudAutoPush → FlussoStore
-function autoPush(): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require('./CloudAutoPush').cloudAutoPushNow();
-}
-
 export type ObjectiveStatus = "active" | "paused" | "completed";
 export type ObjectiveTimeRange = "short" | "medium" | "long";
 
@@ -248,7 +241,6 @@ export async function createObjective(payload: {
   const settings: Settings = { ...data.settings };
 
   await saveData({ ...data, objectives, settings });
-  await autoPush();
   return { ok: true as const, objective };
 }
 
@@ -268,7 +260,6 @@ export async function deleteObjective(objectiveId: string) {
   }
 
   await saveData({ objectives: recomputeObjectives(objectives, tasks), tasks, settings });
-  await autoPush();
   return { ok: true as const };
 }
 
@@ -279,7 +270,6 @@ export async function setActiveObjective(objectiveId: string) {
 
   const settings = { ...data.settings, activeObjectiveId: objectiveId };
   await saveData({ ...data, settings });
-  await autoPush();
   return { ok: true as const };
 }
 
@@ -349,7 +339,6 @@ export async function createTask(payload: {
   const tasks = [...data.tasks, task];
   const objectives = recomputeObjectives(data.objectives, tasks);
   await saveData({ ...data, tasks, objectives });
-  await autoPush();
   return { ok: true as const, task };
 }
 
@@ -376,7 +365,6 @@ export async function toggleTaskCompletion(taskId: string) {
 
   const objectives = recomputeObjectives(data.objectives, tasks);
   await saveData({ ...data, tasks, objectives, settings });
-  await autoPush();
   return { ok: true as const, task: next };
 }
 

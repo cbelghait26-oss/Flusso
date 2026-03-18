@@ -11,6 +11,7 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -95,8 +96,34 @@ export function CreateSheet(props: {
   onSaveEvent: (ev: LocalEvent | LocalEvent[]) => Promise<void>;
   onDeleteEvent?: (ev: LocalEvent) => Promise<void> | void;
   editingEvent?: LocalEvent | null;
+  /** Optional list of friends to show a share-with picker. Only rendered for event mode. */
+  friends?: { uid: string; displayName: string; friendTag: string }[];
+  /** Called after the event is saved, with the list of selected friend UIDs, the title, and the start date. */
+  onShare?: (inviteeUids: string[], title: string, date: YMD) => void;
+  /** Current user's UID — used for shared event permission checks. */
+  myUid?: string;
+  /** If editing a shared event, pass its Firestore data here. */
+  sharedEventData?: { creator_id: string; participants: { uid: string; displayName: string }[]; hideParticipants?: boolean } | null;
+  /** Creator kicks a participant from the shared event. */
+  onKickParticipant?: (uid: string) => void;
+  /** Creator toggles participant visibility for others. */
+  onToggleHideParticipants?: (hide: boolean) => void;
+  /** Guest leaves (quit) the shared event. */
+  onLeaveSharedEvent?: () => void;
+  /** UIDs of users the current user is already friends with (for quick-add in guest view). */
+  friendUids?: Set<string>;
+  /** Called when a guest taps the quick-add button next to a participant they’re not friends with. */
+  onAddFriend?: (uid: string) => void;
 }) {
-  const { theme, visible, insets, defaultDate, onClose, onSaveEvent, onDeleteEvent, editingEvent } = props;
+  const {
+    theme, visible, insets, defaultDate, onClose, onSaveEvent, onDeleteEvent,
+    editingEvent, friends, onShare,
+    myUid, sharedEventData, onKickParticipant, onToggleHideParticipants, onLeaveSharedEvent,
+    friendUids, onAddFriend,
+  } = props;
+
+  const { width, height } = useWindowDimensions();
+  const isTablet = Math.min(width, height) >= 768;
 
   const sheetY = useRef(new Animated.Value(s(999))).current;
 
@@ -122,6 +149,10 @@ export function CreateSheet(props: {
   const [notes, setNotes] = useState("");
   const [bdayDate, setBdayDate] = useState<YMD>(defaultDate);
   const [birthYear, setBirthYear] = useState<number>(2000);
+
+  const [invitees, setInvitees] = useState<Set<string>>(new Set());
+  const [friendSearch, setFriendSearch] = useState("");
+  const [friendPickerOpen, setFriendPickerOpen] = useState(false);
 
   const [datePicker, setDatePicker] = useState<null | { kind: "start" | "end" | "bday" }>(null);
   const [timePicker, setTimePicker] = useState<null | { kind: "start" | "end" }>(null);
@@ -179,6 +210,9 @@ export function CreateSheet(props: {
     setYearPicker(false);
     setRecurrencePicker(false);
     setMoreOptionsOpen(false);
+    setInvitees(new Set());
+    setFriendSearch("");
+    setFriendPickerOpen(false);
   }, [visible, defaultDate, editingEvent]);
 
   useEffect(() => {
@@ -196,15 +230,12 @@ export function CreateSheet(props: {
       return "";
     }
     if (!title.trim()) return "Add a title";
-    if (allDay) {
-      if (ymdCompare(endDate, startDate) < 0) return "End date must be after start date";
-      return "";
+    if (!allDay) {
+      if (!isValidHM(startTime) || !isValidHM(endTime)) return "Time format: HH:MM";
+      if (endTime <= startTime) return "End time must be after start";
     }
-    if (!isValidHM(startTime) || !isValidHM(endTime)) return "Time format: HH:MM";
-    if (ymdCompare(endDate, startDate) < 0) return "End date must be after start date";
-    if (startDate === endDate && endTime <= startTime) return "End must be after start";
     return "";
-  }, [mode, title, allDay, startTime, endTime, startDate, endDate]);
+  }, [mode, title, allDay, startTime, endTime]);
 
   const canSave = !error;
 
@@ -286,7 +317,7 @@ export function CreateSheet(props: {
     const ev: LocalEvent = {
       id: baseId, title: t, allDay,
       startDate, startTime: allDay ? "00:00" : startTime,
-      endDate: allDay ? startDate : endDate,
+      endDate: startDate,
       endTime: allDay ? "23:59" : endTime,
       location: location.trim() || undefined,
       notes: notes.trim() || undefined,
@@ -299,6 +330,7 @@ export function CreateSheet(props: {
     } else {
       await onSaveEvent(ev);
     }
+    if (onShare && invitees.size > 0) onShare([...invitees], t, startDate);
     onClose();
   };
 
@@ -327,6 +359,11 @@ export function CreateSheet(props: {
   const headerIcon = mode === "birthday" ? "gift-outline" : "calendar-outline";
   const titlePlaceholder = mode === "birthday" ? "Add name" : "Add title";
   const headerLabel = editingEvent ? "Edit Event" : mode === "birthday" ? "New Birthday" : "New Event";
+
+  // Shared event permissions
+  const isSharedEvent = !!sharedEventData;
+  const isCreatorOfShared = isSharedEvent && sharedEventData!.creator_id === myUid;
+  const isGuestOfShared = isSharedEvent && !isCreatorOfShared;
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
@@ -419,76 +456,305 @@ export function CreateSheet(props: {
           <ScrollView contentContainerStyle={{ paddingHorizontal: s(14), paddingBottom: s(10) }} showsVerticalScrollIndicator={false}>
             {mode !== "birthday" ? (
               <>
-                <RowCard theme={theme} icon="time-outline" title="All-day" right={<Switch value={allDay} onValueChange={setAllDay} />} />
-
-                <RowCard theme={theme} icon="calendar-outline" title="Start"
-                  right={
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      <Pill theme={theme} text={startDate} onPress={() => setDatePicker({ kind: "start" })} rightIcon="chevron-down" />
-                      {!allDay && (
-                        <View style={{ marginLeft: s(8) }}>
-                          <Pill theme={theme} text={formatHM12(startTime)} onPress={() => setTimePicker({ kind: "start" })} rightIcon="chevron-down" />
+                {/* ── Guest-only shared event view ── */}
+                {isGuestOfShared ? (
+                  <View style={{ gap: s(7), paddingTop: s(4) }}>
+                    {/* Date */}
+                    <RowCard theme={theme} icon="calendar-outline" title="Date"
+                      right={<Pill theme={theme} text={startDate} />}
+                    />
+                    {/* Time */}
+                    {!allDay && (
+                      <RowCard theme={theme} icon="time-outline" title="Time"
+                        right={
+                          <Text style={{ color: theme.colors.text, fontWeight: "700", fontSize: s(13) }}>
+                            {formatHM12(startTime)} → {formatHM12(endTime)}
+                          </Text>
+                        }
+                      />
+                    )}
+                    {/* Location */}
+                    <RowCard theme={theme} icon="location-outline" title="Location"
+                      right={location
+                        ? <Text style={{ color: theme.colors.text, fontWeight: "700", fontSize: s(13) }}>{location}</Text>
+                        : <Text style={{ color: theme.colors.muted, fontSize: s(13) }}>None</Text>}
+                    />
+                    {/* Participant list (visible unless hidden by creator) */}
+                    {!sharedEventData!.hideParticipants && sharedEventData!.participants.length > 0 && (
+                      <View style={{ borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, padding: s(12) }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: s(8) }}>
+                          <View style={{ width: s(32), height: s(32), borderRadius: s(12), alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border, marginRight: s(10) }}>
+                            <Ionicons name="people-outline" size={s(16)} color={theme.colors.muted} />
+                          </View>
+                          <Text style={{ color: theme.colors.text, fontWeight: "800", fontSize: s(13) }}>Participants</Text>
                         </View>
-                      )}
-                    </View>
-                  }
-                />
-
-                <RowCard theme={theme} icon="calendar-outline" title="End"
-                  right={
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      <Pill theme={theme} text={endDate} onPress={() => setDatePicker({ kind: "end" })} rightIcon="chevron-down" />
-                      {!allDay && (
-                        <View style={{ marginLeft: s(8) }}>
-                          <Pill theme={theme} text={formatHM12(endTime)} onPress={() => setTimePicker({ kind: "end" })} rightIcon="chevron-down" />
-                        </View>
-                      )}
-                    </View>
-                  }
-                />
-
-                <Pressable
-                  onPress={() => setMoreOptionsOpen(!moreOptionsOpen)}
-                  style={{
-                    marginTop: s(10), borderRadius: s(18), borderWidth: s(1),
-                    borderColor: theme.colors.border, backgroundColor: theme.colors.card,
-                    padding: s(12), flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-                  }}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <View style={{
-                      width: s(32), height: s(32), borderRadius: s(12),
-                      alignItems: "center", justifyContent: "center",
-                      backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border, marginRight: s(10),
-                    }}>
-                      <Ionicons name="options-outline" size={s(16)} color={theme.colors.muted} />
-                    </View>
-                    <Text style={{ color: theme.colors.text, fontWeight: "800", fontSize: s(13) }}>More Options</Text>
+                        {sharedEventData!.participants.map((p) => {
+                          const isHost = p.uid === sharedEventData!.creator_id;
+                          const isSelf = p.uid === myUid;
+                          const alreadyFriend = isHost || isSelf || (friendUids?.has(p.uid) ?? false);
+                          return (
+                            <View key={p.uid} style={{ flexDirection: "row", alignItems: "center", paddingVertical: s(6), gap: s(10) }}>
+                              <View style={{ width: s(30), height: s(30), borderRadius: s(15), backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border, alignItems: "center", justifyContent: "center" }}>
+                                <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: s(12) }}>{p.displayName.charAt(0).toUpperCase()}</Text>
+                              </View>
+                              <Text style={{ flex: 1, color: theme.colors.text, fontWeight: "700", fontSize: s(13) }}>{p.displayName}</Text>
+                              {isHost ? (
+                                <View style={{ paddingHorizontal: s(8), paddingVertical: s(2), borderRadius: s(999), backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border }}>
+                                  <Text style={{ color: theme.colors.muted, fontSize: s(11), fontWeight: "800" }}>Host</Text>
+                                </View>
+                              ) : !alreadyFriend ? (
+                                <Pressable
+                                  onPress={() => onAddFriend?.(p.uid)}
+                                  hitSlop={s(8)}
+                                  style={({ pressed }) => ({
+                                    flexDirection: "row", alignItems: "center", gap: s(4),
+                                    paddingHorizontal: s(8), paddingVertical: s(4),
+                                    borderRadius: s(999), borderWidth: s(1),
+                                    borderColor: theme.colors.accent,
+                                    backgroundColor: theme.colors.card2,
+                                    opacity: pressed ? 0.7 : 1,
+                                  })}
+                                >
+                                  <Ionicons name="person-add-outline" size={s(12)} color={theme.colors.accent} />
+                                  <Text style={{ color: theme.colors.accent, fontSize: s(11), fontWeight: "800" }}>Add</Text>
+                                </Pressable>
+                              ) : null}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
                   </View>
-                  <Ionicons name={moreOptionsOpen ? "chevron-up" : "chevron-down"} size={s(20)} color={theme.colors.muted} />
-                </Pressable>
+                ) : (
+                  <View style={{ gap: s(7), paddingTop: s(4) }}>
+                    {/* ── Compact Datetime Card ── */}
+                    <View style={{ borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, overflow: "hidden" }}>
+                      {/* Start → End row */}
+                      <View style={{ flexDirection: "row", alignItems: "center", padding: s(12), gap: s(8) }}>
+                        <View style={{ width: s(32), height: s(32), borderRadius: s(12), alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border }}>
+                          <Ionicons name="time-outline" size={s(16)} color={theme.colors.muted} />
+                        </View>
+                        {isTablet ? (
+                          <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: s(6) }}>
+                            <Pill theme={theme} text={startDate} onPress={() => setDatePicker({ kind: "start" })} rightIcon="chevron-down" />
+                            {!allDay && (
+                              <>
+                                <Pill theme={theme} text={formatHM12(startTime)} onPress={() => setTimePicker({ kind: "start" })} rightIcon="chevron-down" />
+                                <Ionicons name="arrow-forward" size={s(12)} color={theme.colors.muted} />
+                                <Pill theme={theme} text={formatHM12(endTime)} onPress={() => setTimePicker({ kind: "end" })} rightIcon="chevron-down" />
+                              </>
+                            )}
+                          </View>
+                        ) : (
+                          <View style={{ flex: 1, gap: s(4) }}>
+                            <Pill theme={theme} text={startDate} onPress={() => setDatePicker({ kind: "start" })} rightIcon="chevron-down" compact />
+                            {!allDay && (
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: s(4) }}>
+                                <Pill theme={theme} text={formatHM12(startTime)} onPress={() => setTimePicker({ kind: "start" })} rightIcon="chevron-down" compact />
+                                <Ionicons name="arrow-forward" size={s(10)} color={theme.colors.muted} />
+                                <Pill theme={theme} text={formatHM12(endTime)} onPress={() => setTimePicker({ kind: "end" })} rightIcon="chevron-down" compact />
+                              </View>
+                            )}
+                          </View>
+                        )}
+                      </View>
 
-                {moreOptionsOpen && (
-                  <View style={{ marginLeft: s(20), marginTop: s(6), paddingLeft: s(12), borderLeftWidth: s(2), borderLeftColor: theme.colors.border }}>
-                    <RowCard theme={theme} icon="repeat-outline" title="Repeat"
-                      right={<Pill theme={theme} text={recurrenceLabel(recurrence)} onPress={() => setRecurrencePicker(true)} rightIcon="chevron-down" />}
-                    />
-                    <RowCard theme={theme} icon="notifications-outline" title="Reminder"
-                      right={
-                        <Pill theme={theme} text={reminderLabel(reminder)}
-                          onPress={() => {
-                            const i = REMINDER_ORDER.indexOf(reminder);
-                            setReminder(REMINDER_ORDER[(i + 1) % REMINDER_ORDER.length] ?? "10min");
-                          }}
-                          rightIcon="chevron-forward"
-                        />
-                      }
-                    />
+                      {/* All-day toggle */}
+                      <View style={{ height: s(1), backgroundColor: theme.colors.border, marginHorizontal: s(12) }} />
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: s(12), paddingVertical: s(10) }}>
+                        <Text style={{ color: theme.colors.text, fontWeight: "800", fontSize: s(13) }}>All day</Text>
+                        <Switch value={allDay} onValueChange={setAllDay} />
+                      </View>
+
+                      {/* More options (Repeat + Reminder) */}
+                      <View style={{ height: s(1), backgroundColor: theme.colors.border, marginHorizontal: s(12) }} />
+                      <Pressable
+                        onPress={() => setMoreOptionsOpen(!moreOptionsOpen)}
+                        style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: s(12), paddingVertical: s(10) }}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: s(8) }}>
+                          <Ionicons name="options-outline" size={s(15)} color={theme.colors.muted} />
+                          <Text style={{ color: theme.colors.muted, fontWeight: "700", fontSize: s(13) }}>More options</Text>
+                        </View>
+                        <Ionicons name={moreOptionsOpen ? "chevron-up" : "chevron-down"} size={s(16)} color={theme.colors.muted} />
+                      </Pressable>
+                      {moreOptionsOpen && (
+                        <View style={{ borderTopWidth: s(1), borderTopColor: theme.colors.border, paddingHorizontal: s(12), paddingBottom: s(8) }}>
+                          <RowCard theme={theme} icon="repeat-outline" title="Repeat"
+                            right={<Pill theme={theme} text={recurrenceLabel(recurrence)} onPress={() => setRecurrencePicker(true)} rightIcon="chevron-down" />}
+                          />
+                          <RowCard theme={theme} icon="notifications-outline" title="Reminder"
+                            right={
+                              <Pill theme={theme} text={reminderLabel(reminder)}
+                                onPress={() => {
+                                  const i = REMINDER_ORDER.indexOf(reminder);
+                                  setReminder(REMINDER_ORDER[(i + 1) % REMINDER_ORDER.length] ?? "10min");
+                                }}
+                                rightIcon="chevron-forward"
+                              />
+                            }
+                          />
+                        </View>
+                      )}
+                    </View>
+
+                    {/* ── Location ── */}
+                    <View style={{ borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, padding: s(12), flexDirection: "row", alignItems: "center" }}>
+                      <View style={{ width: s(32), height: s(32), borderRadius: s(12), alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border, marginRight: s(10) }}>
+                        <Ionicons name="location-outline" size={s(16)} color={theme.colors.muted} />
+                      </View>
+                      <TextInput value={location} onChangeText={setLocation} placeholder="Add location" placeholderTextColor={theme.colors.muted} style={{ flex: 1, color: theme.colors.text, fontWeight: "800", fontSize: s(13) }} />
+                      {!!location && (
+                        <Pressable onPress={() => setLocation("")} hitSlop={s(10)} style={{ marginLeft: s(10) }}>
+                          <Ionicons name="close" size={s(18)} color={theme.colors.muted} />
+                        </Pressable>
+                      )}
+                    </View>
+
+                    {/* ── Add people ── */}
+                    {friends && friends.length > 0 && (
+                      <View style={{ borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, padding: s(12) }}>
+                        <Pressable
+                          onPress={() => { setFriendPickerOpen((v) => !v); setFriendSearch(""); }}
+                          style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: s(10), opacity: pressed ? 0.75 : 1 })}
+                        >
+                          <View style={{ width: s(32), height: s(32), borderRadius: s(12), alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border }}>
+                            <Ionicons name="people-outline" size={s(16)} color={invitees.size > 0 ? theme.colors.accent : theme.colors.muted} />
+                          </View>
+                          {invitees.size === 0 ? (
+                            <Text style={{ flex: 1, color: theme.colors.muted, fontWeight: "700", fontSize: s(13) }}>Add people</Text>
+                          ) : (
+                            <Text style={{ flex: 1, color: theme.colors.accent, fontWeight: "800", fontSize: s(13) }} numberOfLines={1}>
+                              {[...invitees].map((uid) => friends.find((f) => f.uid === uid)?.displayName ?? uid).join(", ")}
+                            </Text>
+                          )}
+                          <Ionicons name={friendPickerOpen ? "chevron-up" : "chevron-down"} size={s(14)} color={theme.colors.muted} />
+                        </Pressable>
+
+                        {friendPickerOpen && (
+                          <View style={{ marginTop: s(8) }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", borderRadius: s(10), borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.border, backgroundColor: theme.colors.surface2 ?? "rgba(255,255,255,0.06)", paddingHorizontal: s(10), marginBottom: s(4), gap: s(8) }}>
+                              <Ionicons name="search" size={s(14)} color={theme.colors.muted} />
+                              <TextInput
+                                value={friendSearch}
+                                onChangeText={setFriendSearch}
+                                placeholder="Search friends…"
+                                placeholderTextColor={theme.colors.muted}
+                                autoCorrect={false}
+                                autoCapitalize="none"
+                                style={{ flex: 1, color: theme.colors.text, fontWeight: "700", fontSize: s(13), paddingVertical: s(7) }}
+                              />
+                              {!!friendSearch && (
+                                <Pressable onPress={() => setFriendSearch("")} hitSlop={s(8)}>
+                                  <Ionicons name="close-circle" size={s(14)} color={theme.colors.muted} />
+                                </Pressable>
+                              )}
+                            </View>
+                            {friends
+                              .filter((f) => {
+                                const q = friendSearch.toLowerCase();
+                                return !q || f.displayName.toLowerCase().includes(q) || f.friendTag.toLowerCase().includes(q);
+                              })
+                              .slice(0, 3)
+                              .map((f) => {
+                                const isSel = invitees.has(f.uid);
+                                return (
+                                  <Pressable
+                                    key={f.uid}
+                                    onPress={() => { setInvitees((prev) => { const n = new Set(prev); isSel ? n.delete(f.uid) : n.add(f.uid); return n; }); setFriendSearch(""); }}
+                                    style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", paddingVertical: s(8), gap: s(10), opacity: pressed ? 0.7 : 1 })}
+                                  >
+                                    <View style={{ width: s(30), height: s(30), borderRadius: s(15), backgroundColor: isSel ? theme.colors.accent : (theme.colors.surface2 ?? "rgba(255,255,255,0.06)"), alignItems: "center", justifyContent: "center", borderWidth: isSel ? 0 : StyleSheet.hairlineWidth, borderColor: theme.colors.border }}>
+                                      <Text style={{ color: isSel ? "#fff" : theme.colors.text, fontWeight: "900", fontSize: s(12) }}>{f.displayName.charAt(0).toUpperCase()}</Text>
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={{ fontSize: s(13), fontWeight: "800", color: theme.colors.text }} numberOfLines={1}>{f.displayName}</Text>
+                                      <Text style={{ fontSize: s(10), color: theme.colors.muted }}>#{f.friendTag}</Text>
+                                    </View>
+                                    {isSel && <Ionicons name="checkmark-circle" size={s(16)} color={theme.colors.accent} />}
+                                  </Pressable>
+                                );
+                              })}
+                            {friendSearch.length > 0 && friends.filter((f) => { const q = friendSearch.toLowerCase(); return f.displayName.toLowerCase().includes(q) || f.friendTag.toLowerCase().includes(q); }).length === 0 && (
+                              <Text style={{ color: theme.colors.muted, fontSize: s(12), fontWeight: "700", paddingVertical: s(6) }}>No friends match "{friendSearch}"</Text>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    )}
+
+                    {/* ── Participant management (creator of shared event) ── */}
+                    {isCreatorOfShared && sharedEventData!.participants.length > 0 && (
+                      <View style={{ borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, padding: s(12) }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: s(8) }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: s(10) }}>
+                            <View style={{ width: s(32), height: s(32), borderRadius: s(12), alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border }}>
+                              <Ionicons name="people-outline" size={s(16)} color={theme.colors.muted} />
+                            </View>
+                            <Text style={{ color: theme.colors.text, fontWeight: "800", fontSize: s(13) }}>Participants</Text>
+                          </View>
+                          <Pressable
+                            onPress={() => onToggleHideParticipants?.(!sharedEventData!.hideParticipants)}
+                            style={{ flexDirection: "row", alignItems: "center", gap: s(6) }}
+                          >
+                            <Text style={{ color: theme.colors.muted, fontSize: s(12), fontWeight: "700" }}>
+                              {sharedEventData!.hideParticipants ? "Hidden from guests" : "Visible to guests"}
+                            </Text>
+                            <Ionicons
+                              name={sharedEventData!.hideParticipants ? "eye-off-outline" : "eye-outline"}
+                              size={s(16)}
+                              color={theme.colors.muted}
+                            />
+                          </Pressable>
+                        </View>
+                        {sharedEventData!.participants.map((p) => (
+                          <View key={p.uid} style={{ flexDirection: "row", alignItems: "center", paddingVertical: s(6), gap: s(10) }}>
+                            <View style={{ width: s(30), height: s(30), borderRadius: s(15), backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border, alignItems: "center", justifyContent: "center" }}>
+                              <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: s(12) }}>{p.displayName.charAt(0).toUpperCase()}</Text>
+                            </View>
+                            <Text style={{ flex: 1, color: theme.colors.text, fontWeight: "700", fontSize: s(13) }}>{p.displayName}</Text>
+                            {p.uid === sharedEventData!.creator_id ? (
+                              <View style={{ paddingHorizontal: s(8), paddingVertical: s(2), borderRadius: s(999), backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border }}>
+                                <Text style={{ color: theme.colors.muted, fontSize: s(11), fontWeight: "800" }}>Host</Text>
+                              </View>
+                            ) : (
+                              <Pressable
+                                onPress={() => {
+                                  Alert.alert("Remove participant?", `Remove ${p.displayName} from this event?`, [
+                                    { text: "Cancel", style: "cancel" },
+                                    { text: "Remove", style: "destructive", onPress: () => onKickParticipant?.(p.uid) },
+                                  ]);
+                                }}
+                                hitSlop={s(8)}
+                                style={{ padding: s(4) }}
+                              >
+                                <Ionicons name="remove-circle-outline" size={s(20)} color="#FF3B30" />
+                              </Pressable>
+                            )}
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    {/* ── Color ── */}
+                    <ColorSection theme={theme} color={color} setColor={setColor} />
+
+                    {/* ── Description ── */}
+                    <View style={{ borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, paddingHorizontal: s(12), paddingVertical: s(11), flexDirection: "row", alignItems: "flex-start" }}>
+                      <View style={{ width: s(32), height: s(32), borderRadius: s(12), alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border, marginRight: s(10), marginTop: s(1) }}>
+                        <Ionicons name="document-text-outline" size={s(16)} color={theme.colors.muted} />
+                      </View>
+                      <TextInput
+                        value={notes}
+                        onChangeText={setNotes}
+                        placeholder="Add description"
+                        placeholderTextColor={theme.colors.muted}
+                        multiline
+                        style={{ flex: 1, color: theme.colors.text, fontWeight: "700", fontSize: s(13), minHeight: s(38), textAlignVertical: "top", paddingTop: s(7) }}
+                      />
+                    </View>
                   </View>
                 )}
-
-                <InputRow theme={theme} icon="location-outline" placeholder="Add location" value={location} onChangeText={setLocation} />
-                <ColorSection theme={theme} color={color} setColor={setColor} />
               </>
             ) : (
               <>
@@ -513,20 +779,49 @@ export function CreateSheet(props: {
             )}
           </ScrollView>
 
-          {/* sticky footer — shows Delete button when editing */}
+          {/* sticky footer — shows Delete button when editing, Leave for shared guests */}
           <View style={{
             paddingHorizontal: s(14), paddingTop: s(10),
             borderTopWidth: s(1), borderTopColor: theme.colors.border,
             backgroundColor: theme.colors.card,
           }}>
-            {!!error ? (
+            {!!error && !isGuestOfShared ? (
               <Text style={{ color: theme.colors.muted, fontWeight: "800", fontSize: s(12), marginBottom: s(8) }}>{error}</Text>
             ) : (
-              <View style={{ height: s(16) }} />
+              <View style={{ height: isGuestOfShared ? s(0) : s(16) }} />
             )}
 
-            {/* Delete row — only shown when editing an existing event */}
-            {!!editingEvent && !!onDeleteEvent && (
+            {/* Guest of shared event: Leave event button */}
+            {isGuestOfShared && (
+              <Pressable
+                onPress={() => {
+                  Alert.alert("Leave event?", "You will be removed from this event.", [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Leave", style: "destructive", onPress: onLeaveSharedEvent },
+                  ]);
+                }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: s(6),
+                  paddingVertical: s(11),
+                  borderRadius: s(16),
+                  borderWidth: s(1),
+                  borderColor: "#FF3B3033",
+                  backgroundColor: "#FF3B3012",
+                  marginBottom: s(10),
+                }}
+              >
+                <Ionicons name="exit-outline" size={s(16)} color="#FF3B30" />
+                <Text style={{ color: "#FF3B30", fontWeight: "900", fontSize: s(14) }}>
+                  Leave event
+                </Text>
+              </Pressable>
+            )}
+
+            {/* Delete row — only shown when editing an existing non-shared event, or creator of shared */}
+            {!!editingEvent && !!onDeleteEvent && !isGuestOfShared && (
               <Pressable
                 onPress={handleDelete}
                 style={{
@@ -558,20 +853,24 @@ export function CreateSheet(props: {
                   alignItems: "center",
                 }}
               >
-                <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: s(14) }}>Cancel</Text>
+                <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: s(14) }}>
+                  {isGuestOfShared ? "Close" : "Cancel"}
+                </Text>
               </Pressable>
 
-              <Pressable
-                onPress={save}
-                disabled={!canSave}
-                style={{
-                  flex: 1.2, paddingVertical: s(12), borderRadius: s(16),
-                  backgroundColor: theme.colors.accent, alignItems: "center",
-                  opacity: canSave ? 1 : 0.5,
-                }}
-              >
-                <Text style={{ color: "#fff", fontWeight: "900", fontSize: s(14) }}>Save</Text>
-              </Pressable>
+              {!isGuestOfShared && (
+                <Pressable
+                  onPress={save}
+                  disabled={!canSave}
+                  style={{
+                    flex: 1.2, paddingVertical: s(12), borderRadius: s(16),
+                    backgroundColor: theme.colors.accent, alignItems: "center",
+                    opacity: canSave ? 1 : 0.5,
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "900", fontSize: s(14) }}>Save</Text>
+                </Pressable>
+              )}
             </View>
           </View>
 
@@ -585,9 +884,7 @@ export function CreateSheet(props: {
               onChange={(ymd) => {
                 if (datePicker?.kind === "start") {
                   setStartDate(ymd);
-                  if (ymdCompare(endDate, ymd) < 0) setEndDate(ymd);
-                } else if (datePicker?.kind === "end") {
-                  setEndDate(ymdCompare(ymd, startDate) < 0 ? startDate : ymd);
+                  setEndDate(ymd);
                 } else if (datePicker?.kind === "bday") {
                   setBdayDate(ymd);
                 }
@@ -708,18 +1005,18 @@ function InputRow({ theme, icon, placeholder, value, onChangeText }: { theme: an
   );
 }
 
-function Pill({ theme, text, onPress, rightIcon }: { theme: any; text: string; onPress: () => void; rightIcon?: any }) {
+function Pill({ theme, text, onPress, rightIcon, compact }: { theme: any; text: string; onPress?: () => void; rightIcon?: any; compact?: boolean }) {
   return (
-    <Pressable onPress={onPress} style={{ flexDirection: "row", alignItems: "center", paddingVertical: s(8), paddingHorizontal: s(10), borderRadius: s(999), backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border }}>
-      <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: s(12) }}>{text}</Text>
-      {rightIcon ? (<><View style={{ width: s(6) }} /><Ionicons name={rightIcon} size={s(14)} color={theme.colors.muted} /></>) : null}
+    <Pressable onPress={onPress ?? (() => {})} style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", paddingVertical: compact ? s(4) : s(7), paddingHorizontal: compact ? s(8) : s(11), borderRadius: s(999), backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border }}>
+      <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: compact ? s(11) : s(13) }}>{text}</Text>
+      {rightIcon ? (<><View style={{ width: compact ? s(4) : s(6) }} /><Ionicons name={rightIcon} size={compact ? s(12) : s(14)} color={theme.colors.muted} /></>) : null}
     </Pressable>
   );
 }
 
-function ColorSection({ theme, color, setColor }: { theme: any; color: EventColorKey; setColor: (k: EventColorKey) => void }) {
+function ColorSection({ theme, color, setColor, style }: { theme: any; color: EventColorKey; setColor: (k: EventColorKey) => void; style?: object }) {
   return (
-    <View style={{ marginTop: s(10), borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, padding: s(12) }}>
+    <View style={[{ borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, padding: s(12) }, style]}>
       <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: s(13) }}>Color</Text>
       <View style={{ marginTop: s(10), flexDirection: "row", flexWrap: "wrap" }}>
         {COLORS.map((c) => {
