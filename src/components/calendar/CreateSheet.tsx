@@ -18,8 +18,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { Picker } from "@react-native-picker/picker";
 import { s } from "../../ui/ts";
 
-import type { EventColorKey, HM, LocalEvent, YMD } from "./types";
+import type { EventColorKey, HM, LocalEvent, PlaceData, YMD } from "./types";
 import { isValidHM, ymdCompare } from "./date";
+import { SmartLocationInput } from "./SmartLocationInput";
 import { eventColor } from "./eventColors";
 
 /** =========================
@@ -146,6 +147,7 @@ export function CreateSheet(props: {
   const [startTime, setStartTime] = useState<HM>("09:00");
   const [endTime, setEndTime] = useState<HM>("10:00");
   const [location, setLocation] = useState("");
+  const [locationPlace, setLocationPlace] = useState<PlaceData | null>(null);
   const [notes, setNotes] = useState("");
   const [bdayDate, setBdayDate] = useState<YMD>(defaultDate);
   const [birthYear, setBirthYear] = useState<number>(2000);
@@ -186,6 +188,7 @@ export function CreateSheet(props: {
         setStartTime(editingEvent.startTime);
         setEndTime(editingEvent.endTime);
         setLocation(editingEvent.location || "");
+        setLocationPlace(editingEvent.locationPlace ?? null);
         setNotes(editingEvent.notes || "");
       }
     } else {
@@ -200,6 +203,7 @@ export function CreateSheet(props: {
       setStartTime("09:00");
       setEndTime("10:00");
       setLocation("");
+      setLocationPlace(null);
       setNotes("");
       setBdayDate(defaultDate);
       setBirthYear(2000);
@@ -320,6 +324,7 @@ export function CreateSheet(props: {
       endDate: startDate,
       endTime: allDay ? "23:59" : endTime,
       location: location.trim() || undefined,
+      locationPlace: location.trim() ? (locationPlace ?? undefined) : undefined,
       notes: notes.trim() || undefined,
       color, reminder, recurrence,
       calendarSource: "local", eventType: "event",
@@ -599,17 +604,19 @@ export function CreateSheet(props: {
                     </View>
 
                     {/* ── Location ── */}
-                    <View style={{ borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, padding: s(12), flexDirection: "row", alignItems: "center" }}>
-                      <View style={{ width: s(32), height: s(32), borderRadius: s(12), alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border, marginRight: s(10) }}>
-                        <Ionicons name="location-outline" size={s(16)} color={theme.colors.muted} />
-                      </View>
-                      <TextInput value={location} onChangeText={setLocation} placeholder="Add location" placeholderTextColor={theme.colors.muted} style={{ flex: 1, color: theme.colors.text, fontWeight: "800", fontSize: s(13) }} />
-                      {!!location && (
-                        <Pressable onPress={() => setLocation("")} hitSlop={s(10)} style={{ marginLeft: s(10) }}>
-                          <Ionicons name="close" size={s(18)} color={theme.colors.muted} />
-                        </Pressable>
-                      )}
-                    </View>
+                    <SmartLocationInput
+                      theme={theme}
+                      text={location}
+                      place={locationPlace}
+                      onTextChange={(txt) => {
+                        setLocation(txt);
+                        setLocationPlace(null);
+                      }}
+                      onPlaceSelected={(txt, p) => {
+                        setLocation(txt);
+                        setLocationPlace(p);
+                      }}
+                    />
 
                     {/* ── Add people ── */}
                     {friends && friends.length > 0 && (

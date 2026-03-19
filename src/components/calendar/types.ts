@@ -17,6 +17,19 @@ export type EventColorKey =
 
 export type ContactDateKind = "birthday" | "anniversary" | "other";
 
+/**
+ * Structured place data saved when the user selects an Apple Maps suggestion.
+ * Stored alongside the plain `location` string so both display and map linking work.
+ */
+export type PlaceData = {
+  /** Resolved place name, e.g. "Bell Centre" */
+  name: string;
+  /** Formatted address string, e.g. "1909 Av des Canadiens-de-Montréal, Montréal, QC" */
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+};
+
 export type LocalEvent = {
   id: string;
   title: string;
@@ -29,6 +42,11 @@ export type LocalEvent = {
 
   timezone?: string; // placeholder for later
   location?: string;
+  /**
+   * Present only when the user picked an Apple Maps suggestion.
+   * If absent, `location` is a free-form custom text (e.g. "Room H203").
+   */
+  locationPlace?: PlaceData;
   notes?: string;
 
   color: EventColorKey;

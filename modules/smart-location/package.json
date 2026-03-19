@@ -1,0 +1,14 @@
+{
+  "name": "smart-location",
+  "version": "1.0.0",
+  "description": "MapKit smart location autocomplete for Flusso (iOS only)",
+  "license": "MIT",
+  "author": "BLGgroup",
+  "homepage": "",
+  "main": "index",
+  "files": [
+    "index.ts",
+    "ios/",
+    "expo-module.config.json"
+  ]
+}
