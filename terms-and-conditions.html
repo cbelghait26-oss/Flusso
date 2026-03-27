@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Terms &amp; Conditions — Flusso</title>
+    <meta name="description" content="Flusso Terms and Conditions." />
+    <meta name="theme-color" content="#5CC8FF" />
+    <link rel="icon" href="assets/flusso-mark.svg" type="image/svg+xml" />
+    <style>
+      :root{
+        --bg0:#071a2b; --bg1:#0b2841; --bg2:#0a3650;
+        --stroke: rgba(255,255,255,.14);
+        --text: rgba(255,255,255,.92);
+        --muted: rgba(255,255,255,.70);
+        --muted2: rgba(255,255,255,.55);
+        --accent:#5CC8FF;
+        --shadow: 0 24px 60px rgba(0,0,0,.35);
+        --r1:24px; --r2:18px;
+        --max: 920px;
+        --h1: clamp(2.0rem, 3.4vw, 2.9rem);
+      }
+      *{box-sizing:border-box}
+      body{
+        margin:0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(900px 650px at 15% 10%, rgba(92,200,255,.20), transparent 60%),
+          radial-gradient(800px 600px at 90% 20%, rgba(157,232,255,.16), transparent 55%),
+          linear-gradient(180deg, var(--bg0), var(--bg1) 45%, var(--bg2));
+        min-height:100vh;
+        display:flex;
+        flex-direction:column;
+      }
+      a{color:inherit;text-decoration:none}
+      .container{width:min(var(--max), calc(100% - 48px)); margin:0 auto}
+
+      header{
+        position:sticky; top:0; z-index:50;
+        backdrop-filter: blur(18px);
+        background: linear-gradient(180deg, rgba(7,26,43,.85), rgba(7,26,43,.55));
+        border-bottom:1px solid rgba(255,255,255,.10);
+      }
+      .nav{display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 0}
+      .brand{display:flex; align-items:center; gap:12px; font-weight:900; letter-spacing:-.02em}
+      .brand img{width:34px;height:34px}
+      .links{display:flex; gap:14px; align-items:center}
+      .links a{color: var(--muted); padding:8px 10px; border-radius:12px; font-weight:800}
+      .links a:hover{background: rgba(92,200,255,.12); color: var(--text)}
+
+      main{
+        flex:1;
+        padding: 44px 0 64px;
+        display:flex;
+        flex-direction:column;
+      }
+      .page-head{
+        margin-bottom: 20px;
+      }
+      h1{margin:0 0 8px; font-size: var(--h1); letter-spacing:-.035em}
+      .sub{color: var(--muted2); font-size:.95rem}
+
+      .pdf-frame-wrap{
+        flex:1;
+        border-radius: var(--r1);
+        border: 1px solid var(--stroke);
+        background: rgba(0,0,0,.22);
+        box-shadow: var(--shadow);
+        overflow:hidden;
+        min-height: 70vh;
+        position:relative;
+      }
+      .pdf-frame-wrap iframe{
+        display:block;
+        width:100%;
+        height:100%;
+        min-height: 70vh;
+        border:none;
+      }
+      .btn{
+        display:inline-flex; align-items:center; gap:8px;
+        border:1px solid rgba(92,200,255,.45);
+        background: linear-gradient(180deg, rgba(92,200,255,.32), rgba(157,232,255,.18));
+        color: var(--text);
+        padding:11px 22px;
+        border-radius:999px;
+        font-weight:800;
+        font-size:.96rem;
+        transition: transform 180ms ease, box-shadow 180ms ease;
+      }
+      .btn:hover{transform:translateY(-1px); box-shadow: 0 10px 28px rgba(0,0,0,.3)}
+
+      footer{
+        padding: 26px 0 42px;
+        border-top: 1px solid rgba(255,255,255,.10);
+        background: rgba(0,0,0,.12);
+        backdrop-filter: blur(16px);
+      }
+      .footer-row{display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap}
+      .footer-row a{color: var(--muted); padding:7px 10px; border-radius:12px}
+      .footer-row a:hover{background: rgba(92,200,255,.10); color: var(--text)}
+
+      @media (max-width:640px){ .links{display:none} }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <div class="container">
+        <nav class="nav">
+          <a class="brand" href="index.html"><img src="assets/flusso-mark.svg" alt="Flusso" />Flusso</a>
+          <div class="links">
+            <a href="index.html#method">Method</a>
+            <a href="index.html#features">Features</a>
+            <a href="about.html">About</a>
+          </div>
+          <a class="links" href="index.html" style="color: rgba(255,255,255,.85); font-weight:900">Home</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+      <div class="page-head">
+        <h1>Terms &amp; Conditions</h1>
+        <div class="sub">Last updated: March 27, 2025</div>
+      </div>
+
+      <div class="pdf-frame-wrap">
+        <iframe
+          src="Terms &amp; Conditions 27-03.pdf"
+          title="Flusso Terms and Conditions"
+          aria-label="Terms and Conditions document"
+        >
+          <div class="fallback" style="display:flex">
+            <p>Your browser cannot display the PDF inline.</p>
+            <a class="btn" href="Terms &amp; Conditions 27-03.pdf" target="_blank" rel="noopener">Open Terms &amp; Conditions PDF</a>
+          </div>
+        </iframe>
+      </div>
+    </main>
+
+    <footer>
+      <div class="container footer-row">
+        <div style="color: var(--muted2)">© <span id="year"></span> Flusso</div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap">
+          <a href="about.html">About</a>
+          <a href="privacy-policy.html">Privacy Policy</a>
+          <a href="terms-and-conditions.html">Terms &amp; Conditions</a>
+          <a href="mailto:support@yourdomain.com">Contact</a>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById("year").textContent = new Date().getFullYear();
+    </script>
+  </body>
+</html>
