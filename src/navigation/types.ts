@@ -23,9 +23,13 @@ export type RootStackParamList = {
   // Email verification gate
   VerifyEmail: { afterVerifyRoute?: keyof RootStackParamList } | undefined;
 
+  // Paywall — shown when the user has no active entitlement
+  Paywall: undefined;
+
   // Main app
   MainTabs: { setup?: SetupPayload } | undefined;
   FocusZoneScreen: undefined;
+  TrainingRoom: undefined;
 
   // overlay
   Search: undefined;

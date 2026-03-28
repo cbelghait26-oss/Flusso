@@ -19,7 +19,7 @@ export type FocusSettingsData = {
 };
 import { doc, setDoc, getDoc, collection, getDocs, writeBatch, deleteDoc } from "firebase/firestore";
 import { db } from "../services/firebase";
-import type { Objective, Task, CalendarEvent, TrainingPlan } from "./models";
+import type { Objective, Task, CalendarEvent, TrainingPlan, Habit } from "./models";
 
 const STATIC_KEYS = {
   CURRENT_USER: "auth:currentUser",
@@ -57,6 +57,8 @@ const KEYS = {
   NOTIF_SETTINGS: () => `${currentUserId}:notif:settings`,
   // Training plans
   TRAINING_PLANS: () => `${currentUserId}:data:trainingPlans`,
+  // Habits
+  HABITS: () => `${currentUserId}:data:habits`,
 };
 
 const memoryStore = new Map<string, string>();
@@ -618,6 +620,111 @@ export async function replacePlanTasks(
   await syncCalendarFromTasks();
 }
 
+// ── Habits ────────────────────────────────────────────────────────────────────
+
+export async function loadHabits(): Promise<Habit[]> {
+  requireUserId();
+  const cached = getMemoryJson<Habit[]>(KEYS.HABITS());
+  if (cached !== null) return cached;
+
+  const localRaw = await AsyncStorage.getItem(KEYS.HABITS());
+  if (localRaw) {
+    try {
+      const local = JSON.parse(localRaw) as Habit[];
+      const arr = Array.isArray(local) ? local : [];
+      setMemoryJson(KEYS.HABITS(), arr);
+      return arr;
+    } catch {}
+  }
+
+  const cloud = await loadFromCloud("habits");
+  if (cloud) {
+    setMemoryJson(KEYS.HABITS(), cloud);
+    await AsyncStorage.setItem(KEYS.HABITS(), JSON.stringify(cloud));
+    return cloud as Habit[];
+  }
+
+  setMemoryJson(KEYS.HABITS(), []);
+  await AsyncStorage.setItem(KEYS.HABITS(), JSON.stringify([]));
+  return [];
+}
+
+export async function saveHabits(habits: Habit[]) {
+  requireUserId();
+  setMemoryJson(KEYS.HABITS(), habits);
+  await AsyncStorage.setItem(KEYS.HABITS(), JSON.stringify(habits));
+  syncToCloud("habits", habits).catch(() => {});
+}
+
+export async function addHabit(input: {
+  title: string;
+  objectiveId: string;
+  description?: string;
+  frequency: Habit["frequency"];
+  specificDays?: number[];
+  startDate: string;
+}): Promise<Habit> {
+  const habits = await loadHabits();
+  const h: Habit = {
+    id: uid("habit"),
+    title: input.title.trim(),
+    objectiveId: input.objectiveId,
+    description: input.description?.trim() || undefined,
+    frequency: input.frequency,
+    specificDays: input.specificDays,
+    startDate: input.startDate,
+    completedDates: [],
+    createdAt: new Date().toISOString(),
+  };
+  await saveHabits([h, ...habits]);
+  return h;
+}
+
+export async function updateHabit(habitId: string, patch: Partial<Habit>) {
+  const habits = await loadHabits();
+  await saveHabits(habits.map((h) => (h.id === habitId ? { ...h, ...patch } : h)));
+}
+
+export async function deleteHabit(habitId: string) {
+  const habits = await loadHabits();
+  await saveHabits(habits.filter((h) => h.id !== habitId));
+}
+
+/**
+ * Returns the next YYYY-MM-DD date this habit is due (not yet completed),
+ * or null if no upcoming occurrence is found within 365 days.
+ */
+export function getNextHabitOccurrence(habit: Habit): string | null {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(habit.startDate + "T00:00:00");
+  const base = start > today ? start : today;
+
+  for (let i = 0; i < 365; i++) {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    const key = d.toISOString().split("T")[0];
+
+    let due = false;
+    if (habit.frequency === "daily") {
+      due = true;
+    } else if (habit.frequency === "weekly") {
+      if (habit.specificDays && habit.specificDays.length > 0) {
+        due = habit.specificDays.includes(d.getDay());
+      } else {
+        due = d.getDay() === start.getDay();
+      }
+    } else if (habit.frequency === "monthly") {
+      due = d.getDate() === start.getDate();
+    }
+
+    if (due && !(habit.completedDates ?? []).includes(key)) {
+      return key;
+    }
+  }
+  return null;
+}
+
 export async function loadCalendarEvents(): Promise<CalendarEvent[]> {
   requireUserId();
   const cached = getMemoryJson<CalendarEvent[]>(KEYS.CAL_EVENTS());
@@ -697,6 +804,25 @@ export async function loadFocusRoomTutorialSeen(): Promise<boolean> {
 export async function saveFocusRoomTutorialSeen() {
   requireUserId();
   await AsyncStorage.setItem(`${currentUserId}:ui:focusRoomTutorialSeen`, "true");
+}
+
+export async function loadTrainingRoomTutorialSeen(): Promise<boolean> {
+  requireUserId();
+  const raw = await AsyncStorage.getItem(`${currentUserId}:ui:trainingRoomTutorialSeen`);
+  return raw === "true";
+}
+
+export async function saveTrainingRoomTutorialSeen() {
+  requireUserId();
+  await AsyncStorage.setItem(`${currentUserId}:ui:trainingRoomTutorialSeen`, "true");
+}
+
+/** Dev helper: clears all tutorial-seen flags so they show again on next visit. */
+export async function resetTutorialsSeen() {
+  requireUserId();
+  await AsyncStorage.removeItem(`${currentUserId}:ui:tutorialSeen`);
+  await AsyncStorage.removeItem(`${currentUserId}:ui:focusRoomTutorialSeen`);
+  await AsyncStorage.removeItem(`${currentUserId}:ui:trainingRoomTutorialSeen`);
 }
 
 /**

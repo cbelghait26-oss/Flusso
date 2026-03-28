@@ -3,7 +3,7 @@
     "name": "Flusso",
     "slug": "FlowApp",
     "version": "1.0.0",
-    "orientation": "all",
+    "orientation": "default",
     "icon": "./assets/AppIcon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
@@ -16,8 +16,16 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.BLGgroup.flusso",
+      "appleTeamId": "BV8B4SJT8T",
       "googleServicesFile": "./GoogleService-Info.plist",
       "usesAppleSignIn": true,
+      "appExtensions": [
+        {
+          "targetName": "FocusLiveActivity",
+          "bundleIdentifier": "com.BLGgroup.flusso.FocusLiveActivity",
+          "entitlements": {}
+        }
+      ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "LSApplicationQueriesSchemes": [
@@ -33,8 +41,7 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -64,7 +71,12 @@
           "contactsPermission": "Flusso accesses your contacts to detect birthdays and other saved dates and add them to your calendar, for example showing a reminder for a contact's birthday."
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      "./modules/focus-live-activity/plugin/withFocusLiveActivity.js",
+      "./plugins/withDisableBundleSigning.js",
+      "expo-font",
+      "expo-asset",
+      "expo-video"
     ],
     "extra": {
       "googleWebClientId": "402208533063-jk5a2gdeqina4u0lb5cjpd7f1kh8a4k4.apps.googleusercontent.com",

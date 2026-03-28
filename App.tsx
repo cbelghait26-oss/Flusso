@@ -11,9 +11,10 @@ import { GlobalMusicProvider } from "./src/services/GlobalMusicPlayer";
 import { AchievementProvider } from "./src/context/AchievementContext";
 import { setCurrentUser, clearUserData, flushPendingCloudWrites, loadSetupComplete, loadSetupName } from "./src/data/storage";
 import { auth } from "./src/services/firebase";
-import { initNotifications, rescheduleAllNotifications, devTestAllNotifications } from "./src/services/notifications";
+import { initNotifications, rescheduleAllNotifications } from "./src/services/notifications";
 import { spotifyLoadSavedTokens } from "./src/services/SpotifyRemote";
 import { ensureUserProfile } from "./src/services/SocialService";
+import { initRevenueCat, loginRevenueCat, logoutRevenueCat, resolveAppDestination } from "./src/services/SubscriptionService";
 
 
 import SignInScreen from "./screens/SignInScreen";
@@ -33,8 +34,10 @@ import Q9ClosingScreen from "./screens/SetupScreens/Q9ClosingScreen";
 import SearchScreen from "./screens/Dashboard/SearchScreen";
 import AppTabs from "./src/navigation/AppTabs";
 import FocusZoneScreen from "./screens/FocusZoneScreen";
+import TrainingRoomScreen from "./screens/TrainingRoomScreen";
 import SocialScreen from "./screens/Social/SocialScreen";
 import AddFriendScreen from "./screens/Social/AddFriendScreen";
+import PaywallScreen from "./screens/PaywallScreen";
 
 import type { RootStackParamList } from "./src/navigation/types";
 
@@ -77,7 +80,10 @@ function AppInner({ initialRoute }: { initialRoute: keyof RootStackParamList }) 
             <Stack.Screen name="Q9ClosingScreen" component={Q9ClosingScreen}
               options={{ animation: "fade", contentStyle: { backgroundColor: "#000612" } }} />
             <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
+            <Stack.Screen name="Paywall" component={PaywallScreen}
+              options={{ animation: "fade", gestureEnabled: false }} />
             <Stack.Screen name="FocusZoneScreen" component={FocusZoneScreen} />
+            <Stack.Screen name="TrainingRoom" component={TrainingRoomScreen} />
             <Stack.Screen name="MainTabs" component={AppTabs} />
             <Stack.Screen name="Search" component={SearchScreen} />
             <Stack.Screen name="Social" component={SocialScreen} options={{ animation: "slide_from_right" }} />
@@ -94,10 +100,9 @@ export default function App() {
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>("SignIn");
 
   useEffect(() => {
+    // Initialise RevenueCat once — must run before any auth/purchase logic.
+    initRevenueCat();
     initNotifications().catch(() => {});
-    if (__DEV__) {
-      (global as any).devTestNotifs = devTestAllNotifications;
-    }
   }, []);
 
   useEffect(() => {
@@ -124,6 +129,9 @@ export default function App() {
           // so requireUserId() will work immediately. Run the async parts in the background
           // so they never block the routing decision.
           setCurrentUser(user.uid).catch(() => {});
+          // Map this Flusso user to their RevenueCat identity so entitlements
+          // are shared across devices and web.
+          loginRevenueCat(user.uid).catch(() => {});
           spotifyLoadSavedTokens().catch(() => {});
           // Ensure the user has a public profile + friend tag in Firestore.
           // Load the name the user chose during setup (email/password accounts
@@ -156,16 +164,21 @@ export default function App() {
               setInitialRoute("VerifyEmail");
             } else {
               const setupComplete = await loadSetupComplete();
-              setInitialRoute(setupComplete ? "MainTabs" : "Q1NameScreen");
+              if (setupComplete) {
+                setInitialRoute(await resolveAppDestination());
+              } else {
+                setInitialRoute("Q1NameScreen");
+              }
               rescheduleAllNotifications().catch(() => {});
             }
             setInitializing(false);
           }
         } else {
-          // Signed out — clear app-level data in the background
+          // Signed out — clear app-level data and reset RevenueCat to anonymous.
           if (typeof clearUserData === "function") {
             clearUserData().catch(() => {});
           }
+          logoutRevenueCat().catch(() => {});
           if (!resolved) {
             resolved = true;
             clearTimeout(masterTimeout);

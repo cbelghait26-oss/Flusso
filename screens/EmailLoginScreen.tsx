@@ -16,6 +16,7 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "fire
 import { auth } from "../src/services/firebase";
 import { setCurrentUser } from "../src/data/storage";
 import { sendVerificationEmail } from "../src/services/emailVerification";
+import { resolveAppDestination } from "../src/services/SubscriptionService";
 import { useDeviceClass, CONTENT_MAX_WIDTH, TABLET_GUTTER, PHONE_GUTTER } from "../src/ui/responsive";
 
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -75,7 +76,7 @@ export default function EmailLoginScreen({ navigation, route }: Props) {
         if (!userCredential.user.emailVerified) {
           navigation.navigate("VerifyEmail", { afterVerifyRoute: "MainTabs" });
         } else {
-          navigation.navigate("MainTabs", { setup: {} });
+          navigation.navigate(await resolveAppDestination());
         }
       }
     } catch (error: any) {

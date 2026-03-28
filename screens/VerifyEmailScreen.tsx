@@ -16,6 +16,7 @@ import { useDeviceClass, CONTENT_MAX_WIDTH } from "../src/ui/responsive";
 import { auth } from "../src/services/firebase";
 import { reloadAndCheckVerified, sendVerificationEmail } from "../src/services/emailVerification";
 import { clearUserData } from "../src/data/storage";
+import { resolveAppDestination } from "../src/services/SubscriptionService";
 
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../src/navigation/types";
@@ -67,7 +68,11 @@ export default function VerifyEmailScreen({ navigation, route }: Props) {
     try {
       const verified = await reloadAndCheckVerified(user);
       if (verified) {
-        navigation.reset({ index: 0, routes: [{ name: afterVerifyRoute as any }] });
+        // If the destination is MainTabs, resolve through the premium gate first.
+        const dest = afterVerifyRoute === "MainTabs"
+          ? await resolveAppDestination()
+          : afterVerifyRoute;
+        navigation.reset({ index: 0, routes: [{ name: dest as any }] });
       } else {
         Alert.alert(
           "Not verified yet",

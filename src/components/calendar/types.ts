@@ -50,7 +50,7 @@ export type LocalEvent = {
   notes?: string;
 
   color: EventColorKey;
-  reminder: "none" | "at_time" | "5min" | "10min" | "30min" | "1h" | "1d";
+  reminder: "none" | "at_time" | "5min" | "10min" | "30min" | "1h" | "2h" | "1d" | "2d" | "3d" | "5d" | "1w";
   recurrence?: "none" | "daily" | "weekly" | "monthly" | "yearly"; // recurrence pattern
 
   calendarSource: "local" | "google"; // placeholder

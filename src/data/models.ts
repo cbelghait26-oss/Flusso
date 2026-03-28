@@ -99,3 +99,20 @@ export type TrainingPlan = {
   createdAt: string;
   status: "active" | "paused";
 };
+
+// ── Habit types ───────────────────────────────────────────────────────────────
+
+export type HabitFrequency = "daily" | "weekly" | "monthly";
+
+export type Habit = {
+  id: string;
+  objectiveId: string;       // required — habit must belong to an objective
+  title: string;
+  description?: string;
+  frequency: HabitFrequency;
+  /** Days of week (0=Sun…6=Sat) — used when frequency is "weekly" with specific days */
+  specificDays?: number[];
+  startDate: string;         // YYYY-MM-DD
+  completedDates: string[];  // YYYY-MM-DD dates on which this habit was completed
+  createdAt: string;
+};

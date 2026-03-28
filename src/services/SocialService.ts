@@ -370,6 +370,13 @@ export async function acceptFriendRequest(fromUid: string): Promise<void> {
     }),
     updateDoc(doc(db, "friendRequests", id), { status: "accepted", updatedAt: now }),
   ]);
+
+  // Notify the original sender that their request was accepted
+  getUserProfile(toUid)
+    .then((p) => {
+      if (p) sendPushNotif(fromUid, "Friend request accepted 🤝", `${p.displayName} accepted your friend request!`).catch(() => {});
+    })
+    .catch(() => {});
 }
 
 export async function declineFriendRequest(fromUid: string): Promise<void> {
@@ -682,6 +689,18 @@ export async function voteCompleteSharedObjective(id: string): Promise<void> {
     completedUids: arrayUnion(uid),
     ...(allDone ? { status: "completed" } : {}),
   });
+
+  // When everyone has voted, notify all other members about the achievement
+  if (allDone) {
+    for (const memberUid of obj.memberUids) {
+      if (memberUid === uid) continue;
+      sendPushNotif(
+        memberUid,
+        "Shared project complete! 🏆",
+        `"${obj.title}" has been marked complete by all members.`,
+      ).catch(() => {});
+    }
+  }
 }
 
 // ── Shared Tasks ─────────────────────────────────────────────────────────────
@@ -844,6 +863,20 @@ export async function acceptSharedInvite(invite: SharedInvite): Promise<void> {
   }
 
   await batch.commit();
+
+  // Notify the invite creator that someone accepted
+  getUserProfile(uid)
+    .then((p) => {
+      if (p) {
+        const typeLabel = invite.type === "event" ? "event" : "project";
+        sendPushNotif(
+          invite.fromUid,
+          "Invite accepted ✅",
+          `${p.displayName} joined "${invite.title}"`,
+        ).catch(() => {});
+      }
+    })
+    .catch(() => {});
 }
 
 export async function declineSharedInvite(inviteId: string): Promise<void> {
@@ -873,6 +906,9 @@ export async function kickParticipantFromEvent(eventId: string, targetUid: strin
     participantUids: evt.participantUids.filter((u) => u !== targetUid),
     participants: evt.participants.filter((p) => p.uid !== targetUid),
   });
+
+  // Notify the removed participant
+  sendPushNotif(targetUid, "Removed from event", `You've been removed from "${evt.title}".`).catch(() => {});
 }
 
 export async function setHideParticipants(eventId: string, hide: boolean): Promise<void> {
@@ -908,6 +944,9 @@ export async function kickMemberFromObjective(objectiveId: string, targetUid: st
     memberUids: obj.memberUids.filter((u) => u !== targetUid),
     members: obj.members.filter((m) => m.uid !== targetUid),
   });
+
+  // Notify the removed member
+  sendPushNotif(targetUid, "Removed from project", `You've been removed from "${obj.title}".`).catch(() => {});
 }
 
 export async function setHideObjectiveMembers(objectiveId: string, hide: boolean): Promise<void> {

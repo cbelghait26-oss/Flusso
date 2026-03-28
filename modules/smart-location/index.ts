@@ -81,6 +81,7 @@ export async function resolvePlace(
   }
 }
 
-/** True only on iOS where the native module is available. */
-export const isSmartLocationAvailable =
-  Platform.OS === "ios" && getNative() !== null;
+/** Returns true only on iOS where the native SmartLocation module is available. */
+export function isSmartLocationAvailable(): boolean {
+  return Platform.OS === "ios" && getNative() !== null;
+}

@@ -40,7 +40,8 @@ const COLORS: { key: EventColorKey; label: string }[] = [
 
 type Mode = "event" | "birthday";
 
-const REMINDER_ORDER: LocalEvent["reminder"][] = ["none", "at_time", "5min", "10min", "30min", "1h", "1d"];
+const EVENT_REMINDER_OPTIONS: LocalEvent["reminder"][] = ["none", "at_time", "5min", "10min", "30min", "1h", "2h", "1d", "2d", "3d", "5d"];
+const BIRTHDAY_REMINDER_OPTIONS: LocalEvent["reminder"][] = ["none", "at_time", "1d", "3d", "1w"];
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
@@ -127,6 +128,9 @@ export function CreateSheet(props: {
   const isTablet = Math.min(width, height) >= 768;
 
   const sheetY = useRef(new Animated.Value(s(999))).current;
+  const scrollViewRef = useRef<ScrollView>(null);
+  const notesRef = useRef<TextInput>(null);
+  const notesY = useRef(0);
 
   useEffect(() => {
     Animated.timing(sheetY, {
@@ -161,6 +165,8 @@ export function CreateSheet(props: {
   const [yearPicker, setYearPicker] = useState(false);
   const [recurrencePicker, setRecurrencePicker] = useState(false);
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const [colorExpanded, setColorExpanded] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -214,6 +220,8 @@ export function CreateSheet(props: {
     setYearPicker(false);
     setRecurrencePicker(false);
     setMoreOptionsOpen(false);
+    setReminderOpen(false);
+    setColorExpanded(false);
     setInvitees(new Set());
     setFriendSearch("");
     setFriendPickerOpen(false);
@@ -448,6 +456,10 @@ export function CreateSheet(props: {
                 placeholderTextColor={theme.colors.muted}
                 style={{ flex: 1, color: theme.colors.text, fontWeight: "900", fontSize: s(14) }}
                 returnKeyType="next"
+                onSubmitEditing={() => {
+                  notesRef.current?.focus();
+                  scrollViewRef.current?.scrollTo({ y: notesY.current - s(12), animated: true });
+                }}
               />
               {!!title && (
                 <Pressable onPress={() => setTitle("")} hitSlop={s(10)} style={{ marginLeft: s(10) }}>
@@ -458,7 +470,13 @@ export function CreateSheet(props: {
           </View>
 
           {/* body */}
-          <ScrollView contentContainerStyle={{ paddingHorizontal: s(14), paddingBottom: s(10) }} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            ref={scrollViewRef}
+            contentContainerStyle={{ paddingHorizontal: s(14), paddingBottom: s(10) }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets
+          >
             {mode !== "birthday" ? (
               <>
                 {/* ── Guest-only shared event view ── */}
@@ -551,13 +569,13 @@ export function CreateSheet(props: {
                             )}
                           </View>
                         ) : (
-                          <View style={{ flex: 1, gap: s(4) }}>
-                            <Pill theme={theme} text={startDate} onPress={() => setDatePicker({ kind: "start" })} rightIcon="chevron-down" compact />
+                          <View style={{ flex: 1, gap: s(6) }}>
+                            <Pill theme={theme} text={startDate} onPress={() => setDatePicker({ kind: "start" })} rightIcon="chevron-down" />
                             {!allDay && (
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: s(4) }}>
-                                <Pill theme={theme} text={formatHM12(startTime)} onPress={() => setTimePicker({ kind: "start" })} rightIcon="chevron-down" compact />
-                                <Ionicons name="arrow-forward" size={s(10)} color={theme.colors.muted} />
-                                <Pill theme={theme} text={formatHM12(endTime)} onPress={() => setTimePicker({ kind: "end" })} rightIcon="chevron-down" compact />
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: s(6) }}>
+                                <Pill theme={theme} text={formatHM12(startTime)} onPress={() => setTimePicker({ kind: "start" })} rightIcon="chevron-down" />
+                                <Ionicons name="arrow-forward" size={s(12)} color={theme.colors.muted} />
+                                <Pill theme={theme} text={formatHM12(endTime)} onPress={() => setTimePicker({ kind: "end" })} rightIcon="chevron-down" />
                               </View>
                             )}
                           </View>
@@ -574,7 +592,7 @@ export function CreateSheet(props: {
                       {/* More options (Repeat + Reminder) */}
                       <View style={{ height: s(1), backgroundColor: theme.colors.border, marginHorizontal: s(12) }} />
                       <Pressable
-                        onPress={() => setMoreOptionsOpen(!moreOptionsOpen)}
+                        onPress={() => { if (moreOptionsOpen) setReminderOpen(false); setMoreOptionsOpen(!moreOptionsOpen); }}
                         style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: s(12), paddingVertical: s(10) }}
                       >
                         <View style={{ flexDirection: "row", alignItems: "center", gap: s(8) }}>
@@ -588,17 +606,31 @@ export function CreateSheet(props: {
                           <RowCard theme={theme} icon="repeat-outline" title="Repeat"
                             right={<Pill theme={theme} text={recurrenceLabel(recurrence)} onPress={() => setRecurrencePicker(true)} rightIcon="chevron-down" />}
                           />
-                          <RowCard theme={theme} icon="notifications-outline" title="Reminder"
-                            right={
-                              <Pill theme={theme} text={reminderLabel(reminder)}
-                                onPress={() => {
-                                  const i = REMINDER_ORDER.indexOf(reminder);
-                                  setReminder(REMINDER_ORDER[(i + 1) % REMINDER_ORDER.length] ?? "10min");
-                                }}
-                                rightIcon="chevron-forward"
-                              />
-                            }
-                          />
+                          <Pressable
+                            onPress={() => setReminderOpen((v) => !v)}
+                            style={{ marginTop: s(10), borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, padding: s(12), flexDirection: "row", alignItems: "center" }}
+                          >
+                            <View style={{ width: s(32), height: s(32), borderRadius: s(12), alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border, marginRight: s(10) }}>
+                              <Ionicons name="notifications-outline" size={s(16)} color={theme.colors.muted} />
+                            </View>
+                            <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: s(13) }}>Reminder</Text>
+                            <View style={{ flex: 1 }} />
+                            <Text style={{ color: theme.colors.muted, fontWeight: "700", fontSize: s(12), marginRight: s(6) }}>{reminderLabel(reminder)}</Text>
+                            <Ionicons name={reminderOpen ? "chevron-up" : "chevron-down"} size={s(14)} color={theme.colors.muted} />
+                          </Pressable>
+                          {reminderOpen && (
+                            <View style={{ marginTop: s(6), flexDirection: "row", flexWrap: "wrap", gap: s(6) }}>
+                              {EVENT_REMINDER_OPTIONS.map((opt) => (
+                                <Pressable
+                                  key={opt}
+                                  onPress={() => { setReminder(opt); setReminderOpen(false); }}
+                                  style={({ pressed }) => ({ paddingVertical: s(7), paddingHorizontal: s(10), borderRadius: s(999), borderWidth: s(1), borderColor: reminder === opt ? theme.colors.accent : theme.colors.border, backgroundColor: reminder === opt ? theme.colors.accent + "22" : theme.colors.card2, opacity: pressed ? 0.7 : 1 })}
+                                >
+                                  <Text style={{ color: reminder === opt ? theme.colors.accent : theme.colors.text, fontWeight: "800", fontSize: s(12) }}>{reminderLabel(opt)}</Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          )}
                         </View>
                       )}
                     </View>
@@ -744,19 +776,29 @@ export function CreateSheet(props: {
                     )}
 
                     {/* ── Color ── */}
-                    <ColorSection theme={theme} color={color} setColor={setColor} />
+                    <ColorSection theme={theme} color={color} setColor={setColor} expanded={colorExpanded} onToggleExpanded={() => setColorExpanded((v) => !v)} />
 
                     {/* ── Description ── */}
-                    <View style={{ borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, paddingHorizontal: s(12), paddingVertical: s(11), flexDirection: "row", alignItems: "flex-start" }}>
+                    <View
+                      onLayout={(e) => { notesY.current = e.nativeEvent.layout.y; }}
+                      style={{ borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, paddingHorizontal: s(12), paddingVertical: s(11), flexDirection: "row", alignItems: "flex-start" }}
+                    >
                       <View style={{ width: s(32), height: s(32), borderRadius: s(12), alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border, marginRight: s(10), marginTop: s(1) }}>
                         <Ionicons name="document-text-outline" size={s(16)} color={theme.colors.muted} />
                       </View>
                       <TextInput
+                        ref={notesRef}
                         value={notes}
                         onChangeText={setNotes}
                         placeholder="Add description"
                         placeholderTextColor={theme.colors.muted}
                         multiline
+                        returnKeyType="default"
+                        onFocus={() => {
+                          setTimeout(() => {
+                            scrollViewRef.current?.scrollTo({ y: notesY.current - s(12), animated: true });
+                          }, 50);
+                        }}
                         style={{ flex: 1, color: theme.colors.text, fontWeight: "700", fontSize: s(13), minHeight: s(38), textAlignVertical: "top", paddingTop: s(7) }}
                       />
                     </View>
@@ -771,17 +813,31 @@ export function CreateSheet(props: {
                 <RowCard theme={theme} icon="calendar-outline" title="Birth year"
                   right={<Pill theme={theme} text={String(birthYear)} onPress={() => setYearPicker(true)} rightIcon="chevron-down" />}
                 />
-                <RowCard theme={theme} icon="notifications-outline" title="Notifications"
-                  right={
-                    <Pill theme={theme} text={birthdayReminderLabel(reminder)}
-                      onPress={() => {
-                        const i = REMINDER_ORDER.indexOf(reminder);
-                        setReminder(REMINDER_ORDER[(i + 1) % REMINDER_ORDER.length] ?? "at_time");
-                      }}
-                      rightIcon="chevron-forward"
-                    />
-                  }
-                />
+                <Pressable
+                  onPress={() => setReminderOpen((v) => !v)}
+                  style={{ marginTop: s(10), borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, padding: s(12), flexDirection: "row", alignItems: "center" }}
+                >
+                  <View style={{ width: s(32), height: s(32), borderRadius: s(12), alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border, marginRight: s(10) }}>
+                    <Ionicons name="notifications-outline" size={s(16)} color={theme.colors.muted} />
+                  </View>
+                  <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: s(13) }}>Reminder</Text>
+                  <View style={{ flex: 1 }} />
+                  <Text style={{ color: theme.colors.muted, fontWeight: "700", fontSize: s(12), marginRight: s(6) }}>{birthdayReminderLabel(reminder)}</Text>
+                  <Ionicons name={reminderOpen ? "chevron-up" : "chevron-down"} size={s(14)} color={theme.colors.muted} />
+                </Pressable>
+                {reminderOpen && (
+                  <View style={{ marginTop: s(6), flexDirection: "row", flexWrap: "wrap", gap: s(6) }}>
+                    {BIRTHDAY_REMINDER_OPTIONS.map((opt) => (
+                      <Pressable
+                        key={opt}
+                        onPress={() => { setReminder(opt); setReminderOpen(false); }}
+                        style={({ pressed }) => ({ paddingVertical: s(7), paddingHorizontal: s(10), borderRadius: s(999), borderWidth: s(1), borderColor: reminder === opt ? theme.colors.accent : theme.colors.border, backgroundColor: reminder === opt ? theme.colors.accent + "22" : theme.colors.card2, opacity: pressed ? 0.7 : 1 })}
+                      >
+                        <Text style={{ color: reminder === opt ? theme.colors.accent : theme.colors.text, fontWeight: "800", fontSize: s(12) }}>{birthdayReminderLabel(opt)}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
               </>
             )}
           </ScrollView>
@@ -953,7 +1009,7 @@ export function CreateSheet(props: {
               ))}
             </View>
           </OverlayModal>
-        </Animated.View>
+          </Animated.View>
       </View>
     </Modal>
   );
@@ -1021,24 +1077,35 @@ function Pill({ theme, text, onPress, rightIcon, compact }: { theme: any; text: 
   );
 }
 
-function ColorSection({ theme, color, setColor, style }: { theme: any; color: EventColorKey; setColor: (k: EventColorKey) => void; style?: object }) {
+function ColorSection({ theme, color, setColor, style, expanded, onToggleExpanded }: { theme: any; color: EventColorKey; setColor: (k: EventColorKey) => void; style?: object; expanded: boolean; onToggleExpanded: () => void }) {
+  const activeColor = COLORS.find((c) => c.key === color);
   return (
     <View style={[{ borderRadius: s(18), borderWidth: s(1), borderColor: theme.colors.border, backgroundColor: theme.colors.card, padding: s(12) }, style]}>
-      <Text style={{ color: theme.colors.text, fontWeight: "900", fontSize: s(13) }}>Color</Text>
-      <View style={{ marginTop: s(10), flexDirection: "row", flexWrap: "wrap" }}>
-        {COLORS.map((c) => {
-          const active = c.key === color;
-          return (
-            <Pressable key={c.key} onPress={() => setColor(c.key)}
-              style={{ flexDirection: "row", alignItems: "center", paddingVertical: s(8), paddingHorizontal: s(10), borderRadius: s(999), borderWidth: s(1), borderColor: active ? theme.colors.text : theme.colors.border, backgroundColor: active ? theme.colors.card2 : theme.colors.card, marginRight: s(10), marginBottom: s(10) }}
-            >
-              <View style={{ width: s(14), height: s(14), borderRadius: s(7), backgroundColor: eventColor(theme, c.key) }} />
-              <View style={{ width: s(8) }} />
-              <Text style={{ color: theme.colors.text, fontWeight: "800", fontSize: s(12) }}>{c.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <Pressable onPress={onToggleExpanded} style={{ flexDirection: "row", alignItems: "center" }}>
+        <View style={{ width: s(32), height: s(32), borderRadius: s(12), alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.card2, borderWidth: s(1), borderColor: theme.colors.border, marginRight: s(10) }}>
+          <View style={{ width: s(14), height: s(14), borderRadius: s(7), backgroundColor: eventColor(theme, color) }} />
+        </View>
+        <Text style={{ flex: 1, color: theme.colors.text, fontWeight: "900", fontSize: s(13) }}>
+          {activeColor?.label ?? "Color"}
+        </Text>
+        <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={s(14)} color={theme.colors.muted} />
+      </Pressable>
+      {expanded && (
+        <View style={{ marginTop: s(10), flexDirection: "row", flexWrap: "wrap" }}>
+          {COLORS.map((c) => {
+            const active = c.key === color;
+            return (
+              <Pressable key={c.key} onPress={() => { setColor(c.key); onToggleExpanded(); }}
+                style={{ flexDirection: "row", alignItems: "center", paddingVertical: s(8), paddingHorizontal: s(10), borderRadius: s(999), borderWidth: s(1), borderColor: active ? theme.colors.text : theme.colors.border, backgroundColor: active ? theme.colors.card2 : theme.colors.card, marginRight: s(10), marginBottom: s(10) }}
+              >
+                <View style={{ width: s(14), height: s(14), borderRadius: s(7), backgroundColor: eventColor(theme, c.key) }} />
+                <View style={{ width: s(8) }} />
+                <Text style={{ color: theme.colors.text, fontWeight: "800", fontSize: s(12) }}>{c.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }
@@ -1193,24 +1260,30 @@ function YearWheel({ theme, value, onChange }: { theme: any; value: number; onCh
 function reminderLabel(r: LocalEvent["reminder"]) {
   switch (r) {
     case "none": return "None";
-    case "at_time": return "At time of event";
-    case "5min": return "5 min before";
-    case "10min": return "10 min before";
-    case "30min": return "30 min before";
-    case "1h": return "1 hour before";
-    case "1d": return "1 day before";
+    case "at_time": return "At time";
+    case "5min": return "5 min";
+    case "10min": return "10 min";
+    case "30min": return "30 min";
+    case "1h": return "1 hour";
+    case "2h": return "2 hours";
+    case "1d": return "1 day";
+    case "2d": return "2 days";
+    case "3d": return "3 days";
+    case "5d": return "5 days";
+    case "1w": return "1 week";
     default: return String(r);
   }
 }
 
 function birthdayReminderLabel(r: LocalEvent["reminder"]) {
-  if (r === "none") return "None";
-  if (r === "1d") return "Day of (morning)";
-  if (r === "1h") return "1 hour before";
-  if (r === "30min") return "30 min before";
-  if (r === "10min") return "10 min before";
-  if (r === "5min") return "5 min before";
-  return "Day of (morning)";
+  switch (r) {
+    case "none": return "None";
+    case "at_time": return "Day of";
+    case "1d": return "1 day before";
+    case "3d": return "3 days before";
+    case "1w": return "1 week before";
+    default: return "Day of";
+  }
 }
 
 function formatHM12(hm: HM) {

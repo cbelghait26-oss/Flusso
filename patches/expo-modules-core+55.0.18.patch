@@ -1,0 +1,30 @@
+diff --git a/node_modules/expo-modules-core/ios/EXEventEmitter.h b/node_modules/expo-modules-core/ios/EXEventEmitter.h
+new file mode 100644
+index 0000000..ef6e4da
+--- /dev/null
++++ b/node_modules/expo-modules-core/ios/EXEventEmitter.h
+@@ -0,0 +1,10 @@
++// Compatibility shim — EXEventEmitter was removed from ExpoModulesCore in SDK 55.
++// expo-av 16.x still references this header; this stub keeps it compilable.
++#pragma once
++
++@protocol EXEventEmitter
++- (NSArray<NSString *> *)supportedEvents;
++- (void)startObserving;
++- (void)stopObserving;
++- (void)sendEventWithName:(NSString *)eventName body:(id)body;
++@end
+\ No newline at end of file
+diff --git a/node_modules/expo-modules-core/ios/EXEventEmitterService.h b/node_modules/expo-modules-core/ios/EXEventEmitterService.h
+new file mode 100644
+index 0000000..8568df5
+--- /dev/null
++++ b/node_modules/expo-modules-core/ios/EXEventEmitterService.h
+@@ -0,0 +1,6 @@
++// Compatibility shim — EXEventEmitterService was removed from ExpoModulesCore in SDK 55.
++#pragma once
++
++@protocol EXEventEmitterService
++- (void)sendEventWithName:(NSString *)eventName body:(id)body;
++@end
+\ No newline at end of file

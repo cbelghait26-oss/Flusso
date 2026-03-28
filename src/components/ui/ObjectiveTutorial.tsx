@@ -8,6 +8,7 @@
  *  1. "Start with an Objective" — what an objective is
  *  2. "Build Tasks beneath it" — what tasks are and why they link up
  *  3. "Track your progress"    — the payoff (progress ring, streaks)
+ *  4. "Train with a plan"      — Training Plans & Training Room
  */
 
 import React, { useEffect, useRef, useState } from "react";
@@ -64,7 +65,7 @@ const STEPS: Step[] = [
     icon: "barbell-outline",
     iconColor: "#AF52DE",
     title: "Train with a plan",
-    body: "Under any Health & Fitness objective you can attach a Training Plan. Choose a cycle split (Push/Pull/Legs…) or a weekly schedule — Flusso generates your workouts as tasks automatically, showing only the next one at a time.",
+    body: "Under any Health & Fitness objective you can attach a Training Plan. Choose a cycle split (Push/Pull/Legs…) or a weekly schedule — Flusso generates your workouts as tasks automatically. Visit the Training Room tab to manage or regenerate your plans anytime.",
     visual: "training",
   },
 ];

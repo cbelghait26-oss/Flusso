@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
+  ScrollView,
   Text,
   TextInput,
   View,
@@ -16,7 +17,7 @@ import { s } from "../../ui/ts";
 
 import type { PlaceData } from "./types";
 import type { LocationSuggestion, ResolvedPlace } from "../../../modules/smart-location";
-import { getSuggestions, resolvePlace } from "../../../modules/smart-location";
+import { getSuggestions, isSmartLocationAvailable, resolvePlace } from "../../../modules/smart-location";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -91,7 +92,8 @@ export function SmartLocationInput({
         return;
       }
 
-      setLoading(true);
+      // Only show a spinner if the native module is actually compiled in
+      if (isSmartLocationAvailable()) setLoading(true);
       debounceRef.current = setTimeout(() => fetchSuggestions(newText), 300);
     },
     [onTextChange, fetchSuggestions]
@@ -262,11 +264,13 @@ export function SmartLocationInput({
 
       {/* ── Suggestions dropdown ── */}
       {showSuggestions && (
-        <View
-          style={{
-            borderTopWidth: s(1),
-            borderTopColor: theme.colors.border,
-          }}
+        // ScrollView with keyboardShouldPersistTaps="handled" is required so that
+        // tapping a suggestion while the keyboard is open forwards the tap instead
+        // of dismissing the keyboard and swallowing the touch (default RN behavior).
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          scrollEnabled={false}
+          style={{ borderTopWidth: s(1), borderTopColor: theme.colors.border }}
         >
           {suggestions.map((suggestion, index) => (
             <Pressable
@@ -318,7 +322,7 @@ export function SmartLocationInput({
               </View>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
       )}
     </View>
   );

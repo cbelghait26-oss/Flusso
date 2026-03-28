@@ -92,6 +92,7 @@ import {
   DEFAULT_NOTIF_SETTINGS,
 } from "../src/services/notifications";
 import { getMyProfile, ensureUserProfile, tagFromUid } from "../src/services/SocialService";
+import { restorePurchases, isPremiumActive, presentCustomerCenter } from "../src/services/SubscriptionService";
 
 type TabKey = "profile" | "settings" | "achievements";
 
@@ -869,6 +870,23 @@ export default function SettingsScreen() {
   };
 
   // ── Logout ────────────────────────────────────────────────────────────────
+  const handleRestorePurchases = async () => {
+    try {
+      await restorePurchases();
+      const active = await isPremiumActive();
+      if (active) {
+        Alert.alert("Restored", "Your Flusso subscription has been restored.");
+      } else {
+        Alert.alert(
+          "Nothing to restore",
+          "No active Flusso subscription was found for your Apple ID."
+        );
+      }
+    } catch {
+      Alert.alert("Restore failed", "Could not restore purchases. Please try again.");
+    }
+  };
+
   const handleLogout = async () => {
     Alert.alert("Log out", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
@@ -1473,7 +1491,7 @@ export default function SettingsScreen() {
               icon="shield-checkmark-outline"
               label="Privacy policy"
               C={C}
-              onPress={() => Linking.openURL("https://flussoapp.com/privacy-policy.html")}
+              onPress={() => Linking.openURL("https://flussoapp.com/privacy-policy")}
             />
             <Divider C={C} />
             <ActionRow
@@ -1492,6 +1510,25 @@ export default function SettingsScreen() {
                   "mailto:support@flussoapp.com?subject=Flusso%20Support&body=For%20any%20question%20or%20to%20report%20a%20bug%2C%20please%20contact%20us%20at%20support%40flussoapp.com"
                 )
               }
+            />
+          </View>
+
+          {/* SUBSCRIPTION */}
+          <SectionHeader title="Subscription" C={C} />
+          <View style={[styles.listCard, { backgroundColor: C.card, borderColor: C.line }]}>
+            <ActionRow
+              icon="star-outline"
+              label="Manage subscription"
+              C={C}
+              onPress={presentCustomerCenter}
+            />
+            <Divider C={C} />
+            <ActionRow
+              icon="refresh-outline"
+              label="Restore purchases"
+              C={C}
+              onPress={handleRestorePurchases}
+              showChevron={false}
             />
           </View>
 

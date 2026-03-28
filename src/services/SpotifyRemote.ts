@@ -308,7 +308,25 @@ export async function spotifyPause(): Promise<void> {
 }
 
 export async function spotifyResume(): Promise<void> {
-  await apiCall("/me/player/play", "PUT");
+  const token = await getValidAccessToken();
+  if (!token) return;
+  const res = await fetch(`${API_BASE}/me/player/play`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+  });
+  if (res.ok || res.status === 204) return;
+  if (res.status !== 404) return; // some other transient error — ignore silently
+
+  // 404 = no active device. Try to wake any available Spotify device automatically.
+  const devData = await apiCall("/me/player/devices");
+  const devices: { id: string; is_active: boolean }[] = devData?.devices ?? [];
+  const device = devices[0];
+  if (device?.id) {
+    await apiCall("/me/player", "PUT", { device_ids: [device.id], play: true });
+    return;
+  }
+  // No device found at all — caller must prompt the user.
+  throw new Error("no_active_device");
 }
 
 export async function spotifySkipNext(): Promise<void> {

@@ -844,8 +844,8 @@ export default function SocialScreen() {
                           </Text>
                           <Text style={[ss.lbValue, { color: medal ? medal.bar : C.accent }]}>
                             {entry.focusMinutes >= 60
-                              ? `${Math.floor(entry.focusMinutes / 60)}:${String(entry.focusMinutes % 60).padStart(2, "0")}`
-                              : `${entry.focusMinutes} min`}
+                              ? `${Math.floor(entry.focusMinutes / 60)}:${String(entry.focusMinutes % 60).padStart(2, "0")}:00`
+                              : `${String(entry.focusMinutes).padStart(2, "0")}:00`}
                           </Text>
                         </View>
                         <FocusBar minutes={entry.focusMinutes} max={lbMax} accent={barColor} />

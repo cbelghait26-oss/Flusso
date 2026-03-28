@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   FlatList,
   Image,
@@ -516,7 +517,28 @@ export function SpotifyMiniPlayer({ onTrackChange, isLandscape = false }: Props)
   const cmd = (fn: () => Promise<void>) => async () => { await fn(); setTimeout(poll, 400); };
   const prev          = cmd(spotifySkipPrevious);
   const next          = cmd(spotifySkipNext);
-  const toggle        = cmd(() => track?.isPaused ? spotifyResume() : spotifyPause());
+  const toggle        = useCallback(async () => {
+    if (track?.isPaused) {
+      try {
+        await spotifyResume();
+      } catch (e: any) {
+        if (e?.message === "no_active_device") {
+          Alert.alert(
+            "Open Spotify First",
+            "Spotify went idle after being paused. Open the Spotify app, tap play, then come back.",
+            [
+              { text: "Open Spotify", onPress: () => Linking.openURL("spotify://").catch(() => Linking.openURL("https://open.spotify.com")) },
+              { text: "OK", style: "cancel" },
+            ],
+          );
+          return;
+        }
+      }
+    } else {
+      await spotifyPause();
+    }
+    setTimeout(poll, 400);
+  }, [track?.isPaused]);
   const toggleShuffle = cmd(() => spotifySetShuffle(!track?.shuffleState));
   const toggleRepeat  = cmd(() => spotifySetRepeat(nextRepeatMode(track?.repeatState ?? "off")));
   const seek          = async (ms: number) => { await spotifySeek(ms); setTimeout(poll, 1200); };

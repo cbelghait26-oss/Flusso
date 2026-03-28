@@ -20,6 +20,7 @@ import { Alert, ActivityIndicator } from "react-native";
 import { signInWithGoogleFirebase } from "../src/services/googleAuth";
 import { signInWithApple } from "../src/services/appleAuth";
 import { setCurrentUser, loadSetupComplete } from "../src/data/storage";
+import { resolveAppDestination } from "../src/services/SubscriptionService";
 import {
   useDeviceClass,
   CONTENT_MAX_WIDTH,
@@ -72,7 +73,7 @@ const SignInScreen = ({ navigation }: Props) => {
               
               if (setupComplete) {
                 // User has already completed setup - go to main app
-                navigation.navigate("MainTabs");
+                navigation.navigate(await resolveAppDestination());
               } else {
                 // User needs to complete setup
                 const displayName = userCredential.user.displayName ?? "";
@@ -108,7 +109,7 @@ const SignInScreen = ({ navigation }: Props) => {
               closeSheet();
 
               if (setupComplete) {
-                navigation.navigate("MainTabs");
+                navigation.navigate(await resolveAppDestination());
               } else {
                 const displayName = userCredential.user.displayName ?? "";
                 navigation.navigate("Q0WelcomeScreen", { setup: { name: displayName } });
@@ -152,7 +153,7 @@ const SignInScreen = ({ navigation }: Props) => {
               
               if (setupComplete) {
                 // User has already completed setup on another device - go to main app
-                navigation.navigate("MainTabs");
+                navigation.navigate(await resolveAppDestination());
               } else {
                 // User needs to complete setup
                 const displayName = userCredential.user.displayName ?? "";
@@ -188,7 +189,7 @@ const SignInScreen = ({ navigation }: Props) => {
               closeSheet();
 
               if (setupComplete) {
-                navigation.navigate("MainTabs");
+                navigation.navigate(await resolveAppDestination());
               } else {
                 const displayName = userCredential.user.displayName ?? "";
                 navigation.navigate("Q0WelcomeScreen", { setup: { name: displayName } });
@@ -284,6 +285,7 @@ const SignInScreen = ({ navigation }: Props) => {
             style={{ width: imageSize, height: imageSize }}
           />
         </View>
+
 
         <View style={{ alignItems: "center", justifyContent: "center" }}>
           <LoginBox
@@ -429,19 +431,5 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
     fontWeight: "600",
     color: "#F4F6F2",
-  },
-  devButton: {
-    marginTop: s(16),
-    paddingVertical: s(8),
-    paddingHorizontal: s(20),
-    borderRadius: s(8),
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.35)",
-    backgroundColor: "rgba(255,255,255,0.08)",
-  },
-  devButtonText: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: s(13),
-    fontWeight: "500",
   },
 });

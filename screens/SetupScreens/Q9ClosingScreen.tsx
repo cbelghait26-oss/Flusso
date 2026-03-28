@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDeviceClass, CONTENT_MAX_WIDTH } from "../../src/ui/responsive";
 import { saveSetupName, saveSetupComplete, saveSetupData, getCurrentUser } from "../../src/data/storage";
 import { ensureUserProfile } from "../../src/services/SocialService";
+import { resolveAppDestination } from "../../src/services/SubscriptionService";
 import { auth } from "../../src/services/firebase";
 import { CommonActions } from "@react-navigation/native";
 
@@ -133,7 +134,7 @@ const Q9ClosingScreen = ({ navigation, route }: Props) => {
           target.dispatch(
             CommonActions.reset({
               index: 0,
-              routes: [{ name: "MainTabs", params: { setup } }],
+              routes: [{ name: await resolveAppDestination() }],
             })
           );
         } catch (error) {
@@ -144,13 +145,13 @@ const Q9ClosingScreen = ({ navigation, route }: Props) => {
             "There was an issue navigating. Please restart the app.",
             [{
               text: "Try Again",
-              onPress: () => {
+              onPress: async () => {
                 const rootNavigation = navigation.getParent();
                 const target = rootNavigation ?? navigation;
                 target.dispatch(
                   CommonActions.reset({
                     index: 0,
-                    routes: [{ name: "MainTabs", params: { setup } }],
+                    routes: [{ name: await resolveAppDestination() }],
                   })
                 );
               },

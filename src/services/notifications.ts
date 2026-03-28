@@ -11,6 +11,7 @@
  *   scheduleTaskNotifications()
  *   scheduleCalendarNotifications()
  *   scheduleDailySummaries()
+ *   scheduleSocialNotifications()
  *   cancelByLogicalKey(key)
  *   cancelAllFlussoNotifications()
  *
@@ -23,9 +24,6 @@
  *   cancelFocusSessionNotifs(sessionId)
  *   checkAndFireDailyFocusGoal(totalMin, targetMin)
  *   generateFocusSessionId()
- *
- * Dev testing:
- *   devTestAllNotifications()
  */
 
 import * as Notifications from "expo-notifications";
@@ -41,7 +39,7 @@ import {
   loadNotifPrefs,
   saveNotifPrefs,
 } from "../data/storage";
-import { storePushToken } from "./SocialService";
+import { storePushToken, getIncomingRequests, getMySharedInvites } from "./SocialService";
 
 import type { LocalEvent } from "../components/calendar/types";
 
@@ -54,6 +52,7 @@ export type NotifSettings = {
   calendar: boolean;       // event reminders + next-up
   dailySummaries: boolean; // morning agenda at 8 am
   tomorrowPreview: boolean;// evening preview at 9 pm
+  social: boolean;         // friend requests + shared invites reminders
   coach: boolean;          // coach suggestions (default OFF)
 };
 
@@ -64,6 +63,7 @@ export const DEFAULT_NOTIF_SETTINGS: NotifSettings = {
   calendar: true,
   dailySummaries: true,
   tomorrowPreview: true,
+  social: true,
   coach: false,
 };
 
@@ -143,12 +143,6 @@ async function scheduleNotif(
     if (oldId) {
       try { await Notifications.cancelScheduledNotificationAsync(oldId); } catch {}
       delete map[logicalKey];
-    }
-
-    if (__DEV__) {
-      const triggerDesc = trigger instanceof Date
-        ? `at ${trigger.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-        : `in ${trigger}s`;
     }
 
     const notifTrigger: Notifications.NotificationTriggerInput = trigger instanceof Date
@@ -488,7 +482,12 @@ function reminderOffsetMinutes(reminder: LocalEvent["reminder"]): number | null 
     case "10min":   return 10;
     case "30min":   return 30;
     case "1h":      return 60;
+    case "2h":      return 120;
     case "1d":      return 1440;
+    case "2d":      return 2 * 1440;
+    case "3d":      return 3 * 1440;
+    case "5d":      return 5 * 1440;
+    case "1w":      return 7 * 1440;
     default:        return null; // "none"
   }
 }
@@ -522,7 +521,33 @@ export async function scheduleCalendarNotifications(): Promise<void> {
   const rawEvents = await loadLocalEvents();
   const events    = rawEvents as LocalEvent[];
   const now       = new Date();
-  const horizon   = new Date(now.getTime() + 48 * 60 * 60 * 1000); // 48 h window
+  // Extend horizon to 8 days to cover the 1-week reminder option
+  const horizon   = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000);
+
+  // ── Birthday day-of notifications (fire at 8 AM on the birthday) ─────────
+  const todayStr     = todayKey();
+  const tomorrowStr  = tomorrowDateKey();
+
+  for (const evt of events) {
+    if (evt.eventType !== "birthday") continue;
+    if (evt.startDate !== todayStr && evt.startDate !== tomorrowStr) continue;
+
+    const [by, bm, bd] = evt.startDate.split("-").map(Number);
+    const fireDate = new Date(now.getFullYear(), bm - 1, bd, 8, 0, 0, 0);
+
+    const secsFromNow = Math.floor((fireDate.getTime() - now.getTime()) / 1000);
+    if (secsFromNow < 5) continue;
+
+    const label = evt.contactDateKind === "anniversary" ? "Anniversary" : "Birthday";
+    await scheduleNotif(
+      `calendar:birthday:${evt.id}`,
+      `${label}: ${evt.title} 🎂`,
+      evt.birthYear
+        ? `Turning ${now.getFullYear() - evt.birthYear} today!`
+        : `Today is ${evt.title}\u2019s ${label.toLowerCase()}.`,
+      fireDate,
+    );
+  }
 
   // ── Per-event reminders ──────────────────────────────────────────────────
   for (const evt of events) {
@@ -540,10 +565,16 @@ export async function scheduleCalendarNotifications(): Promise<void> {
     if (secsFromNow < 5) continue;
 
     const humanOffset =
-      offsetMin === 0   ? "is starting now"  :
-      offsetMin < 60    ? `in ${offsetMin} min` :
-      offsetMin === 60  ? "in 1 hour"        :
-                          "tomorrow";
+      offsetMin === 0      ? "is starting now"   :
+      offsetMin < 60       ? `in ${offsetMin} min` :
+      offsetMin === 60     ? "in 1 hour"          :
+      offsetMin === 120    ? "in 2 hours"         :
+      offsetMin === 1440   ? "tomorrow"           :
+      offsetMin === 2*1440 ? "in 2 days"          :
+      offsetMin === 3*1440 ? "in 3 days"          :
+      offsetMin === 5*1440 ? "in 5 days"          :
+      offsetMin === 7*1440 ? "next week"          :
+                             `in ${Math.round(offsetMin / 1440)} days`;
 
     await scheduleNotif(
       `calendar:eventReminder:${evt.id}`,
@@ -751,6 +782,66 @@ async function scheduleCoachNotifications(): Promise<void> {
   }
 }
 
+// ─── Social notifications ────────────────────────────────────────────────────
+
+/**
+ * Schedule local reminders for pending social actions:
+ *   - Pending friend requests   → noon reminder
+ *   - Pending shared invites    → noon reminder
+ *
+ * Silently no-ops when the user is not logged in or has no pending items.
+ */
+export async function scheduleSocialNotifications(): Promise<void> {
+  const settings = await loadNotifSettings();
+
+  // Cancel stale social notifs first (covers both the disabled and enabled path)
+  const map = await loadKeymap();
+  for (const key of Object.keys(map)) {
+    if (key.startsWith("social:")) await cancelByLogicalKey(key);
+  }
+
+  if (!settings.master || !settings.social) return;
+
+  let pendingRequests = 0;
+  let pendingInvites  = 0;
+
+  try {
+    const [requests, invites] = await Promise.all([
+      getIncomingRequests(),
+      getMySharedInvites(),
+    ]);
+    pendingRequests = requests.length;
+    pendingInvites  = invites.length;
+  } catch {
+    // Not logged in or Firestore unavailable — safe to skip
+    return;
+  }
+
+  const today = todayKey();
+
+  if (pendingRequests > 0) {
+    await scheduleNotif(
+      `social:pendingRequests:${today}`,
+      `${pendingRequests} friend request${pendingRequests !== 1 ? "s" : ""} waiting 👥`,
+      pendingRequests === 1
+        ? "Someone wants to connect with you on Flusso."
+        : `${pendingRequests} people want to connect with you on Flusso.`,
+      nextOccurrenceAt(12, 0),
+    );
+  }
+
+  if (pendingInvites > 0) {
+    await scheduleNotif(
+      `social:pendingInvites:${today}`,
+      `${pendingInvites} invite${pendingInvites !== 1 ? "s" : ""} pending 📬`,
+      pendingInvites === 1
+        ? "You have a pending shared event or project invite."
+        : `You have ${pendingInvites} pending event or project invites.`,
+      nextOccurrenceAt(12, 0),
+    );
+  }
+}
+
 // ─── Master reschedule ────────────────────────────────────────────────────────
 
 /**
@@ -778,35 +869,11 @@ export async function rescheduleAllNotifications(): Promise<void> {
     await scheduleTaskNotifications();
     await scheduleCalendarNotifications();
     await scheduleDailySummaries();
+    await scheduleSocialNotifications();
 
   } catch (e) {
     console.warn("[Notif] rescheduleAllNotifications error:", e);
   }
 }
 
-// ─── Dev testing ──────────────────────────────────────────────────────────────
 
-/**
- * Fire one of every notification type with short delays for manual QA.
- * Only available in __DEV__ builds.
- */
-export async function devTestAllNotifications(): Promise<void> {
-  if (!__DEV__) return;
-
-  await scheduleNotif("dev:1",  "① Focus done 🎯",          "Focus session complete!",              5);
-  await scheduleNotif("dev:2",  "② Break start ☕",          "Break started — rest up!",             8);
-  await scheduleNotif("dev:3",  "③ Break ending soon ⏰",    "2 minutes left on your break.",        11);
-  await scheduleNotif("dev:4",  "④ Break over 🚀",           "Back to focus!",                       14);
-  await scheduleNotif("dev:5",  "⑤ Goal reached 🏆",         "Daily focus goal achieved!",           17);
-  await scheduleNotif("dev:6",  "⑥ Task due today 📋",       "You have tasks due today.",            20);
-  await scheduleNotif("dev:7",  "⑦ Task due tomorrow 📅",    "A task is due tomorrow.",              23);
-  await scheduleNotif("dev:8",  "⑧ Event reminder 📅",       "Your event starts soon.",             26);
-  await scheduleNotif("dev:9",  "⑨ Morning agenda ☀️",       "Here's your day!",                    29);
-  await scheduleNotif("dev:10", "⑩ Tonight preview 🌙",      "Tomorrow's preview.",                 32);
-  await scheduleNotif("dev:11", "⑪ Next up ⏭️",              "Back-to-back event!",                 35);
-  await scheduleNotif("dev:12", "⑫ Coach: heavy day 📊",      "Heavy workload tomorrow!",            38);
-  await scheduleNotif("dev:13", "⑬ Coach: critical tasks 🚨", "Critical tasks due soon!",            41);
-  await scheduleNotif("dev:14", "⑭ Coach: idle 🎯",           "No focus session yet today.",         44);
-  await scheduleNotif("dev:15", "⑮ Coach: not started ⚡",    "High-priority tasks not started.",   47);
-
-}

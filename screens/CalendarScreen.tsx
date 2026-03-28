@@ -599,7 +599,7 @@ export default function CalendarScreenV2() {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     const start = addMonths(now, -3);
-    const end = addMonths(now, 6);
+    const end = addMonths(now, 18);
     return buildDayKeysBetweenInclusive(start, end);
   }, []);
 

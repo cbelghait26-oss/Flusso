@@ -16,8 +16,9 @@ private class CompleterRequest: NSObject, MKLocalSearchCompleterDelegate {
     completer.delegate = self
     completer.resultTypes = [.address, .pointOfInterest]
 
-    // Safety timeout — resolve with empty list after 3 s if MapKit never responds
-    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+    // Safety timeout — resolve with whatever results we have (or []) after 1.5 s.
+    // This fires if MapKit never delivers non-empty results.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
       self?.finish([])
     }
 
@@ -35,6 +36,9 @@ private class CompleterRequest: NSObject, MKLocalSearchCompleterDelegate {
   // MARK: MKLocalSearchCompleterDelegate
 
   func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+    // MapKit fires this delegate method immediately with an empty array while it
+    // is still fetching. Ignore those empty callbacks and wait for real results.
+    guard !completer.results.isEmpty else { return }
     let mapped: [[String: String]] = completer.results.prefix(5).map { c in
       ["title": c.title, "subtitle": c.subtitle]
     }

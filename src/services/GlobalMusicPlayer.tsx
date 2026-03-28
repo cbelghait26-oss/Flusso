@@ -1,5 +1,5 @@
 ﻿import React, { createContext, useContext, useEffect, useRef, useState } from "react";
-import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
+import { useAudioPlayer, setAudioModeAsync } from "expo-audio";
 
 type GlobalMusicContextType = {
   isMuted: boolean;
@@ -18,75 +18,45 @@ export const useGlobalMusic = () => useContext(GlobalMusicContext);
 export function GlobalMusicProvider({ children }: { children: React.ReactNode }) {
   const [isMuted, setIsMuted] = useState(true);
   const [loading, setLoading] = useState(true);
-  const soundRef = useRef<Audio.Sound | null>(null);
+
+  const player = useAudioPlayer(require("../../assets/focus/ModernPiano.mp3"));
 
   useEffect(() => {
-    let mounted = true;
-
     const initMusic = async () => {
       try {
-        // Set audio mode to allow mixing with other apps
-        await Audio.setAudioModeAsync({
+        await setAudioModeAsync({
           playsInSilentModeIOS: true,
           staysActiveInBackground: false,
           shouldDuckAndroid: false,
-          interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
-          interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+          interruptionModeIOS: "mixWithOthers",
+          interruptionModeAndroid: "doNotMix",
           playThroughEarpieceAndroid: false,
         });
 
-        // Load and start the music
-        const { sound } = await Audio.Sound.createAsync(
-          require("../../assets/focus/ModernPiano.mp3"),
-          {
-            isLooping: true,
-            volume: 0, // Start muted
-          }
-        );
-
-        if (mounted) {
-          soundRef.current = sound;
-          await sound.playAsync();
-          setLoading(false);
-        }
+        player.loop = true;
+        player.volume = 0;
+        player.play();
+        setLoading(false);
       } catch (error) {
         console.error("GlobalMusicPlayer: Failed to initialize:", error);
-        if (mounted) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
     };
 
     initMusic();
-
-    return () => {
-      mounted = false;
-    };
   }, []);
 
   const toggleMute = async () => {
-    
-    if (!soundRef.current) {
-      console.error("GlobalMusicPlayer: No sound reference available");
-      return;
-    }
-
     try {
       const newMutedState = !isMuted;
       const targetVolume = newMutedState ? 0 : 0.6;
+      const currentVolume = player.volume ?? 0;
+      const steps = 10;
+      const volumeStep = (targetVolume - currentVolume) / steps;
 
-      // Smooth fade
-      const currentStatus = await soundRef.current.getStatusAsync();
-      if (currentStatus.isLoaded) {
-        const currentVolume = currentStatus.volume ?? 0;
-        const steps = 10;
-        const volumeStep = (targetVolume - currentVolume) / steps;
-
-        for (let i = 0; i < steps; i++) {
-          const newVolume = currentVolume + volumeStep * (i + 1);
-          await soundRef.current.setVolumeAsync(newVolume);
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
+      for (let i = 0; i < steps; i++) {
+        player.volume = currentVolume + volumeStep * (i + 1);
+        await new Promise((resolve) => setTimeout(resolve, 20));
       }
 
       setIsMuted(newMutedState);
