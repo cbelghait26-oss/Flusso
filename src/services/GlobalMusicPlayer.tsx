@@ -21,48 +21,55 @@ export function GlobalMusicProvider({ children }: { children: React.ReactNode })
 
   const player = useAudioPlayer(require("../../assets/focus/ModernPiano.mp3"));
 
+  // Track the "true" current volume in a ref so the fade always starts from
+  // the right value — avoids stale reads from the native layer.
+  const currentVolumeRef = useRef(0);
+  const fadeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isMutedRef = useRef(true);
+
   useEffect(() => {
-    const initMusic = async () => {
-      try {
-        await setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: false,
-          interruptionModeIOS: "mixWithOthers",
-          interruptionModeAndroid: "doNotMix",
-          playThroughEarpieceAndroid: false,
-        });
+    // Set up audio session first (best-effort — player still starts even if this fails).
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      interruptionMode: "mixWithOthers",
+    }).catch(() => {});
 
-        player.loop = true;
-        player.volume = 0;
-        player.play();
-        setLoading(false);
-      } catch (error) {
-        console.error("GlobalMusicPlayer: Failed to initialize:", error);
-        setLoading(false);
-      }
-    };
+    // Configure and start the player unconditionally.
+    try {
+      player.loop = true;
+      player.volume = 0;
+      currentVolumeRef.current = 0;
+      player.play();
+    } catch {}
 
-    initMusic();
+    setLoading(false);
   }, []);
 
-  const toggleMute = async () => {
-    try {
-      const newMutedState = !isMuted;
-      const targetVolume = newMutedState ? 0 : 0.6;
-      const currentVolume = player.volume ?? 0;
-      const steps = 10;
-      const volumeStep = (targetVolume - currentVolume) / steps;
+  const toggleMute = () => {
+    const newMuted = !isMutedRef.current;
+    isMutedRef.current = newMuted;
+    setIsMuted(newMuted);
 
-      for (let i = 0; i < steps; i++) {
-        player.volume = currentVolume + volumeStep * (i + 1);
-        await new Promise((resolve) => setTimeout(resolve, 20));
+    const targetVolume = newMuted ? 0 : 0.6;
+    const startVolume  = currentVolumeRef.current;
+    const steps = 10;
+    const stepSize = (targetVolume - startVolume) / steps;
+    let step = 0;
+
+    // Cancel any in-flight fade.
+    if (fadeTimerRef.current) clearInterval(fadeTimerRef.current);
+
+    fadeTimerRef.current = setInterval(() => {
+      step++;
+      const nextVol = Math.min(1, Math.max(0, startVolume + stepSize * step));
+      currentVolumeRef.current = nextVol;
+      try { player.volume = nextVol; } catch {}
+      if (step >= steps) {
+        clearInterval(fadeTimerRef.current!);
+        fadeTimerRef.current = null;
       }
-
-      setIsMuted(newMutedState);
-    } catch (error) {
-      console.error("GlobalMusicPlayer: Failed to toggle mute:", error);
-    }
+    }, 20);
   };
 
   return (

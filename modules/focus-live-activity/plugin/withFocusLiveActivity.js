@@ -247,13 +247,16 @@ function embedExtensionInMainApp(xcodeProject, extensionTarget, extensionName) {
   buildFiles[`${embedBuildFileKey}_comment`] = `${extensionName}.appex in Embed Foundation Extensions`;
 
   // ── Create the PBXCopyFilesBuildPhase ──────────────────────────────────
+  // IMPORTANT: dstPath must be '""' (two quote chars) not "" (empty string).
+  // The xcode library serialises a JS empty string as nothing, producing
+  // `dstPath = ;` which is invalid pbxproj syntax and crashes the parser.
   const embedPhaseKey  = xcodeProject.generateUuid();
   const copyPhases     = xcodeProject.hash.project.objects["PBXCopyFilesBuildPhase"] || {};
   copyPhases[embedPhaseKey] = {
     isa: "PBXCopyFilesBuildPhase",
     buildActionMask: 2147483647,
-    dstPath: "",
-    dstSubfolderSpec: 13, // PlugIns — where .appex files live
+    dstPath: '""',
+    dstSubfolderSpec: 13,
     files: [{ value: embedBuildFileKey, comment: `${extensionName}.appex in Embed Foundation Extensions` }],
     name: '"Embed Foundation Extensions"',
     runOnlyForDeploymentPostprocessing: 0,

@@ -304,7 +304,7 @@ export default function PaywallScreen({ navigation }: Props) {
 
           {/* ── Hero headline ─────────────────────────────────────────────── */}
           <Text style={styles.heroLine1}>Unlock everything.</Text>
-          <Text style={styles.heroLine2}>Try it free — no card required.*</Text>
+          <Text style={styles.heroLine2}>Start your 14-day free trial.</Text>
 
           {/* ── Social proof ─────────────────────────────────────────────── */}
           <View style={styles.socialProof}>
@@ -429,11 +429,6 @@ export default function PaywallScreen({ navigation }: Props) {
             <TrustPill icon="refresh-outline"     label="Cancel anytime" />
             <TrustPill icon="shield-checkmark-outline" label="No hidden fees" />
           </View>
-
-          {/* ── Fine print asterisk ───────────────────────────────────────── */}
-          <Text style={styles.finePrint}>
-            * No payment info needed during the trial. Your subscription begins after 14 days. Cancel before then and you won't be charged.
-          </Text>
 
           {/* ── Restore + legal ───────────────────────────────────────────── */}
           <TouchableOpacity
