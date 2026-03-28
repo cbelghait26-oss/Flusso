@@ -95,8 +95,12 @@ function withWidgetExtensionTarget(config) {
     xcodeProject.addToPbxGroup(group.uuid, mainGroupKey);
 
     // ── Build phases ─────────────────────────────────────────────────────────
-    xcodeProject.addBuildPhase(
-      WIDGET_SOURCE_FILES, "PBXSourcesBuildPhase", "Sources", target.uuid
+    // IMPORTANT: pass [] (empty) to addBuildPhase for Sources — the xcode
+    // library would otherwise create a second set of PBXFileReferences for the
+    // same Swift files that addPbxGroup already created, resulting in Xcode's
+    // "Unexpected duplicate tasks" error (one compile task per duplicate ref).
+    const sourcesPhase = xcodeProject.addBuildPhase(
+      [], "PBXSourcesBuildPhase", "Sources", target.uuid
     );
     const frameworksPhase = xcodeProject.addBuildPhase(
       [], "PBXFrameworksBuildPhase", "Frameworks", target.uuid
@@ -104,6 +108,9 @@ function withWidgetExtensionTarget(config) {
     xcodeProject.addBuildPhase(
       [], "PBXResourcesBuildPhase", "Resources", target.uuid
     );
+
+    // Wire the group's existing file references into the Sources build phase.
+    addGroupFilesToSourcesPhase(xcodeProject, sourcesPhase.uuid, group.pbxGroup);
 
     // ── Link WidgetKit.framework and SwiftUI.framework into the extension ────
     // Without these the extension crashes immediately on launch and Live
@@ -159,6 +166,35 @@ function withWidgetExtensionTarget(config) {
 
     return mod;
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// addGroupFilesToSourcesPhase
+// Wires PBXFileReferences that already exist in a group into a Sources build
+// phase without creating duplicate references (which addBuildPhase would do
+// when given file-path strings it hasn't seen before vs. refs that exist).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function addGroupFilesToSourcesPhase(xcodeProject, sourcesPhaseUuid, pbxGroup) {
+  const phases    = xcodeProject.hash.project.objects["PBXSourcesBuildPhase"] || {};
+  const phase     = phases[sourcesPhaseUuid];
+  if (!phase) return;
+
+  const buildFiles = xcodeProject.pbxBuildFileSection() || {};
+
+  for (const child of (pbxGroup.children || [])) {
+    // Skip comment keys injected by the xcode library.
+    if (!child.value || String(child.value).endsWith("_comment")) continue;
+
+    const fileName  = child.comment || child.value;
+    const bfKey     = xcodeProject.generateUuid();
+
+    buildFiles[bfKey]               = { isa: "PBXBuildFile", fileRef: child.value, fileRef_comment: fileName };
+    buildFiles[`${bfKey}_comment`]  = `${fileName} in Sources`;
+
+    phase.files = phase.files || [];
+    phase.files.push({ value: bfKey, comment: `${fileName} in Sources` });
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
