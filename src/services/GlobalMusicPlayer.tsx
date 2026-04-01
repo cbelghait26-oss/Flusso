@@ -31,8 +31,11 @@ export function GlobalMusicProvider({ children }: { children: React.ReactNode })
     // Set up audio session first (best-effort — player still starts even if this fails).
     setAudioModeAsync({
       playsInSilentMode: true,
-      shouldPlayInBackground: false,
-      interruptionMode: "mixWithOthers",
+      staysActiveInBackground: false,
+      shouldDuckAndroid: false,
+      interruptionModeIOS: "mixWithOthers",
+      interruptionModeAndroid: "doNotMix",
+      playThroughEarpieceAndroid: false,
     }).catch(() => {});
 
     // Configure and start the player unconditionally.

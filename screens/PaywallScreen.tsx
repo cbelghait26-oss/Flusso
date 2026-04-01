@@ -465,6 +465,17 @@ export default function PaywallScreen({ navigation }: Props) {
             <Text style={styles.signOutText}>Sign out &amp; go back</Text>
           </TouchableOpacity>
 
+          {/* ── DEV: skip paywall ─────────────────────────────────────────── */}
+          {__DEV__ && (
+            <TouchableOpacity
+              style={styles.devSkipBtn}
+              onPress={goToApp}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.devSkipLabel}>[DEV] Skip paywall</Text>
+            </TouchableOpacity>
+          )}
+
         </Animated.View>
       </ScrollView>
     </View>
@@ -826,6 +837,21 @@ const styles = StyleSheet.create({
     fontSize: s(12),
     color: "rgba(244,246,242,0.30)",
     fontWeight: "500",
+  },
+  devSkipBtn: {
+    alignSelf: "center",
+    marginTop: s(12),
+    paddingVertical: s(8),
+    paddingHorizontal: s(20),
+    backgroundColor: "rgba(255,80,80,0.15)",
+    borderRadius: s(10),
+    borderWidth: 1,
+    borderColor: "rgba(255,80,80,0.4)",
+  },
+  devSkipLabel: {
+    fontSize: s(13),
+    color: "rgba(255,100,100,0.9)",
+    fontWeight: "700",
   },
 });
 

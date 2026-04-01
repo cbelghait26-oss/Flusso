@@ -65,6 +65,7 @@
         }
       ],
       "expo-audio",
+      "./modules/focus-live-activity/plugin/withFocusLiveActivity.js",
       "./plugins/withDisableBundleSigning.js",
       "expo-font",
       "expo-asset",
