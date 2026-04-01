@@ -20,6 +20,7 @@
     },
     "production": {
       "autoIncrement": true,
+      "credentialsSource": "local",
       "env": {
         "EXPO_NO_DOCTOR": "1"
       }
