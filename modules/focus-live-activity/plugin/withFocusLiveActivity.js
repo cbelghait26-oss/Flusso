@@ -157,7 +157,6 @@ function withWidgetExtensionTarget(config) {
           GENERATE_INFOPLIST_FILE:      "NO",
           PRODUCT_BUNDLE_IDENTIFIER:    widgetBundleId,
           CODE_SIGN_STYLE:              "Manual",
-          PROVISIONING_PROFILE_SPECIFIER: "FocusLiveActivity AdHoc",
           ...(developerTeam ? { DEVELOPMENT_TEAM: developerTeam } : {}),
         });
       }
