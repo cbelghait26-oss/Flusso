@@ -7,10 +7,7 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "credentialsSource": "local",
-      "ios": {
-        "credentialsFile": "credentials.adhoc.json"
-      },
+      "credentialsSource": "remote",
       "env": {
         "EXPO_NO_DOCTOR": "1"
       }
