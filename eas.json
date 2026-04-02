@@ -3,7 +3,6 @@
     "version": ">= 16.28.0",
     "appVersionSource": "remote"
   },
-  "credentialsJsonPath": "credentials.appstore.json",
   "build": {
     "development": {
       "developmentClient": true,
