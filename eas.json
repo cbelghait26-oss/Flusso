@@ -8,9 +8,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "credentialsSource": "local",
-      "ios": {
-        "credentialsJsonPath": "credentials.adhoc.json"
-      },
+      "credentialsJsonPath": "credentials.adhoc.json",
       "env": {
         "EXPO_NO_DOCTOR": "1"
       }
