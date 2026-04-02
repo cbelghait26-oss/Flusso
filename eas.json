@@ -8,15 +8,6 @@
       "developmentClient": true,
       "distribution": "internal",
       "credentialsSource": "remote",
-      "ios": {
-        "bundleIdentifier": "com.BLGgroup.flusso",
-        "extensions": [
-          {
-            "bundleIdentifier": "com.BLGgroup.flusso.FocusLiveActivity",
-            "targetName": "FocusLiveActivity"
-          }
-        ]
-      },
       "env": {
         "EXPO_NO_DOCTOR": "1"
       }
