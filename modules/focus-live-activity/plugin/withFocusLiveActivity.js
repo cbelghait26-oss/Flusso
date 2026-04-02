@@ -67,9 +67,11 @@ function withWidgetExtensionTarget(config) {
     }
 
     // ── Guard: don't add the target twice ─────────────────────────────────────
+    // Name values in pbxproj are stored with surrounding double-quotes, e.g.
+    // '"FocusLiveActivity"', so compare against both forms.
     const targets      = xcodeProject.pbxNativeTargetSection() || {};
     const alreadyAdded = Object.values(targets).some(
-      (t) => t && t.name === EXTENSION_NAME
+      (t) => t && (t.name === EXTENSION_NAME || t.name === `"${EXTENSION_NAME}"`)
     );
     if (alreadyAdded) return mod;
 
@@ -266,14 +268,52 @@ function addSystemFramework(xcodeProject, frameworksPhaseUuid, frameworkBaseName
 
 function embedExtensionInMainApp(xcodeProject, extensionTarget, extensionName) {
   // ── Find the .appex product reference created by addTarget ──────────────────
-  const nativeTargets  = xcodeProject.pbxNativeTargetSection() || {};
+  const nativeTargets   = xcodeProject.pbxNativeTargetSection() || {};
   const extNativeTarget = nativeTargets[extensionTarget.uuid];
   const appexProductRef = extNativeTarget && extNativeTarget.productReference;
   if (!appexProductRef) return;
 
+  const buildFiles = xcodeProject.pbxBuildFileSection() || {};
+  const copyPhases = xcodeProject.hash.project.objects["PBXCopyFilesBuildPhase"] || {};
+
+  // ── Find the main application target ──────────────────────────────────────
+  let mainTarget = null;
+  for (const [key, t] of Object.entries(nativeTargets)) {
+    if (key.endsWith("_comment") || !t) continue;
+    if (t.productType === '"com.apple.product-type.application"') {
+      mainTarget = t;
+      break;
+    }
+  }
+  if (!mainTarget) return;
+
+  // ── Guard: if the appex is already referenced in ANY copy phase of the main
+  //    target, skip entirely.  This makes the plugin idempotent so running
+  //    expo prebuild multiple times (or having it invoked twice) doesn't result
+  //    in FocusLiveActivity.appex being embedded twice, which causes Xcode's
+  //    "Unexpected duplicate tasks" / "ValidateEmbeddedBinary listed twice" error.
+  const mainCopyPhaseUuids = (mainTarget.buildPhases || [])
+    .map((p) => (typeof p === "object" ? p.value : p))
+    .filter((uuid) => copyPhases[uuid]);
+
+  for (const phaseUuid of mainCopyPhaseUuids) {
+    const phase = copyPhases[phaseUuid];
+    if (!phase || !Array.isArray(phase.files)) continue;
+    const alreadyEmbedded = phase.files.some((f) => {
+      const bfUuid = typeof f === "object" ? f.value : f;
+      const bf = buildFiles[bfUuid];
+      return bf && bf.fileRef === appexProductRef;
+    });
+    if (alreadyEmbedded) {
+      console.log(
+        `[withFocusLiveActivity] ${extensionName}.appex already embedded in main target — skipping duplicate embed.`
+      );
+      return;
+    }
+  }
+
   // ── Build file for the embed copy phase ────────────────────────────────────
   const embedBuildFileKey = xcodeProject.generateUuid();
-  const buildFiles = xcodeProject.pbxBuildFileSection() || {};
   buildFiles[embedBuildFileKey] = {
     isa: "PBXBuildFile",
     fileRef: appexProductRef,
@@ -286,8 +326,7 @@ function embedExtensionInMainApp(xcodeProject, extensionTarget, extensionName) {
   // IMPORTANT: dstPath must be '""' (two quote chars) not "" (empty string).
   // The xcode library serialises a JS empty string as nothing, producing
   // `dstPath = ;` which is invalid pbxproj syntax and crashes the parser.
-  const embedPhaseKey  = xcodeProject.generateUuid();
-  const copyPhases     = xcodeProject.hash.project.objects["PBXCopyFilesBuildPhase"] || {};
+  const embedPhaseKey = xcodeProject.generateUuid();
   copyPhases[embedPhaseKey] = {
     isa: "PBXCopyFilesBuildPhase",
     buildActionMask: 2147483647,
@@ -301,14 +340,8 @@ function embedExtensionInMainApp(xcodeProject, extensionTarget, extensionName) {
   xcodeProject.hash.project.objects["PBXCopyFilesBuildPhase"] = copyPhases;
 
   // ── Attach the phase to the main app target ────────────────────────────────
-  for (const [key, t] of Object.entries(nativeTargets)) {
-    if (key.endsWith("_comment") || !t) continue;
-    if (t.productType === '"com.apple.product-type.application"') {
-      t.buildPhases = t.buildPhases || [];
-      t.buildPhases.push({ value: embedPhaseKey, comment: "Embed Foundation Extensions" });
-      break;
-    }
-  }
+  mainTarget.buildPhases = mainTarget.buildPhases || [];
+  mainTarget.buildPhases.push({ value: embedPhaseKey, comment: "Embed Foundation Extensions" });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

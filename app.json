@@ -67,7 +67,6 @@
       "expo-audio",
       "./modules/focus-live-activity/plugin/withFocusLiveActivity.js",
       "./plugins/withDisableBundleSigning.js",
-      "./plugins/withFixDuplicateTasks.js",
       "expo-font",
       "expo-asset",
       "expo-video"
