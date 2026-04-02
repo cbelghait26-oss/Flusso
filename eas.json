@@ -7,7 +7,7 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "credentialsSource": "remote",
+      "credentialsSource": "local",
       "env": {
         "EXPO_NO_DOCTOR": "1"
       }

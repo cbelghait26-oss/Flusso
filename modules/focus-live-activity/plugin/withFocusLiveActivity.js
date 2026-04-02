@@ -156,7 +156,7 @@ function withWidgetExtensionTarget(config) {
           INFOPLIST_FILE:               `${EXTENSION_NAME}/Info.plist`,
           GENERATE_INFOPLIST_FILE:      "NO",
           PRODUCT_BUNDLE_IDENTIFIER:    widgetBundleId,
-          CODE_SIGN_STYLE:              "Automatic",
+          CODE_SIGN_STYLE:              "Manual",
           ...(developerTeam ? { DEVELOPMENT_TEAM: developerTeam } : {}),
         });
       }
