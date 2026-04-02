@@ -1,81 +1,86 @@
 // plugins/withFixDuplicateTasks.js
 //
-// Xcode 14+ build system flags "Unexpected duplicate tasks" when the same
-// shell script build phase name appears more than once inside a single target,
-// or when two phases share the same implicit output path.
+// Xcode's new build system flags "Unexpected duplicate tasks" when two script
+// phases produce outputs that overlap — most commonly when a phase declares NO
+// output files at all, because Xcode then assumes it could write anywhere.
+//
+// The fix is NOT to remove the phases but to give each offending phase a
+// declared output file so the build system can distinguish them.
 //
 // Known offenders in this project:
-//   • "[CP-User] [Hermes] Replace Hermes for the right configuration, if needed"
-//     in target `hermes-engine` (Pods project – fixed via post_install hook)
 //   • "[Expo Dev Launcher] Strip Local Network Keys for Release"
-//     in target `Flusso` (main project – fixed via withXcodeProject)
+//     in target `Flusso` of the main project  → fixed via withXcodeProject
+//   • "[CP-User] [Hermes] Replace Hermes for the right configuration, if needed"
+//     in target `hermes-engine` of the Pods project → fixed via Podfile post_install
 //
-// The ios/ directory is generated at build time so we cannot patch it directly;
-// everything is wired through @expo/config-plugins so it survives `expo prebuild`.
+// ios/ is generated at build time, so everything goes through @expo/config-plugins.
 
 const { withXcodeProject, withDangerousMod } = require("@expo/config-plugins");
 const path = require("path");
 const fs = require("fs");
 
-// ─── 1. Deduplicate script phases in the main .xcodeproj ────────────────────
-function withDeduplicateMainProjectScripts(config) {
+// ─── constants ───────────────────────────────────────────────────────────────
+const MAIN_PHASE_NAME =
+  "[Expo Dev Launcher] Strip Local Network Keys for Release";
+const MAIN_OUTPUT_PATH =
+  "$(DERIVED_FILE_DIR)/ExpoDevLauncherStripNetworkKeys.txt";
+
+const PODS_TARGET_NAME = "hermes-engine";
+const PODS_PHASE_NAME =
+  "[CP-User] [Hermes] Replace Hermes for the right configuration, if needed";
+const PODS_OUTPUT_PATH = "$(DERIVED_FILE_DIR)/HermesReplacement.txt";
+
+// ─── 1.  Main project: add output path via withXcodeProject ──────────────────
+function withAddOutputToMainProjectPhase(config) {
   return withXcodeProject(config, (mod) => {
     const project = mod.modResults;
 
-    // xcode npm package stores script phases here
+    // The xcode npm package stores PBXShellScriptBuildPhase objects here.
+    // Name values include the surrounding pbxproj double-quotes, e.g.
+    //   '"[Expo Dev Launcher] Strip Local Network Keys for Release"'
     const scriptPhases =
       project.hash.project.objects["PBXShellScriptBuildPhase"] || {};
 
-    const nativeTargets = project.pbxNativeTargetSection() || {};
+    let patched = false;
 
-    for (const [, target] of Object.entries(nativeTargets)) {
-      if (
-        typeof target !== "object" ||
-        !target ||
-        !Array.isArray(target.buildPhases)
-      ) {
-        continue;
+    for (const [, phase] of Object.entries(scriptPhases)) {
+      if (typeof phase !== "object" || !phase || !phase.name) continue;
+
+      // Strip surrounding pbxproj quotes before comparing
+      const rawName = phase.name.replace(/^"|"$/g, "");
+      if (rawName !== MAIN_PHASE_NAME) continue;
+
+      // outputPaths is an array whose string entries also carry surrounding
+      // pbxproj double-quotes, e.g. '"$(DERIVED_FILE_DIR)/foo.txt"'
+      if (!Array.isArray(phase.outputPaths)) {
+        phase.outputPaths = [];
       }
 
-      const seenNames = new Set();
+      const quotedPath = `"${MAIN_OUTPUT_PATH}"`;
+      if (!phase.outputPaths.includes(quotedPath)) {
+        phase.outputPaths.push(quotedPath);
+        console.log(
+          `[withFixDuplicateTasks] Added output path to main-project phase: "${rawName}"`
+        );
+        patched = true;
+      }
+    }
 
-      target.buildPhases = target.buildPhases.filter((phaseRef) => {
-        const uuid =
-          typeof phaseRef === "object" ? phaseRef.value : phaseRef;
-
-        const phase = scriptPhases[uuid];
-        if (!phase || typeof phase !== "object") {
-          // Not a script phase (or a comment entry) – always keep
-          return true;
-        }
-
-        // Phase names in pbxproj are stored with surrounding double-quotes,
-        // e.g. '"[Expo Dev Launcher] Strip Local Network Keys for Release"'
-        const rawName = phase.name || "";
-        const name = rawName.replace(/^"|"$/g, "");
-
-        if (seenNames.has(name)) {
-          console.log(
-            `[withFixDuplicateTasks] Removed duplicate script phase in main project: "${name}"`
-          );
-          return false;
-        }
-
-        seenNames.add(name);
-        return true;
-      });
+    if (!patched) {
+      console.warn(
+        `[withFixDuplicateTasks] WARNING: phase "${MAIN_PHASE_NAME}" not found in main project – skipping.`
+      );
     }
 
     return mod;
   });
 }
 
-// ─── 2. Deduplicate script phases in the Pods project (post_install hook) ───
+// ─── 2.  Pods project: add output path via Podfile post_install hook ─────────
 //
-// The Pods project is created by `pod install` after prebuild, so we can't
-// touch its pbxproj directly.  A Podfile post_install hook runs before Xcode
-// sees the project and lets us remove the extra phases via xcodeproj Ruby API.
-function withDeduplicatePodsScripts(config) {
+// pod install runs after expo prebuild so the Pods pbxproj doesn't exist yet;
+// we inject a Ruby post_install snippet that uses the xcodeproj API.
+function withAddOutputToPodsPhase(config) {
   return withDangerousMod(config, [
     "ios",
     (mod) => {
@@ -85,36 +90,38 @@ function withDeduplicatePodsScripts(config) {
       );
       let podfile = fs.readFileSync(podfilePath, "utf-8");
 
-      // Ruby snippet – inserted at the top of the existing post_install block
-      // (or in a new one if none exists yet).
+      // Guard: don't inject twice (e.g. if prebuild is run without --clean)
+      if (podfile.includes("# [withFixDuplicateTasks]")) {
+        return mod;
+      }
+
       const rubySnippet = [
-        "  # [withFixDuplicateTasks] Deduplicate shell script phases to fix",
-        "  # Xcode 'Unexpected duplicate tasks' build error.",
-        "  installer.pods_project.targets.each do |target|",
-        "    seen_phase_names = {}",
-        "    duplicate_phases  = []",
-        "    target.build_phases.each do |phase|",
-        "      next unless phase.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase)",
-        "      key = phase.name.to_s",
-        "      if seen_phase_names.key?(key)",
-        "        duplicate_phases << phase",
-        "      else",
-        "        seen_phase_names[key] = true",
+        "",
+        "  # [withFixDuplicateTasks] Add a declared output path to the Hermes script",
+        "  # phase so Xcode's build system doesn't flag it as a duplicate task.",
+        `  hermes_target = installer.pods_project.targets.find { |t| t.name == "${PODS_TARGET_NAME}" }`,
+        "  if hermes_target",
+        "    hermes_phase = hermes_target.build_phases.find do |phase|",
+        "      phase.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase) &&",
+        `      phase.name == "${PODS_PHASE_NAME}"`,
+        "    end",
+        "    if hermes_phase",
+        `      unless hermes_phase.output_paths.include?("${PODS_OUTPUT_PATH}")`,
+        `        hermes_phase.output_paths = hermes_phase.output_paths + ["${PODS_OUTPUT_PATH}"]`,
         "      end",
         "    end",
-        "    duplicate_phases.each { |p| target.build_phases.delete(p) }",
         "  end",
       ].join("\n");
 
       if (podfile.includes("post_install do |installer|")) {
-        // Inject at the very start of the existing block so it runs first
+        // Append inside the existing block rather than creating a second one
         podfile = podfile.replace(
           "post_install do |installer|",
           "post_install do |installer|\n" + rubySnippet
         );
       } else {
-        // No existing post_install – append one
-        podfile += "\npost_install do |installer|\n" + rubySnippet + "\nend\n";
+        podfile +=
+          "\npost_install do |installer|\n" + rubySnippet + "\nend\n";
       }
 
       fs.writeFileSync(podfilePath, podfile);
@@ -125,7 +132,7 @@ function withDeduplicatePodsScripts(config) {
 
 // ─── Compose ─────────────────────────────────────────────────────────────────
 module.exports = function withFixDuplicateTasks(config) {
-  config = withDeduplicateMainProjectScripts(config);
-  config = withDeduplicatePodsScripts(config);
+  config = withAddOutputToMainProjectPhase(config);
+  config = withAddOutputToPodsPhase(config);
   return config;
 };
