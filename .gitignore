@@ -33,6 +33,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# local credentials (contain certificate passwords)
+credentials.adhoc.json
+
 # typescript
 *.tsbuildinfo
 
