@@ -19,6 +19,7 @@ import { Fontisto, FontAwesome5, FontAwesome } from "@expo/vector-icons";
 import { Alert, ActivityIndicator } from "react-native";
 import { signInWithGoogleFirebase } from "../src/services/googleAuth";
 import { signInWithApple } from "../src/services/appleAuth";
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { setCurrentUser, loadSetupComplete } from "../src/data/storage";
 import { resolveAppDestination } from "../src/services/SubscriptionService";
 import {
@@ -332,6 +333,25 @@ const SignInScreen = ({ navigation }: Props) => {
         >
           {options.map((opt) => {
             const isGoogle = opt.label.toLowerCase().includes("google");
+            const isApple = opt.label.toLowerCase().includes("apple");
+            const isSignUp = opt.label.toLowerCase().startsWith("sign up");
+
+            if (isApple && Platform.OS === 'ios') {
+              return (
+                <AppleAuthentication.AppleAuthenticationButton
+                  key={opt.label}
+                  buttonType={
+                    isSignUp
+                      ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
+                      : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
+                  }
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                  cornerRadius={s(34)}
+                  style={{ height: s(44), width: '100%', marginBottom: s(10) }}
+                  onPress={opt.onPress}
+                />
+              );
+            }
 
             return (
               <TouchableOpacity
@@ -347,8 +367,6 @@ const SignInScreen = ({ navigation }: Props) => {
                   {opt.icon}
                   <Text style={styles.optionText}>
                     {googleLoading && isGoogle
-                      ? "Signing in..."
-                      : appleLoading && opt.label.toLowerCase().includes('apple')
                       ? "Signing in..."
                       : opt.label}
                   </Text>
