@@ -3,9 +3,6 @@
     "version": ">= 16.28.0",
     "appVersionSource": "remote"
   },
-  "hooks": {
-    "pre-install": "node eas-hooks/pre-install.js"
-  },
   "build": {
     "development": {
       "developmentClient": true,
