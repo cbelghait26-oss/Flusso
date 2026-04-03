@@ -8,6 +8,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "credentialsSource": "local",
+      "prebuildCommand": "node scripts/installProfile.js",
       "env": {
         "EXPO_NO_DOCTOR": "1"
       }
