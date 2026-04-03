@@ -156,8 +156,9 @@ function withWidgetExtensionTarget(config) {
           INFOPLIST_FILE:               `${EXTENSION_NAME}/Info.plist`,
           GENERATE_INFOPLIST_FILE:      "NO",
           PRODUCT_BUNDLE_IDENTIFIER:    widgetBundleId,
-          CODE_SIGN_STYLE:                "Manual",
-          PROVISIONING_PROFILE_SPECIFIER: '"FocusLiveActivity AdHoc"',
+          CODE_SIGN_STYLE:                  "Manual",
+          CODE_SIGN_IDENTITY:               '"iPhone Distribution"',
+          PROVISIONING_PROFILE_SPECIFIER:   '"FocusLiveActivity AdHoc"',
           ...(developerTeam ? { DEVELOPMENT_TEAM: developerTeam } : {}),
         });
       }
