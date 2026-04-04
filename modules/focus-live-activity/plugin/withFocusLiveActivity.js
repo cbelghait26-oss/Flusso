@@ -158,7 +158,7 @@ function withWidgetExtensionTarget(config) {
           PRODUCT_BUNDLE_IDENTIFIER:    widgetBundleId,
           CODE_SIGN_STYLE:                  "Manual",
           CODE_SIGN_IDENTITY:               '"iPhone Distribution"',
-          PROVISIONING_PROFILE_SPECIFIER:   '"FocusLiveActivity AdHoc"',
+          PROVISIONING_PROFILE_SPECIFIER:   '"FocusLiveActivity AdHoc 2"',
           ...(developerTeam ? { DEVELOPMENT_TEAM: developerTeam } : {}),
         });
       }
