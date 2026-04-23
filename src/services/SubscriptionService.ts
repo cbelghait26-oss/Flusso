@@ -22,7 +22,6 @@ import Purchases, {
   type PurchasesPackage,
   type CustomerInfo,
   type PurchasesOffering,
-  LOG_LEVEL,
 } from "react-native-purchases";
 import RevenueCatUI, { PAYWALL_RESULT } from "react-native-purchases-ui";
 import { Platform } from "react-native";
@@ -56,10 +55,7 @@ let _initialized = false;
 // getOfferings() / getCustomerInfo() never hit the "no singleton" error regardless
 // of when screens mount relative to App's useEffect.
 (function autoInit() {
-  if (Purchases.isConfigured) {
-    _initialized = true;
-    return;
-  }
+  if (_initialized) return;
 
   // Fallback to literal key if the env var didn't get embedded by Metro
   // (can happen if Metro started before .env was written).
@@ -67,26 +63,12 @@ let _initialized = false;
   const androidKey = RC_ANDROID_KEY || "";
   const apiKey = Platform.OS === "ios" ? iosKey : androidKey;
 
-  if (__DEV__) {
-    console.log(
-      `[SubscriptionService] autoInit — platform: ${Platform.OS}, ` +
-      `key: ${apiKey ? apiKey.slice(0, 12) + "…" : "(empty)"}`
-    );
-  }
-
-  if (!apiKey) {
-    if (__DEV__) console.warn("[SubscriptionService] No RC API key — SDK not configured.");
-    return;
-  }
+  if (!apiKey) return;
 
   try {
     Purchases.configure({ apiKey });
-    if (__DEV__) Purchases.setLogLevel(LOG_LEVEL.DEBUG);
     _initialized = true;
-    if (__DEV__) console.log("[SubscriptionService] RC configured successfully.");
-  } catch (e) {
-    if (__DEV__) console.warn("[SubscriptionService] Purchases.configure threw:", e);
-  }
+  } catch {}
 })();
 
 // ── Initialisation ────────────────────────────────────────────────────────────
@@ -96,12 +78,7 @@ let _initialized = false;
  * The SDK is auto-configured at module-load time, so this is now a no-op
  * kept for backwards compatibility with existing call sites.
  */
-export function initRevenueCat(): void {
-  // Auto-init already ran at module load. Nothing to do.
-  if (__DEV__ && !_initialized) {
-    console.warn("[SubscriptionService] initRevenueCat called but RC is not configured. Check your API key in .env.");
-  }
-}
+export function initRevenueCat(): void {}
 
 // ── Identity ──────────────────────────────────────────────────────────────────
 
@@ -114,9 +91,7 @@ export async function loginRevenueCat(uid: string): Promise<void> {
   if (!_initialized) return;
   try {
     await Purchases.logIn(uid);
-  } catch (err) {
-    if (__DEV__) console.warn("[SubscriptionService] logIn failed:", err);
-  }
+  } catch {}
 }
 
 /**
@@ -127,9 +102,7 @@ export async function logoutRevenueCat(): Promise<void> {
   if (!_initialized) return;
   try {
     await Purchases.logOut();
-  } catch (err) {
-    if (__DEV__) console.warn("[SubscriptionService] logOut failed:", err);
-  }
+  } catch {}
 }
 
 // ── Offerings ─────────────────────────────────────────────────────────────────
@@ -140,31 +113,11 @@ export async function logoutRevenueCat(): Promise<void> {
  * current offering is configured in the dashboard.
  */
 export async function getOfferings(): Promise<PurchasesOffering | null> {
-  if (!_initialized) {
-    if (__DEV__) console.warn("[SubscriptionService] getOfferings: SDK not initialized");
-    return null;
-  }
+  if (!_initialized) return null;
   try {
     const offerings = await Purchases.getOfferings();
-    if (__DEV__) {
-      console.log(
-        "[SubscriptionService] getOfferings raw → current:",
-        offerings.current?.identifier ?? "(none)",
-        "| all keys:",
-        Object.keys(offerings.all)
-      );
-    }
-    const result = offerings.current ?? offerings.all[RC_OFFERING_ID] ?? null;
-    if (!result && __DEV__) {
-      console.warn(
-        "[SubscriptionService] getOfferings: No offering found.\n" +
-        "→ RC dashboard likely has no Current Offering configured yet.\n" +
-        `→ Looked for: current offering OR identifier '${RC_OFFERING_ID}'"`
-      );
-    }
-    return result;
-  } catch (err) {
-    if (__DEV__) console.warn("[SubscriptionService] getOfferings failed:", err);
+    return offerings.current ?? offerings.all[RC_OFFERING_ID] ?? null;
+  } catch {
     return null;
   }
 }
@@ -179,8 +132,7 @@ export async function getCustomerInfo(): Promise<CustomerInfo | null> {
   if (!_initialized) return null;
   try {
     return await Purchases.getCustomerInfo();
-  } catch (err) {
-    if (__DEV__) console.warn("[SubscriptionService] getCustomerInfo failed:", err);
+  } catch {
     return null;
   }
 }
@@ -219,8 +171,7 @@ export async function restorePurchases(): Promise<CustomerInfo | null> {
   if (!_initialized) return null;
   try {
     return await Purchases.restorePurchases();
-  } catch (err) {
-    if (__DEV__) console.warn("[SubscriptionService] restorePurchases failed:", err);
+  } catch {
     return null;
   }
 }
@@ -243,8 +194,7 @@ export async function presentNativePaywall(): Promise<boolean> {
       result === PAYWALL_RESULT.PURCHASED ||
       result === PAYWALL_RESULT.RESTORED
     );
-  } catch (err) {
-    if (__DEV__) console.warn("[SubscriptionService] presentPaywall failed:", err);
+  } catch {
     return false;
   }
 }
@@ -267,8 +217,7 @@ export async function presentNativePaywallForOffering(
       result === PAYWALL_RESULT.RESTORED ||
       result === PAYWALL_RESULT.NOT_PRESENTED  // already has entitlement
     );
-  } catch (err) {
-    if (__DEV__) console.warn("[SubscriptionService] presentPaywallForOffering failed:", err);
+  } catch {
     return false;
   }
 }
@@ -284,9 +233,7 @@ export async function presentCustomerCenter(): Promise<void> {
   if (!_initialized) return;
   try {
     await RevenueCatUI.presentCustomerCenter();
-  } catch (err) {
-    if (__DEV__) console.warn("[SubscriptionService] presentCustomerCenter failed:", err);
-  }
+  } catch {}
 }
 
 // ── Navigation helper ─────────────────────────────────────────────────────────

@@ -78,7 +78,6 @@ export async function startFocusActivity(
 ): Promise<boolean> {
   const mod = native();
   if (!mod?.isAvailable()) {
-    console.warn("[FocusLiveActivity] Live Activities unavailable or module not linked.");
     return false;
   }
   await mod.startActivity(

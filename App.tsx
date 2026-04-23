@@ -15,7 +15,7 @@ import { initNotifications, rescheduleAllNotifications } from "./src/services/no
 import { spotifyLoadSavedTokens } from "./src/services/SpotifyRemote";
 import { ensureUserProfile } from "./src/services/SocialService";
 import { initRevenueCat, loginRevenueCat, logoutRevenueCat, resolveAppDestination } from "./src/services/SubscriptionService";
-
+import Purchases from "react-native-purchases";
 
 import SignInScreen from "./screens/SignInScreen";
 import EmailLoginScreen from "./screens/EmailLoginScreen";
@@ -100,8 +100,9 @@ export default function App() {
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>("SignIn");
 
   useEffect(() => {
-    // Initialise RevenueCat once — must run before any auth/purchase logic.
-    initRevenueCat();
+    try {
+      Purchases.configure({ apiKey: "appl_PBQnvThPlTmWTQRMFWaMryBrIks" });
+    } catch {}
     initNotifications().catch(() => {});
   }, []);
 
@@ -131,7 +132,10 @@ export default function App() {
           setCurrentUser(user.uid).catch(() => {});
           // Map this Flusso user to their RevenueCat identity so entitlements
           // are shared across devices and web.
-          loginRevenueCat(user.uid).catch(() => {});
+          await Promise.race([
+            loginRevenueCat(user.uid),
+            new Promise<void>(res => setTimeout(res, 3000)),
+          ]).catch(() => {});
           spotifyLoadSavedTokens().catch(() => {});
           // Ensure the user has a public profile + friend tag in Firestore.
           // Load the name the user chose during setup (email/password accounts
@@ -186,8 +190,7 @@ export default function App() {
             setInitializing(false);
           }
         }
-      } catch (error) {
-        console.error("App: auth state error:", error);
+      } catch {
         if (!resolved) {
           resolved = true;
           clearTimeout(masterTimeout);

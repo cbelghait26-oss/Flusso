@@ -84,6 +84,7 @@ export default function PaywallScreen({ navigation }: Props) {
   const [monthlyPkg, setMonthlyPkg] = useState<PurchasesPackage | null>(null);
   const [selected,   setSelected]   = useState<"annual" | "monthly">("annual");
   const [loadingOfferings, setLoadingOfferings] = useState(true);
+  const [offeringsError, setOfferingsError] = useState<string | null>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [restoring,  setRestoring]  = useState(false);
 
@@ -118,24 +119,39 @@ export default function PaywallScreen({ navigation }: Props) {
           if (attempts < 5) {
             setTimeout(tryLoad, 600);
           } else {
-            if (!cancelled) setLoadingOfferings(false);
+            if (!cancelled) {
+              setOfferingsError(
+                "No offerings found in RevenueCat dashboard.\nEnsure products, entitlement, and a default offering are configured."
+              );
+              setLoadingOfferings(false);
+            }
           }
           return;
         }
 
         for (const pkg of offering.availablePackages) {
-          const type = pkg.packageType;
+          const type = pkg.packageType?.toUpperCase?.() ?? "";
           const id   = pkg.identifier.toLowerCase();
-          // Match by RC package type OR common custom identifiers
-          if (type === "ANNUAL"  || id.includes("annual") || id.includes("yearly") || id.includes("year")) {
+          const pid  = (pkg.product.identifier ?? "").toLowerCase();
+          // Match by RC package type OR any common identifier / product-id keyword
+          const isAnnual =
+            type === "ANNUAL" ||
+            id.includes("annual") || id.includes("yearly") || id.includes("year") ||
+            pid.includes("annual") || pid.includes("yearly") || pid.includes("year");
+          const isMonthly =
+            type === "MONTHLY" ||
+            id.includes("monthly") || id.includes("month") ||
+            pid.includes("monthly") || pid.includes("month");
+
+          if (isAnnual) {
             setAnnualPkg(pkg);
-          } else if (type === "MONTHLY" || id.includes("monthly") || id.includes("month")) {
+          } else if (isMonthly) {
             setMonthlyPkg(pkg);
           }
         }
 
         if (!cancelled) setLoadingOfferings(false);
-      } catch (err) {
+      } catch {
         if (!cancelled) setLoadingOfferings(false);
       }
     };
@@ -304,7 +320,7 @@ export default function PaywallScreen({ navigation }: Props) {
 
           {/* ── Hero headline ─────────────────────────────────────────────── */}
           <Text style={styles.heroLine1}>Unlock everything.</Text>
-          <Text style={styles.heroLine2}>Start your 14-day free trial.</Text>
+          <Text style={styles.heroLine2}>Try it free — no card required.*</Text>
 
           {/* ── Social proof ─────────────────────────────────────────────── */}
           <View style={styles.socialProof}>
@@ -430,6 +446,11 @@ export default function PaywallScreen({ navigation }: Props) {
             <TrustPill icon="shield-checkmark-outline" label="No hidden fees" />
           </View>
 
+          {/* ── Fine print asterisk ───────────────────────────────────────── */}
+          <Text style={styles.finePrint}>
+            * No payment info needed during the trial. Your subscription begins after 14 days. Cancel before then and you won't be charged.
+          </Text>
+
           {/* ── Restore + legal ───────────────────────────────────────────── */}
           <TouchableOpacity
             style={styles.restoreBtn}
@@ -464,17 +485,6 @@ export default function PaywallScreen({ navigation }: Props) {
             <Ionicons name="arrow-back" size={s(13)} color="rgba(244,246,242,0.35)" />
             <Text style={styles.signOutText}>Sign out &amp; go back</Text>
           </TouchableOpacity>
-
-          {/* ── DEV: skip paywall ─────────────────────────────────────────── */}
-          {__DEV__ && (
-            <TouchableOpacity
-              style={styles.devSkipBtn}
-              onPress={goToApp}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.devSkipLabel}>[DEV] Skip paywall</Text>
-            </TouchableOpacity>
-          )}
 
         </Animated.View>
       </ScrollView>
@@ -837,21 +847,6 @@ const styles = StyleSheet.create({
     fontSize: s(12),
     color: "rgba(244,246,242,0.30)",
     fontWeight: "500",
-  },
-  devSkipBtn: {
-    alignSelf: "center",
-    marginTop: s(12),
-    paddingVertical: s(8),
-    paddingHorizontal: s(20),
-    backgroundColor: "rgba(255,80,80,0.15)",
-    borderRadius: s(10),
-    borderWidth: 1,
-    borderColor: "rgba(255,80,80,0.4)",
-  },
-  devSkipLabel: {
-    fontSize: s(13),
-    color: "rgba(255,100,100,0.9)",
-    fontWeight: "700",
   },
 });
 

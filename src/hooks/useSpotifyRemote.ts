@@ -157,14 +157,6 @@ export function useSpotifyRemote() {
     setState({ connected: false, connecting: false, error: null });
   }, []);
 
-  // Deep link debug logging (dev only)
-  useEffect(() => {
-    if (!__DEV__) return;
-    const sub = Linking.addEventListener("url", () => {});
-    Linking.getInitialURL().then(() => {});
-    return () => sub.remove();
-  }, []);
-
   return useMemo(
     () => ({
       connected:  state.connected,

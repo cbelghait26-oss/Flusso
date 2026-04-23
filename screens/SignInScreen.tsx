@@ -343,7 +343,7 @@ const SignInScreen = ({ navigation }: Props) => {
                   buttonType={
                     isSignUp
                       ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
-                      : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
+                      : AppleAuthentication.AppleAuthenticationButtonType.CONTINUE
                   }
                   buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
                   cornerRadius={s(34)}
@@ -364,7 +364,9 @@ const SignInScreen = ({ navigation }: Props) => {
                 }}
               >
                 <View style={styles.optionRow}>
-                  {opt.icon}
+                  <View style={styles.optionIconWrap}>
+                    {React.cloneElement(opt.icon as React.ReactElement<any>, { color: '#000', size: s(20) })}
+                  </View>
                   <Text style={styles.optionText}>
                     {googleLoading && isGoogle
                       ? "Signing in..."
@@ -419,18 +421,24 @@ const styles = StyleSheet.create({
     borderRadius: s(34),
     justifyContent: "center",
     paddingHorizontal: s(14),
-    backgroundColor: "#1055BF",
+    backgroundColor: "#FFFFFF",
     marginBottom: s(10),
   },
   optionText: {
-    fontSize: s(16),
-    fontWeight: "500",
-    color: "#F4F6F2",
+    fontSize: s(17),
+    fontWeight: "600",
+    color: "#000000",
+    letterSpacing: -0.4,
   },
   optionRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: s(10),
+  },
+  optionIconWrap: {
+    width: s(20),
+    alignItems: "center",
   },
   image: {
     // kept for reference; size overridden inline
