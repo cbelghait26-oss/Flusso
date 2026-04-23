@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  Alert,
   AppState,
   Image,
   Platform,
@@ -309,9 +310,30 @@ export default function FocusZoneScreen({ navigation }: any) {
           const now = new Date();
           sessionStartRef.current = `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`;
         }
+        if (!liveActivityActiveRef.current) {
+          startFocusActivity({
+            sessionId: `focus-timer-${Date.now()}`,
+            sessionName: currentRoom.label,
+            taskName: selectedTask?.title ?? "Focus",
+            mode: "Focus",
+            durationSeconds: 0,
+          }).then((started) => {
+            liveActivityActiveRef.current = started;
+            if (!started) {
+              Alert.alert(
+                "Live Activity unavailable",
+                "Go to Settings \u2192 Flusso \u2192 Live Activities and make sure they are enabled."
+              );
+            }
+          });
+        }
         setIsRunning(true); return;
       }
       setIsRunning(false);
+      if (liveActivityActiveRef.current) {
+        liveActivityActiveRef.current = false;
+        void endFocusActivity({ sessionName: currentRoom.label, taskName: selectedTask?.title ?? "Focus" });
+      }
       const deltaSeconds = elapsedSeconds - savedElapsedRef.current;
       const mins = Math.floor(deltaSeconds / 60);
       if (mins > 0 && sessionStartRef.current)
@@ -340,7 +362,15 @@ export default function FocusZoneScreen({ navigation }: any) {
           taskName: selectedTask?.title ?? "Focus",
           mode: phase === "work" ? "Focus" : "Break",
           durationSeconds: effectiveSecs,
-        }).then((started) => { liveActivityActiveRef.current = started; });
+        }).then((started) => {
+          liveActivityActiveRef.current = started;
+          if (!started) {
+            Alert.alert(
+              "Live Activity unavailable",
+              "Go to Settings → Flusso → Live Activities and make sure they are enabled."
+            );
+          }
+        });
       } else {
         void updateFocusActivity({
           sessionName: currentRoom.label,
