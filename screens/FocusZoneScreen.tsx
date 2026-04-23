@@ -53,6 +53,11 @@ import {
   checkAndFireDailyFocusGoal,
 } from "../src/services/notifications";
 import type { Task, Objective } from "../src/data/models";
+import {
+  startFocusActivity,
+  updateFocusActivity,
+  endFocusActivity,
+} from "../modules/focus-live-activity";
 
 
 // ─── Backgrounds ─────────────────────────────────────────────────────────────
@@ -140,6 +145,7 @@ export default function FocusZoneScreen({ navigation }: any) {
   const backgroundedAtRef     = useRef<number | null>(null);
   const secondsLeftRef        = useRef(secondsLeft);
   const phaseRef              = useRef(phase);
+  const liveActivityActiveRef = useRef(false);
   const [, forceClockTick]    = useState(0);
 
   // ── Sound ─────────────────────────────────────────────────────────────────
@@ -282,6 +288,15 @@ export default function FocusZoneScreen({ navigation }: any) {
       setPhase(next);
       const nextSecs = (next === "work" ? focusMinutes : breakMinutes) * 60;
       setSecondsLeft(nextSecs);
+      if (liveActivityActiveRef.current) {
+        void updateFocusActivity({
+          sessionName: currentRoom.label,
+          taskName: selectedTask?.title ?? "Focus",
+          mode: next === "work" ? "Focus" : "Break",
+          timeRemaining: nextSecs,
+          isPaused: false,
+        });
+      }
       transitioningRef.current = false;
     })();
   }, [secondsLeft, isRunning, phase, focusMinutes, breakMinutes, selectedTaskId, timerMode]);
@@ -315,8 +330,37 @@ export default function FocusZoneScreen({ navigation }: any) {
         focusNotifSessionRef.current = sid;
         void onFocusWorkPhaseStarted(Math.ceil(secondsLeft / 60) || focusMinutes, sid);
       }
+      const effectiveSecs = secondsLeft <= 0
+        ? (phase === "work" ? focusMinutes : breakMinutes) * 60
+        : secondsLeft;
+      if (!liveActivityActiveRef.current) {
+        startFocusActivity({
+          sessionId: focusNotifSessionRef.current || `focus-${Date.now()}`,
+          sessionName: currentRoom.label,
+          taskName: selectedTask?.title ?? "Focus",
+          mode: phase === "work" ? "Focus" : "Break",
+          durationSeconds: effectiveSecs,
+        }).then((started) => { liveActivityActiveRef.current = started; });
+      } else {
+        void updateFocusActivity({
+          sessionName: currentRoom.label,
+          taskName: selectedTask?.title ?? "Focus",
+          mode: phase === "work" ? "Focus" : "Break",
+          timeRemaining: effectiveSecs,
+          isPaused: false,
+        });
+      }
     } else {
       void cancelFocusSessionNotifs(focusNotifSessionRef.current);
+      if (liveActivityActiveRef.current) {
+        void updateFocusActivity({
+          sessionName: currentRoom.label,
+          taskName: selectedTask?.title ?? "Focus",
+          mode: phase === "work" ? "Focus" : "Break",
+          timeRemaining: secondsLeftRef.current,
+          isPaused: true,
+        });
+      }
     }
     setIsRunning((v) => !v);
   };
@@ -324,6 +368,10 @@ export default function FocusZoneScreen({ navigation }: any) {
   const resetTimer = () => {
     void cancelFocusSessionNotifs(focusNotifSessionRef.current);
     focusNotifSessionRef.current = "";
+    if (liveActivityActiveRef.current) {
+      liveActivityActiveRef.current = false;
+      void endFocusActivity({ sessionName: currentRoom.label, taskName: selectedTask?.title ?? "Focus" });
+    }
     setIsRunning(false); sessionStartRef.current = null;
     if (timerMode === "timer") { setElapsedSeconds(0); savedElapsedRef.current = 0; return; }
     setPhase("work"); setSecondsLeft(focusMinutes * 60);
@@ -442,6 +490,10 @@ export default function FocusZoneScreen({ navigation }: any) {
   const leaveRoom = () => {
     void cancelFocusSessionNotifs(focusNotifSessionRef.current);
     focusNotifSessionRef.current = "";
+    if (liveActivityActiveRef.current) {
+      liveActivityActiveRef.current = false;
+      void endFocusActivity({ sessionName: currentRoom.label, taskName: selectedTask?.title ?? "Focus" });
+    }
     setIsInRoom(false); setShowLeaveConfirm(false); setIsRunning(false); setPhase("work");
     setSecondsLeft(focusMinutes * 60); setElapsedSeconds(0); sessionStartRef.current = null;
     savedElapsedRef.current = 0;

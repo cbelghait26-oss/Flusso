@@ -70,13 +70,17 @@ export function isLiveActivityAvailable(): boolean {
 
 /**
  * Starts a Live Activity for a new Focus Zone session.
- * Safe to call even if Live Activities are not supported — the call is a no-op.
+ * Returns true if the activity was launched, false if Live Activities are
+ * unavailable or the module is not linked.
  */
 export async function startFocusActivity(
   params: StartActivityParams
-): Promise<void> {
+): Promise<boolean> {
   const mod = native();
-  if (!mod?.isAvailable()) return;
+  if (!mod?.isAvailable()) {
+    console.warn("[FocusLiveActivity] Live Activities unavailable or module not linked.");
+    return false;
+  }
   await mod.startActivity(
     params.sessionId,
     params.sessionName,
@@ -84,6 +88,7 @@ export async function startFocusActivity(
     params.mode,
     params.durationSeconds
   );
+  return true;
 }
 
 /**

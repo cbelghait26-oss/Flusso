@@ -114,11 +114,13 @@ function withWidgetExtensionTarget(config) {
     // Wire the group's existing file references into the Sources build phase.
     addGroupFilesToSourcesPhase(xcodeProject, sourcesPhase.uuid, group.pbxGroup);
 
-    // ── Link WidgetKit.framework and SwiftUI.framework into the extension ────
+    // ── Link WidgetKit, SwiftUI, and ActivityKit into the extension ─────────
     // Without these the extension crashes immediately on launch and Live
     // Activities will never appear on the lock screen.
+    // ActivityKit is required because FocusActivityAttributes.swift imports it.
     addSystemFramework(xcodeProject, frameworksPhase.uuid, "WidgetKit");
     addSystemFramework(xcodeProject, frameworksPhase.uuid, "SwiftUI");
+    addSystemFramework(xcodeProject, frameworksPhase.uuid, "ActivityKit");
 
     // ── Resolve DEVELOPMENT_TEAM ──────────────────────────────────────────────
     // Primary source: ios.appleTeamId from app.json (set before EAS injects
