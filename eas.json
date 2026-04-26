@@ -23,7 +23,7 @@
       "autoIncrement": true,
       "developmentClient": false,
       "credentialsSource": "local",
-      "prebuildCommand": "npx expo prebuild --clean && python3 -c \"import plistlib, glob; files=glob.glob('ios/*/Info.plist'); [(__import__('builtins').print('Patching', f), plistlib.dump({k:v for k,v in plistlib.load(open(f,'rb')).items() if k!='UIBackgroundModes'}, open(f,'wb'))) for f in files]; print('Done')\"",
+      "prebuildCommand": "bash scripts/prebuild.sh",
       "env": {
         "EXPO_NO_DOCTOR": "1"
       }
