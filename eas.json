@@ -23,6 +23,7 @@
       "autoIncrement": true,
       "developmentClient": false,
       "credentialsSource": "local",
+      "prebuildCommand": "npx expo prebuild --clean && python3 -c \"import plistlib, os; p='ios/Flusso/Info.plist'; d=plistlib.load(open(p,'rb')); d.pop('UIBackgroundModes',None); plistlib.dump(d,open(p,'wb')); print('UIBackgroundModes removed')\"",
       "env": {
         "EXPO_NO_DOCTOR": "1"
       }
