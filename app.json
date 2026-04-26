@@ -69,7 +69,6 @@
       "./plugins/withDisableBundleSigning.js",
       "expo-font",
       "expo-asset",
-      "expo-video",
       "./plugins/withRemoveAudioBackground.js"
     ],
     "extra": {

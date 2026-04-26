@@ -23,7 +23,6 @@
       "autoIncrement": true,
       "developmentClient": false,
       "credentialsSource": "local",
-      "prebuildCommand": "bash scripts/prebuild.sh",
       "env": {
         "EXPO_NO_DOCTOR": "1"
       }
