@@ -64,7 +64,6 @@
           "contactsPermission": "Flusso accesses your contacts to detect birthdays and other saved dates and add them to your calendar, for example showing a reminder for a contact's birthday."
         }
       ],
-      "expo-audio",
       "./modules/focus-live-activity/plugin/withFocusLiveActivity.js",
       "./plugins/withDisableBundleSigning.js",
       "expo-font",
@@ -80,3 +79,4 @@
     }
   }
 }
+
