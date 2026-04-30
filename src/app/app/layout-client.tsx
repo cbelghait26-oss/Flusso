@@ -15,7 +15,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { Timestamp } from 'firebase/firestore'
 
 // ─── Preview mode — bypasses auth with mock data ───────────────────────────
-const PREVIEW_MODE = true
+const PREVIEW_MODE = false
 
 const PAGE_TITLES: Record<string, string> = {
   '/app/dashboard': 'Dashboard',
