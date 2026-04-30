@@ -40,6 +40,10 @@ credentials.appstore.json
 # typescript
 *.tsbuildinfo
 
+# Next.js
+.next/
+out/
+
 # generated native folders
 /ios
 /android
