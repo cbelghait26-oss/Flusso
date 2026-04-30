@@ -13,9 +13,18 @@ import { Badge } from '@/components/ui/Badge'
 import { Modal } from '@/components/ui/Modal'
 import { cn } from '@/lib/utils'
 import { FriendRequest } from '@/types/models'
+import { PREVIEW_MODE } from '@/lib/config'
 
 type LeaderboardPeriod = 'week' | 'month' | 'alltime'
 type LeaderboardMetric = 'focus' | 'tasks' | 'streak'
+
+const MOCK_LEADERBOARD = [
+  { uid: 'preview', displayName: 'You', photoURL: null, weeklyFocusMinutes: 312, tasksCompleted: 18, streak: 7, friendTag: 'you#0001' },
+  { uid: 'u2', displayName: 'Alex Chen', photoURL: null, weeklyFocusMinutes: 480, tasksCompleted: 24, streak: 14, friendTag: 'alex#4821' },
+  { uid: 'u3', displayName: 'Mia Torres', photoURL: null, weeklyFocusMinutes: 390, tasksCompleted: 21, streak: 9, friendTag: 'mia#2233' },
+  { uid: 'u4', displayName: 'Sam Park', photoURL: null, weeklyFocusMinutes: 275, tasksCompleted: 15, streak: 5, friendTag: 'sam#6612' },
+  { uid: 'u5', displayName: 'Jordan Lee', photoURL: null, weeklyFocusMinutes: 195, tasksCompleted: 11, streak: 3, friendTag: 'jordan#9901' },
+]
 
 export default function SocialPage() {
   const [activePanel, setActivePanel] = useState<'friends' | 'leaderboard'>('leaderboard')
@@ -26,6 +35,10 @@ export default function SocialPage() {
   const { leaderboard, friendRequests, friendships, setLeaderboard, setFriendRequests, setFriendships } = useSocialStore()
 
   useEffect(() => {
+    if (PREVIEW_MODE) {
+      setLeaderboard(MOCK_LEADERBOARD as any)
+      return
+    }
     if (!user) return
     const unsub = SocialService.subscribeLeaderboard([], setLeaderboard)
     const unsubReqs = SocialService.subscribeIncomingRequests(profile?.friendTag ?? '', setFriendRequests)

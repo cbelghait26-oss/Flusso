@@ -9,9 +9,47 @@ import { useTaskStore } from '@/stores/useTaskStore'
 import { useObjectiveStore } from '@/stores/useObjectiveStore'
 import { cn } from '@/lib/utils'
 import { DailyMetric } from '@/types/models'
+import { PREVIEW_MODE } from '@/lib/config'
 
 const CHART_COLOR = '#7F77DD'
 const SECONDARY_COLOR = '#4ADE80'
+
+// ─── Generate 90 days of realistic mock analytics for preview mode ────────────
+function buildMockMetrics(): DailyMetric[] {
+  const metrics: DailyMetric[] = []
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  for (let i = 89; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    const dayKey = d.toISOString().split('T')[0]
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6
+    const focused = isWeekend
+      ? Math.random() < 0.4 ? 0 : Math.floor(Math.random() * 60 + 15)
+      : Math.random() < 0.15 ? 0 : Math.floor(Math.random() * 90 + 20)
+    metrics.push({
+      dayKey,
+      minutesFocused: focused,
+      tasksCompleted: focused > 0 ? Math.floor(Math.random() * 5 + 1) : 0,
+      isStreakDay: focused >= 30,
+    })
+  }
+  return metrics
+}
+
+function buildMockSessions(): { startTime: { toDate: () => Date }; duration: number }[] {
+  const sessions = []
+  const peaks = [9, 10, 14, 15, 20] // common focus hours
+  for (let i = 0; i < 60; i++) {
+    const base = peaks[Math.floor(Math.random() * peaks.length)]
+    const hour = Math.min(23, Math.max(0, base + Math.floor(Math.random() * 2 - 1)))
+    const d = new Date()
+    d.setDate(d.getDate() - Math.floor(Math.random() * 60))
+    d.setHours(hour, Math.floor(Math.random() * 60), 0, 0)
+    sessions.push({ startTime: { toDate: () => d }, duration: (Math.floor(Math.random() * 4) + 1) * 25 * 60 })
+  }
+  return sessions
+}
 
 export default function AnalyticsPage() {
   const { user } = useAuthStore()
@@ -22,10 +60,13 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (PREVIEW_MODE) {
+      setMetrics(buildMockMetrics())
+      setSessions(buildMockSessions())
+      setLoading(false)
+      return
+    }
     if (!user) return
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - 89)
     Promise.all([
       AnalyticsService.getDailyMetrics(user.uid),
       AnalyticsService.getFocusSessions(user.uid),

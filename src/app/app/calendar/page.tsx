@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
 import { CalendarEvent } from '@/types/models'
 import { Timestamp } from 'firebase/firestore'
+import { PREVIEW_MODE } from '@/lib/config'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -29,7 +30,7 @@ export default function CalendarPage() {
   const { tasks } = useTaskStore()
 
   useEffect(() => {
-    if (!user) return
+    if (PREVIEW_MODE || !user) return
     CalendarService.getEvents(user.uid).then(setEvents)
   }, [user, setEvents])
 
@@ -282,20 +283,21 @@ function CreateEventSheet({ onClose, userId, onCreated }: {
     try {
       const dateObj = new Date(`${date}T${startTime}:00`)
       const endDateObj = new Date(`${date}T${endTime}:00`)
-      const id = await CalendarService.create(userId, {
+      const eventData = {
         title: title.trim(),
         date: Timestamp.fromDate(dateObj),
         endDate: isAllDay ? null : Timestamp.fromDate(endDateObj),
         isAllDay,
         color,
         notes,
-      })
-      onCreated({
-        id, title: title.trim(),
-        date: Timestamp.fromDate(dateObj),
-        endDate: isAllDay ? null : Timestamp.fromDate(endDateObj),
-        isAllDay, color, notes, userId,
-      })
+      }
+      let id: string
+      if (PREVIEW_MODE) {
+        id = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      } else {
+        id = await CalendarService.create(userId, eventData)
+      }
+      onCreated({ id, ...eventData, userId })
       onClose()
     } finally {
       setLoading(false)

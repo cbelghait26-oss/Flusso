@@ -21,6 +21,7 @@ import { Modal } from '@/components/ui/Modal'
 import { OBJECTIVE_COLORS, getDeadlineStatus, cn } from '@/lib/utils'
 import { Task, Objective, ObjectiveCategory } from '@/types/models'
 import { Timestamp } from 'firebase/firestore'
+import { PREVIEW_MODE } from '@/lib/config'
 
 type TabType = 'tasks' | 'objectives'
 type FilterType = 'all' | 'myday' | 'important' | 'planned'
@@ -47,8 +48,8 @@ export default function TasksPage() {
     searchParams.get('new') === '1' && searchParams.get('tab') === 'objectives'
   )
 
-  const { tasks, updateTask, removeTask } = useTaskStore()
-  const { objectives, removeObjective } = useObjectiveStore()
+  const { tasks, addTask, updateTask, removeTask } = useTaskStore()
+  const { objectives, addObjective, removeObjective } = useObjectiveStore()
   const { user } = useAuthStore()
 
   const filteredTasks = tasks.filter((t) => {
@@ -69,21 +70,21 @@ export default function TasksPage() {
     completed: filteredTasks.filter((t) => t.isCompleted),
   }
 
-  const handleComplete = async (task: Task) => {
-    if (!user) return
-    await TaskService.complete(user.uid, task.id, !task.isCompleted)
+  const handleComplete = (task: Task) => {
+    updateTask(task.id, { isCompleted: !task.isCompleted })
+    if (!PREVIEW_MODE && user) TaskService.complete(user.uid, task.id, !task.isCompleted).catch(() => {})
   }
 
-  const handleDeleteTask = async (taskId: string) => {
-    if (!user) return
-    await TaskService.delete(user.uid, taskId)
+  const handleDeleteTask = (taskId: string) => {
+    removeTask(taskId)
     if (selectedTask?.id === taskId) setSelectedTask(null)
+    if (!PREVIEW_MODE && user) TaskService.delete(user.uid, taskId).catch(() => {})
   }
 
-  const handleDeleteObjective = async (objId: string) => {
-    if (!user) return
-    await ObjectiveService.delete(user.uid, objId)
+  const handleDeleteObjective = (objId: string) => {
+    removeObjective(objId)
     if (selectedObjective?.id === objId) setSelectedObjective(null)
+    if (!PREVIEW_MODE && user) ObjectiveService.delete(user.uid, objId).catch(() => {})
   }
 
   return (
@@ -357,15 +358,16 @@ function TaskRow({ task, isSelected, onSelect, onComplete, onDelete }: {
 function TaskDetailPanel({ task, onClose }: { task: Task; onClose: () => void }) {
   const { user } = useAuthStore()
   const { objectives } = useObjectiveStore()
+  const { updateTask } = useTaskStore()
   const [title, setTitle] = useState(task.title)
   const [notes, setNotes] = useState(task.notes)
 
   useEffect(() => { setTitle(task.title); setNotes(task.notes) }, [task])
 
-  const save = useCallback(async () => {
-    if (!user) return
-    await TaskService.update(user.uid, task.id, { title, notes })
-  }, [user, task.id, title, notes])
+  const save = useCallback(() => {
+    updateTask(task.id, { title, notes })
+    if (!PREVIEW_MODE && user) TaskService.update(user.uid, task.id, { title, notes }).catch(() => {})
+  }, [user, task.id, title, notes, updateTask])
 
   return (
     <div className="w-80 xl:w-96 flex-shrink-0 flex flex-col border-l border-border overflow-y-auto">
@@ -406,9 +408,9 @@ function TaskDetailPanel({ task, onClose }: { task: Task; onClose: () => void })
           <input
             type="checkbox"
             checked={task.isMyDay}
-            onChange={async (e) => {
-              if (!user) return
-              await TaskService.update(user.uid, task.id, { isMyDay: e.target.checked })
+            onChange={(e) => {
+              updateTask(task.id, { isMyDay: e.target.checked })
+              if (!PREVIEW_MODE && user) TaskService.update(user.uid, task.id, { isMyDay: e.target.checked }).catch(() => {})
             }}
             className="accent-primary"
           />
@@ -510,13 +512,14 @@ function ObjectiveDetailPanel({
   onClose: () => void; onDelete: (id: string) => void
 }) {
   const { user } = useAuthStore()
+  const { updateObjective } = useObjectiveStore()
   const [title, setTitle] = useState(objective.title)
 
   useEffect(() => setTitle(objective.title), [objective])
 
-  const save = async () => {
-    if (!user) return
-    await ObjectiveService.update(user.uid, objective.id, { title })
+  const save = () => {
+    updateObjective(objective.id, { title })
+    if (!PREVIEW_MODE && user) ObjectiveService.update(user.uid, objective.id, { title }).catch(() => {})
   }
 
   const color = OBJECTIVE_COLORS[objective.colorIndex] ?? OBJECTIVE_COLORS[0]
@@ -581,22 +584,31 @@ function NewTaskModal({ onClose, objectives, userId }: { onClose: () => void; ob
   const [importance, setImportance] = useState(1)
   const [isMyDay, setIsMyDay] = useState(false)
   const [loading, setLoading] = useState(false)
+  const { addTask } = useTaskStore()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim()) return
     setLoading(true)
+    const now = Timestamp.now()
+    const localId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const taskData = {
+      title: title.trim(),
+      notes,
+      objectiveId: objectiveId || null,
+      importance,
+      isMyDay,
+      isCompleted: false,
+      deadline: null,
+      sortOrder: Date.now(),
+    }
     try {
-      await TaskService.create(userId, {
-        title: title.trim(),
-        notes,
-        objectiveId: objectiveId || null,
-        importance,
-        isMyDay,
-        isCompleted: false,
-        deadline: null,
-        sortOrder: Date.now(),
-      })
+      if (PREVIEW_MODE) {
+        addTask({ id: localId, userId, ...taskData, createdAt: now, updatedAt: now })
+      } else {
+        const id = await TaskService.create(userId, taskData)
+        addTask({ id, userId, ...taskData, createdAt: now, updatedAt: now })
+      }
       onClose()
     } finally {
       setLoading(false)
@@ -655,20 +667,21 @@ function NewObjectiveModal({ onClose, userId }: { onClose: () => void; userId: s
   const [category, setCategory] = useState<ObjectiveCategory>('Personal')
   const [colorIndex, setColorIndex] = useState(0)
   const [loading, setLoading] = useState(false)
+  const { addObjective } = useObjectiveStore()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim()) return
     setLoading(true)
+    const localId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const objData = { title: title.trim(), category, colorIndex, tasks: [], targetDate: null, isCompleted: false }
     try {
-      await ObjectiveService.create(userId, {
-        title: title.trim(),
-        category,
-        colorIndex,
-        tasks: [],
-        targetDate: null,
-        isCompleted: false,
-      })
+      if (PREVIEW_MODE) {
+        addObjective({ id: localId, userId, ...objData })
+      } else {
+        const id = await ObjectiveService.create(userId, objData)
+        addObjective({ id, userId, ...objData })
+      }
       onClose()
     } finally {
       setLoading(false)

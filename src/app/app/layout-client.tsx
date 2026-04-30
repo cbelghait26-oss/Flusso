@@ -13,9 +13,7 @@ import { useObjectiveStore } from '@/stores/useObjectiveStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { Spinner } from '@/components/ui/Spinner'
 import { Timestamp } from 'firebase/firestore'
-
-// ─── Preview mode — bypasses auth with mock data ───────────────────────────
-const PREVIEW_MODE = false
+import { PREVIEW_MODE } from '@/lib/config'
 
 const PAGE_TITLES: Record<string, string> = {
   '/app/dashboard': 'Dashboard',
