@@ -1,8 +1,26 @@
 {
   "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
-  "extends": "expo/tsconfig.base",
-  "exclude": ["node_modules"]
+  "include": ["next-env.d.ts", "src/app/**/*.ts", "src/app/**/*.tsx", "src/components/layout/**/*.ts", "src/components/layout/**/*.tsx", "src/components/ui/Button.tsx", "src/components/ui/Input.tsx", "src/components/ui/Modal.tsx", "src/components/ui/Badge.tsx", "src/components/ui/Avatar.tsx", "src/components/ui/ProgressBar.tsx", "src/components/ui/Spinner.tsx", "src/components/ui/EmptyState.tsx", "src/components/calendar/**/*.ts", "src/components/calendar/**/*.tsx", "src/components/providers.tsx", "src/hooks/**/*.ts", "src/hooks/**/*.tsx", "src/lib/**/*.ts", "src/services/AuthService.ts", "src/services/TaskService.ts", "src/services/ObjectiveService.ts", "src/services/FocusService.ts", "src/services/CalendarService.ts", "src/services/SocialService.ts", "src/services/AnalyticsService.ts", "src/stores/**/*.ts", "src/types/**/*.ts", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", "App.tsx", "index.js", "screens/**", "modules/**", "website/**", "scripts/**", "plugins/**", "src/services/firebase.ts", "src/services/CloudSync.ts", "src/services/CloudAutoPush.ts", "src/services/CloudBootstrap.ts", "src/services/FlussoStore.ts", "src/services/FocusAudioManager.ts", "src/services/GlobalMusicPlayer.tsx", "src/services/SpotifyRemote.ts", "src/services/SubscriptionService.ts", "src/services/TrainingPlanGenerator.ts", "src/services/appleAuth.ts", "src/services/appleAuth.ios.ts", "src/services/googleAuth.ts", "src/services/emailVerification.ts", "src/services/passwordReset.ts", "src/services/notifications.ts", "src/services/contactsDates.ts", "src/navigation/**", "src/components/SpotifyMiniPlayer.tsx", "src/components/theme/**", "src/components/ui/AchievementUnlockModal.tsx", "src/components/ui/FocusRoomTutorial.tsx", "src/components/ui/ObjectiveTutorial.tsx", "src/components/ui/Streakcelebrationmodal.tsx", "src/components/ui/TrainingPlanWizard.tsx", "src/components/ui/TrainingRoomTutorial.tsx"]
 }

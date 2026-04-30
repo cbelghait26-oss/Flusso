@@ -1,21 +1,83 @@
-// src/services/SocialService.ts
-// ─── Social Graph + Leaderboard + Shared Workspace ──────────────────────────
+// src/services/SocialService.ts — Next.js web version
 import {
-  arrayUnion,
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
-  limit,
+  onSnapshot,
   query,
   serverTimestamp,
   setDoc,
   updateDoc,
   where,
   writeBatch,
-} from "firebase/firestore";
-import { auth, db } from "./firebase";
+} from 'firebase/firestore'
+import { auth, db } from '@/lib/firebase'
+import type { FriendRequest, UserMetrics, Friendship } from '@/types/models'
+
+export class SocialService {
+  // ── Leaderboard ──────────────────────────────────────────────────────────
+  static subscribeLeaderboard(
+    _uids: string[],
+    callback: (entries: UserMetrics[]) => void
+  ): () => void {
+    const uid = auth.currentUser?.uid
+    if (!uid) { callback([]); return () => {} }
+    const q = query(collection(db, 'leaderboard'))
+    return onSnapshot(q, (snap) => {
+      const entries = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as UserMetrics[]
+      callback(entries)
+    }, () => callback([]))
+  }
+
+  // ── Friend Requests ───────────────────────────────────────────────────────
+  static subscribeIncomingRequests(
+    userTag: string,
+    callback: (reqs: FriendRequest[]) => void
+  ): () => void {
+    if (!userTag) { callback([]); return () => {} }
+    const q = query(
+      collection(db, 'friendRequests'),
+      where('toTag', '==', userTag),
+      where('status', '==', 'pending')
+    )
+    return onSnapshot(q, (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as FriendRequest[])
+    }, () => callback([]))
+  }
+
+  static async sendFriendRequest(fromUid: string, toTag: string): Promise<void> {
+    const id = `${fromUid}_${toTag}`
+    await setDoc(doc(db, 'friendRequests', id), {
+      fromUid,
+      toTag,
+      status: 'pending',
+      createdAt: serverTimestamp(),
+    })
+  }
+
+  static async acceptFriendRequest(requestId: string, fromUid: string, toUid: string): Promise<void> {
+    const batch = writeBatch(db)
+    batch.update(doc(db, 'friendRequests', requestId), { status: 'accepted' })
+    const friendId = [fromUid, toUid].sort().join('_')
+    batch.set(doc(db, 'friendships', friendId), {
+      uids: [fromUid, toUid],
+      createdAt: serverTimestamp(),
+    })
+    await batch.commit()
+  }
+
+  static async declineFriendRequest(requestId: string): Promise<void> {
+    await updateDoc(doc(db, 'friendRequests', requestId), { status: 'declined' })
+  }
+
+  // ── Friendships ───────────────────────────────────────────────────────────
+  static async getFriendships(uid: string): Promise<Friendship[]> {
+    const q = query(collection(db, 'friendships'), where('uids', 'array-contains', uid))
+    const snap = await getDocs(q)
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Friendship[]
+  }
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

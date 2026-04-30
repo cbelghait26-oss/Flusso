@@ -9,7 +9,10 @@
     "web": "expo start --web",
     "build": "cd website && npm install && npm run build",
     "postinstall": "patch-package && node scripts/installProfile.js",
-    "eas-build-post-install": "patch-package"
+    "eas-build-post-install": "patch-package",
+    "next:dev": "next dev",
+    "next:build": "next build",
+    "next:start": "next start"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

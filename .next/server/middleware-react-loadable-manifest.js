@@ -1,0 +1,1 @@
+self.__REACT_LOADABLE_MANIFEST='{"lib\\\\revenuecat.ts -> @revenuecat/purchases-js":{"id":21932,"files":["static/chunks/fde08e1f.a2f31ca2aef6d96f.js"]}}';
