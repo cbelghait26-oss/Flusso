@@ -10,10 +10,12 @@ import { CommandPalette } from '@/components/layout/CommandPalette'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useTaskStore } from '@/stores/useTaskStore'
 import { useObjectiveStore } from '@/stores/useObjectiveStore'
-import { TaskService } from '@/services/TaskService'
-import { ObjectiveService } from '@/services/ObjectiveService'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { Spinner } from '@/components/ui/Spinner'
+import { Timestamp } from 'firebase/firestore'
+
+// ─── Preview mode — bypasses auth with mock data ───────────────────────────
+const PREVIEW_MODE = true
 
 const PAGE_TITLES: Record<string, string> = {
   '/app/dashboard': 'Dashboard',
@@ -30,40 +32,44 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
-  const { user, settings, loading, isPremium } = useAuthStore()
+  const { user, settings, loading, isPremium, setUser, setProfile, setSettings, setIsPremium } = useAuthStore()
   const { setTasks } = useTaskStore()
   const { setObjectives } = useObjectiveStore()
 
   useKeyboardShortcuts()
 
-  // Auth guard
+  // Seed mock data in preview mode
   useEffect(() => {
+    if (!PREVIEW_MODE) return
+    setUser({ uid: 'preview', displayName: 'Demo User', email: 'demo@flusso.app', photoURL: null } as any)
+    setProfile({ uid: 'preview', displayName: 'Demo User', friendTag: 'demo#0001', photoURL: null, streak: 7, totalFocusMinutes: 1240 })
+    setSettings({ dailyFocusGoalMinutes: 60, timeFormat: '12h', onboardingComplete: true, notificationsEnabled: true })
+    setIsPremium(true)
+    const now = Timestamp.now()
+    setTasks([
+      { id: '1', title: 'Review design system tokens', notes: '', isCompleted: false, isMyDay: true, importance: 3, deadline: Timestamp.fromDate(new Date()), objectiveId: 'obj1', sortOrder: 1, userId: 'preview', createdAt: now, updatedAt: now },
+      { id: '2', title: 'Write unit tests for auth flow', notes: '', isCompleted: false, isMyDay: true, importance: 2, deadline: null, objectiveId: 'obj1', sortOrder: 2, userId: 'preview', createdAt: now, updatedAt: now },
+      { id: '3', title: 'Update landing page copy', notes: '', isCompleted: true, isMyDay: false, importance: 1, deadline: null, objectiveId: 'obj2', sortOrder: 3, userId: 'preview', createdAt: now, updatedAt: now },
+      { id: '4', title: 'Ship mobile onboarding v2', notes: '', isCompleted: false, isMyDay: false, importance: 4, deadline: Timestamp.fromDate(new Date(Date.now() + 86400000 * 2)), objectiveId: 'obj2', sortOrder: 4, userId: 'preview', createdAt: now, updatedAt: now },
+      { id: '5', title: 'Run 5k', notes: '', isCompleted: false, isMyDay: true, importance: 2, deadline: null, objectiveId: 'obj3', sortOrder: 5, userId: 'preview', createdAt: now, updatedAt: now },
+    ])
+    setObjectives([
+      { id: 'obj1', title: 'Launch Flusso Web App', category: 'Career', colorIndex: 0, tasks: [], targetDate: null, isCompleted: false, userId: 'preview' },
+      { id: 'obj2', title: 'Grow Mobile User Base', category: 'Career', colorIndex: 2, tasks: [], targetDate: null, isCompleted: false, userId: 'preview' },
+      { id: 'obj3', title: 'Get fit this summer', category: 'Health', colorIndex: 1, tasks: [], targetDate: null, isCompleted: false, userId: 'preview' },
+    ])
+  }, [])
+
+  // Auth guard (skipped in preview mode)
+  useEffect(() => {
+    if (PREVIEW_MODE) return
     if (loading) return
-    if (!user) {
-      router.replace('/signin')
-      return
-    }
-    if (settings && !settings.onboardingComplete) {
-      router.replace('/app/onboarding')
-      return
-    }
-    if (!isPremium && pathname !== '/app/paywall' && pathname !== '/app/onboarding') {
-      router.replace('/app/paywall')
-    }
+    if (!user) { router.replace('/signin'); return }
+    if (settings && !settings.onboardingComplete) { router.replace('/app/onboarding'); return }
+    if (!isPremium && pathname !== '/app/paywall' && pathname !== '/app/onboarding') { router.replace('/app/paywall') }
   }, [user, settings, loading, isPremium, pathname, router])
 
-  // Subscribe to real-time data
-  useEffect(() => {
-    if (!user) return
-    const unsubTasks = TaskService.subscribe(user.uid, setTasks)
-    const unsubObjectives = ObjectiveService.subscribe(user.uid, setObjectives)
-    return () => {
-      unsubTasks()
-      unsubObjectives()
-    }
-  }, [user, setTasks, setObjectives])
-
-  if (loading) {
+  if (loading && !PREVIEW_MODE) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-background">
         <Spinner size="lg" />
@@ -71,7 +77,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     )
   }
 
-  if (!user) return null
+  if (!user && !PREVIEW_MODE) return null
 
   const pageTitle = Object.entries(PAGE_TITLES).find(([key]) => pathname.startsWith(key))?.[1] ?? 'Flusso'
 

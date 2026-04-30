@@ -12,6 +12,11 @@ export function useAuth() {
     useAuthStore()
 
   useEffect(() => {
+    // Skip Firebase auth when no API key is configured (preview / build time)
+    if (!process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
+      setLoading(false)
+      return
+    }
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser)
