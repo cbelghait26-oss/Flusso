@@ -26,6 +26,7 @@
     "@react-navigation/bottom-tabs": "^7.12.0",
     "@react-navigation/native": "^7.1.28",
     "@react-navigation/native-stack": "^7.12.0",
+    "autoprefixer": "^10.5.0",
     "expo": "~55.0.9",
     "expo-apple-authentication": "~55.0.9",
     "expo-asset": "~55.0.10",
@@ -51,6 +52,7 @@
     "lucide-react": "^1.14.0",
     "lucide-react-native": "^0.563.0",
     "next": "^16.2.4",
+    "postcss": "^8.5.12",
     "react": "19.2.0",
     "react-dom": "^19.2.5",
     "react-native": "0.83.4",
@@ -63,6 +65,7 @@
     "react-native-svg": "15.15.3",
     "recharts": "^3.8.1",
     "smart-location": "file:./modules/smart-location",
+    "tailwindcss": "^4.2.4",
     "zustand": "^5.0.12"
   },
   "private": true,
