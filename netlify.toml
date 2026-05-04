@@ -4,6 +4,8 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # Firebase web API keys are intentionally public identifiers (security via Firebase Rules)
+  SECRETS_SCAN_OMIT_VALUES = "AIzaSyA-FZHnU0MCw43xRhFl7JlFy3ebOMMOrJo"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
