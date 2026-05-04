@@ -88,6 +88,7 @@
   },
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.15.10",
+    "@tailwindcss/postcss": "^4.2.4",
     "@types/react": "^19.2.10",
     "expo-module-scripts": "^55.0.2",
     "patch-package": "^8.0.1",
