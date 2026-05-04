@@ -8,19 +8,7 @@ export default function Navbar() {
     <nav className="navbar">
       <div className="navbar-inner">
         <Link to="/" className="navbar-logo">
-          <div className="logo-icon" aria-hidden="true">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="8" fill="#1C7ED6" />
-              <path
-                d="M8 22C10 18 12 14 16 12C20 10 22 14 20 18C18 22 14 22 12 20"
-                stroke="white"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                fill="none"
-              />
-              <circle cx="16" cy="16" r="3" fill="white" opacity="0.9" />
-            </svg>
-          </div>
+          <img src="/AppIcon.png" alt="Flusso" className="logo-icon" />
           <span className="logo-text">Flusso</span>
         </Link>
 
@@ -38,7 +26,7 @@ export default function Navbar() {
             Support
           </NavLink>
           <a
-            href="https://apps.apple.com"
+            href="https://apps.apple.com/app/flusso/id6759956350"
             target="_blank"
             rel="noopener noreferrer"
             className="btn-download-nav"
