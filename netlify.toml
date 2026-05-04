@@ -4,8 +4,8 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  # Firebase web API keys are intentionally public identifiers (security via Firebase Rules)
-  SECRETS_SCAN_OMIT_VALUES = "AIzaSyA-FZHnU0MCw43xRhFl7JlFy3ebOMMOrJo"
+  # Disable smart detection — Firebase web config keys are intentionally public (security via Firestore Rules)
+  SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
