@@ -35,6 +35,7 @@ import SearchScreen from "./screens/Dashboard/SearchScreen";
 import AppTabs from "./src/navigation/AppTabs";
 import FocusZoneScreen from "./screens/FocusZoneScreen";
 import TrainingRoomScreen from "./screens/TrainingRoomScreen";
+import WorkoutProgressScreen from "./screens/WorkoutProgressScreen";
 import SocialScreen from "./screens/Social/SocialScreen";
 import AddFriendScreen from "./screens/Social/AddFriendScreen";
 import PaywallScreen from "./screens/PaywallScreen";
@@ -84,6 +85,7 @@ function AppInner({ initialRoute }: { initialRoute: keyof RootStackParamList }) 
               options={{ animation: "fade", gestureEnabled: false }} />
             <Stack.Screen name="FocusZoneScreen" component={FocusZoneScreen} />
             <Stack.Screen name="TrainingRoom" component={TrainingRoomScreen} />
+            <Stack.Screen name="WorkoutProgress" component={WorkoutProgressScreen} options={{ animation: "slide_from_right" }} />
             <Stack.Screen name="MainTabs" component={AppTabs} />
             <Stack.Screen name="Search" component={SearchScreen} />
             <Stack.Screen name="Social" component={SocialScreen} options={{ animation: "slide_from_right" }} />

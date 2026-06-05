@@ -25,11 +25,14 @@ import {
   loadTasks,
   loadTrainingPlans,
   saveFocusSession,
+  saveWorkoutSession,
   todayKey,
+  uid,
   updateTrainingPlan,
   updateTask,
   loadTrainingRoomTutorialSeen,
   saveTrainingRoomTutorialSeen,
+  type WorkoutExerciseLog,
 } from "../src/data/storage";
 import { TrainingRoomTutorial } from "../src/components/ui/TrainingRoomTutorial";
 import type { Task, TrainingPlan } from "../src/data/models";
@@ -48,6 +51,25 @@ type ExerciseLog = {
   exerciseName: string;
   sets:         SetLogEntry[];
 };
+
+// ─── Muscle group derivation (mirrors WorkoutProgressScreen logic) ────────────
+const MUSCLE_PATTERNS: [RegExp, string][] = [
+  [/bench\s*press|chest\s*press|pec\s*(deck|fly)|dumbbell\s*fly|push.?up|dip|cable\s*cross|incline|decline/i, "Chest"],
+  [/pull.?up|chin.?up|lat\s*pull|row|deadlift|t.?bar|cable\s*row|seated\s*row|bent.?over|back\s*ext|hyper/i, "Back"],
+  [/squat|leg\s*(press|curl|ext|raise)|lunge|calf|rdl|glute|hip\s*(thrust|hinge)|step.?up|hack\s*squat|bulgarian/i, "Legs"],
+  [/overhead\s*press|shoulder\s*press|ohp|lateral\s*raise|front\s*raise|face\s*pull|upright\s*row|arnold|military/i, "Shoulders"],
+  [/curl|tricep|preacher|hammer|skullcrusher|close.?grip|pushdown|kickback/i, "Arms"],
+  [/plank|crunch|sit.?up|ab\s*(wheel|rollout)|russian\s*twist|leg\s*raise|hollow|cable\s*crunch|woodchop/i, "Core"],
+  [/run|jog|treadmill|bike|cycling|elliptic|swim|jump\s*rope|hiit|cardio/i, "Cardio"],
+  [/clean|snatch|thruster|burpee|turkish\s*get|kettlebell\s*swing|complex/i, "Full Body"],
+];
+
+function deriveMuscleGroup(name: string): string {
+  for (const [re, group] of MUSCLE_PATTERNS) {
+    if (re.test(name)) return group;
+  }
+  return "Other";
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function clampInt(n: number, lo: number, hi: number) {
@@ -401,6 +423,34 @@ export default function TrainingRoomScreen({ navigation }: any) {
   const handleEndWorkout = () => {
     setShowExerciseDecision(false);
     void saveSession();
+    // Persist workout history for the Progress tracker
+    if (workoutLog.length > 0 && sessionStartRef.current) {
+      const start = sessionStartRef.current;
+      const mins = Math.max(1, Math.floor((Date.now() - start.getTime()) / 60_000));
+      const hh = start.getHours().toString().padStart(2, "0");
+      const mm = start.getMinutes().toString().padStart(2, "0");
+      const exerciseLogs: WorkoutExerciseLog[] = workoutLog.map((exLog) => ({
+        exerciseName: exLog.exerciseName,
+        muscleGroup:  deriveMuscleGroup(exLog.exerciseName),
+        sets: exLog.sets.map((s) => ({
+          setNumber: s.setNumber,
+          reps:      s.reps,
+          weight:    s.weight,
+          notes:     s.notes,
+        })),
+      }));
+      const currentPlanName = selectedTask
+        ? (plans.find((p) => p.id === selectedTask.trainingPlanId)?.name ?? selectedTask.title)
+        : "";
+      saveWorkoutSession({
+        id:              uid("ws"),
+        date:            todayKey(),
+        startTime:       `${hh}:${mm}`,
+        durationMinutes: mins,
+        planName:        currentPlanName,
+        exercises:       exerciseLogs,
+      }).catch(() => {});
+    }
     if (selectedTask) {
       updateTask(selectedTask.id, { status: "completed" }).catch(() => {});
     }
@@ -779,13 +829,22 @@ export default function TrainingRoomScreen({ navigation }: any) {
               )}
 
               {phase === "complete" && (
-                <Pressable
-                  onPress={() => navigation.goBack()}
-                  style={({ pressed }) => [ss.primaryBtn, { opacity: pressed ? 0.88 : 1 }]}
-                >
-                  <Ionicons name="checkmark-done" size={s(22)} color="#fff" />
-                  <Text style={ss.primaryBtnText}>Done</Text>
-                </Pressable>
+                <View style={{ gap: s(10), width: "100%" }}>
+                  <Pressable
+                    onPress={() => navigation.navigate("WorkoutProgress")}
+                    style={({ pressed }) => [ss.outlineBtn, { opacity: pressed ? 0.88 : 1 }]}
+                  >
+                    <Ionicons name="trending-up-outline" size={s(18)} color="rgba(255,255,255,0.75)" />
+                    <Text style={ss.outlineBtnText}>View Progress</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => navigation.goBack()}
+                    style={({ pressed }) => [ss.primaryBtn, { opacity: pressed ? 0.88 : 1 }]}
+                  >
+                    <Ionicons name="checkmark-done" size={s(22)} color="#fff" />
+                    <Text style={ss.primaryBtnText}>Done</Text>
+                  </Pressable>
+                </View>
               )}
             </View>
           </View>

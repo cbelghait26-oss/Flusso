@@ -17,7 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.BLGgroup.flusso",
       "appleTeamId": "BV8B4SJT8T",
-      "googleServicesFile": "./GoogleService-Info.plist",
+      "googleServicesFile": "./config/GoogleService-Info.plist",
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
