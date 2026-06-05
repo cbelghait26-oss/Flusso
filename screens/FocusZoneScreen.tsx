@@ -317,6 +317,7 @@ export default function FocusZoneScreen({ navigation }: any) {
             taskName: selectedTask?.title ?? "Focus",
             mode: "Focus",
             durationSeconds: 0,
+            startTimestamp: Date.now() / 1000,
           }).then((started) => {
             liveActivityActiveRef.current = started;
             if (!started) {

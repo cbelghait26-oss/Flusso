@@ -69,6 +69,10 @@ private struct TimerLabel: View {
         Group {
             if state.isPaused, let remaining = state.pausedTimeRemaining {
                 Text(staticTime(remaining))
+            } else if let start = state.startTime {
+                // Count-up (stopwatch) mode
+                Text(timerInterval: start ... .distantFuture, countsDown: false)
+                    .frame(minWidth: size * 2.8)
             } else if state.endTime > .now {
                 Text(timerInterval: .now ... state.endTime, countsDown: true)
                     .frame(minWidth: size * 2.8)
@@ -96,6 +100,10 @@ private struct CompactTimerLabel: View {
         Group {
             if state.isPaused, let remaining = state.pausedTimeRemaining {
                 Text(staticTime(remaining))
+            } else if let start = state.startTime {
+                // Count-up (stopwatch) mode
+                Text(timerInterval: start ... .distantFuture, countsDown: false)
+                    .frame(maxWidth: 54)
             } else if state.endTime > .now {
                 Text(timerInterval: .now ... state.endTime, countsDown: true)
                     .frame(maxWidth: 54)
