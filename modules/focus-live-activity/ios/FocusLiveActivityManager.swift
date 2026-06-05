@@ -27,13 +27,15 @@ final class FocusLiveActivityManager {
     ///   - sessionName:     Human-readable session label shown on the lock screen.
     ///   - taskName:        The task currently being worked on.
     ///   - mode:            "Focus" or "Break".
-    ///   - durationSeconds: How many seconds remain in the current interval.
+    ///   - durationSeconds: How many seconds remain in the current interval (ignored when startTime is set).
+    ///   - startTime:       When non-nil the widget counts UP from this point (stopwatch mode).
     func startActivity(
         sessionId: String,
         sessionName: String,
         taskName: String,
         mode: String,
-        durationSeconds: Int
+        durationSeconds: Int,
+        startTime: Date? = nil
     ) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             print("[FocusLiveActivity] Live Activities are disabled on this device.")
@@ -53,7 +55,8 @@ final class FocusLiveActivityManager {
             mode: mode,
             endTime: endTime,
             isPaused: false,
-            pausedTimeRemaining: nil
+            pausedTimeRemaining: nil,
+            startTime: startTime
         )
 
         do {

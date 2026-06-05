@@ -22,21 +22,29 @@ public class FocusLiveActivityModule: Module {
         // MARK: startActivity
         // Called when the user enters Focus Zone. Starts a new Live Activity.
         //
-        // Param order: sessionId, sessionName, taskName, mode, durationSeconds
+        // Param order: sessionId, sessionName, taskName, mode, durationSeconds, startTimestamp
+        // startTimestamp: Unix timestamp in seconds (Double). Pass 0 (or omit) for countdown mode.
+        //                 Pass the session start time for stopwatch / count-up mode.
         AsyncFunction("startActivity") { (
             sessionId: String,
             sessionName: String,
             taskName: String,
             mode: String,
-            durationSeconds: Int
+            durationSeconds: Int,
+            startTimestamp: Double
         ) in
             if #available(iOS 16.1, *) {
+                // A non-zero timestamp signals stopwatch (count-up) mode.
+                let startTime: Date? = startTimestamp > 0
+                    ? Date(timeIntervalSince1970: startTimestamp)
+                    : nil
                 FocusLiveActivityManager.shared.startActivity(
                     sessionId: sessionId,
                     sessionName: sessionName,
                     taskName: taskName,
                     mode: mode,
-                    durationSeconds: durationSeconds
+                    durationSeconds: durationSeconds,
+                    startTime: startTime
                 )
             }
         }

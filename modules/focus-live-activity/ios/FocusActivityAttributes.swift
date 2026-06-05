@@ -29,6 +29,7 @@ struct FocusActivityAttributes: ActivityAttributes {
         /// Absolute point in time when the current interval ends.
         /// The widget uses this as the upper bound of a SwiftUI countdown
         /// Text so it updates automatically every second without a push update.
+        /// Unused when startTime is set (count-up / stopwatch mode).
         var endTime: Date
 
         /// Whether the timer is currently paused.
@@ -37,5 +38,9 @@ struct FocusActivityAttributes: ActivityAttributes {
         /// Seconds left at the moment of pause (used when isPaused == true).
         /// Nil when the timer is running.
         var pausedTimeRemaining: Int?
+
+        /// When non-nil the widget counts UP from this time (stopwatch mode).
+        /// Takes precedence over endTime.
+        var startTime: Date?
     }
 }

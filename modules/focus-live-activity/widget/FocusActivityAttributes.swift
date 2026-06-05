@@ -15,9 +15,13 @@ struct FocusActivityAttributes: ActivityAttributes {
         /// "Focus" | "Break" | "Done"
         var mode: String
         /// Absolute end time of the current interval — drives Text(timerInterval:).
+        /// Unused when startTime is set (count-up / stopwatch mode).
         var endTime: Date
         var isPaused: Bool
         /// Seconds remaining at the moment of pause; nil when running.
         var pausedTimeRemaining: Int?
+        /// When non-nil the widget counts UP from this time (stopwatch mode).
+        /// Takes precedence over endTime.
+        var startTime: Date?
     }
 }

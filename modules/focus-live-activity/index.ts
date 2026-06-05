@@ -17,8 +17,14 @@ export interface StartActivityParams {
   taskName: string;
   /** "Focus" | "Break" */
   mode: "Focus" | "Break";
-  /** Total seconds in the current interval. */
+  /** Total seconds in the current interval. Pass 0 when using startTimestamp (stopwatch mode). */
   durationSeconds: number;
+  /**
+   * Unix timestamp in seconds (Date.now() / 1000) marking when the stopwatch started.
+   * When non-zero the widget counts UP from this point instead of counting down.
+   * Omit (or pass 0) for normal countdown (pomodoro) mode.
+   */
+  startTimestamp?: number;
 }
 
 export interface UpdateActivityParams {
@@ -85,7 +91,8 @@ export async function startFocusActivity(
     params.sessionName,
     params.taskName,
     params.mode,
-    params.durationSeconds
+    params.durationSeconds,
+    params.startTimestamp ?? 0
   );
   return true;
 }
