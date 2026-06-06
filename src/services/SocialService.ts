@@ -1059,3 +1059,185 @@ export async function updateSharedEvent(eventId: string, updates: { title?: stri
   if (evt.creator_id !== uid) throw new Error("Only the host can update this event.");
   await updateDoc(ref, updates);
 }
+
+// ── Group Chat ────────────────────────────────────────────────────────────────
+
+export type GroupMessage = {
+  id: string;
+  senderUid: string;
+  senderName: string;
+  text: string;
+  createdAt: string; // ISO string
+};
+
+const MUTED_GROUPS_KEY = "flusso:muted:groups";
+const GROUP_LAST_READ_PREFIX = "flusso:group:lastRead:";
+
+async function loadMutedGroupsLocal(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(MUTED_GROUPS_KEY);
+    if (raw) return JSON.parse(raw) as string[];
+  } catch {}
+  return [];
+}
+
+async function saveMutedGroupsLocal(groups: string[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(MUTED_GROUPS_KEY, JSON.stringify(groups));
+  } catch {}
+}
+
+export async function isGroupMuted(groupId: string): Promise<boolean> {
+  const muted = await loadMutedGroupsLocal();
+  return muted.includes(groupId);
+}
+
+/**
+ * Toggle mute for a group. Returns the new muted state (true = muted).
+ * Persists to both AsyncStorage (fast local read) and Firestore user profile
+ * (so the sending side can skip push notifs for muted recipients).
+ */
+export async function toggleGroupMute(groupId: string): Promise<boolean> {
+  const muted = await loadMutedGroupsLocal();
+  const wasMuted = muted.includes(groupId);
+  if (wasMuted) {
+    await saveMutedGroupsLocal(muted.filter((id) => id !== groupId));
+    const uid = auth.currentUser?.uid;
+    if (uid) {
+      updateDoc(profileRef(uid), { mutedGroups: arrayRemove(groupId) }).catch(() => {});
+    }
+    return false;
+  } else {
+    await saveMutedGroupsLocal([...muted, groupId]);
+    const uid = auth.currentUser?.uid;
+    if (uid) {
+      setDoc(profileRef(uid), { mutedGroups: arrayUnion(groupId) }, { merge: true }).catch(() => {});
+    }
+    return true;
+  }
+}
+
+export async function markGroupRead(groupId: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(
+      `${GROUP_LAST_READ_PREFIX}${groupId}`,
+      new Date().toISOString()
+    );
+  } catch {}
+}
+
+export async function getGroupLastReadAt(groupId: string): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(`${GROUP_LAST_READ_PREFIX}${groupId}`);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Send a message to a group chat.
+ * groupId format: "obj_{objectiveId}" or "evt_{eventId}"
+ */
+export async function sendGroupMessage(
+  groupId: string,
+  text: string,
+  memberUids: string[],
+): Promise<GroupMessage> {
+  const uid = requireUid();
+  const profile = await getUserProfile(uid);
+  const senderName = profile?.displayName ?? "Unknown";
+  const createdAt = new Date().toISOString();
+  const msgId = nanoid("gm");
+
+  const message: GroupMessage = {
+    id: msgId,
+    senderUid: uid,
+    senderName,
+    text: text.trim(),
+    createdAt,
+  };
+
+  await setDoc(doc(db, "groupMessages", groupId, "messages", msgId), message);
+
+  // Update lastMessage on the parent group document for unread badge tracking
+  const isObjective = groupId.startsWith("obj_");
+  const refDocId = groupId.slice(4);
+  const groupCollection = isObjective ? "sharedObjectives" : "sharedEvents";
+  const lastMessageData: GroupLastMessage = { text: text.trim(), senderName, senderUid: uid, createdAt };
+  updateDoc(doc(db, groupCollection, refDocId), { lastMessage: lastMessageData }).catch(() => {});
+
+  // Push notifications to other members — skip if they muted this group
+  for (const memberUid of memberUids) {
+    if (memberUid === uid) continue;
+    sendGroupPushNotif(memberUid, groupId, senderName, text.trim()).catch(() => {});
+  }
+
+  return message;
+}
+
+async function sendGroupPushNotif(
+  toUid: string,
+  groupId: string,
+  senderName: string,
+  text: string,
+): Promise<void> {
+  const profile = await getUserProfile(toUid);
+  const token = profile?.pushToken;
+  if (!token || !token.startsWith("ExponentPushToken")) return;
+
+  // Respect mute: if recipient muted this group, skip the push notification
+  if (profile.mutedGroups && profile.mutedGroups.includes(groupId)) return;
+
+  const truncated = text.length > 100 ? text.slice(0, 97) + "\u2026" : text;
+  await fetch("https://exp.host/--/api/v2/push/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      to: token,
+      title: senderName,
+      body: truncated,
+      sound: "default",
+      data: { type: "group_message", groupId },
+    }),
+  });
+}
+
+export function subscribeGroupMessages(
+  groupId: string,
+  callback: (msgs: GroupMessage[]) => void,
+): () => void {
+  const q = query(
+    collection(db, "groupMessages", groupId, "messages"),
+    orderBy("createdAt", "desc"),
+    limit(50),
+  );
+  return onSnapshot(
+    q,
+    (snap) => callback(snap.docs.map((d) => d.data() as GroupMessage)),
+    () => callback([]),
+  );
+}
+
+/**
+ * Count how many groups have unread messages since the user last read them.
+ */
+export async function getGroupsUnreadCount(
+  objectives: SharedObjective[],
+  events: SharedEvent[],
+): Promise<number> {
+  const myUid = auth.currentUser?.uid;
+  let count = 0;
+  const groups = [
+    ...objectives.map((o) => ({ groupId: `obj_${o.id}`, lastMessage: o.lastMessage })),
+    ...events.map((e) => ({ groupId: `evt_${e.id}`, lastMessage: e.lastMessage })),
+  ];
+  for (const { groupId, lastMessage } of groups) {
+    if (!lastMessage?.createdAt) continue;
+    if (lastMessage.senderUid === myUid) continue;
+    const lastReadAt = await getGroupLastReadAt(groupId);
+    if (!lastReadAt || lastMessage.createdAt > lastReadAt) {
+      count++;
+    }
+  }
+  return count;
+}

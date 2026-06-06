@@ -38,6 +38,7 @@ import TrainingRoomScreen from "./screens/TrainingRoomScreen";
 import WorkoutProgressScreen from "./screens/WorkoutProgressScreen";
 import SocialScreen from "./screens/Social/SocialScreen";
 import AddFriendScreen from "./screens/Social/AddFriendScreen";
+import GroupChatScreen from "./screens/Social/GroupChatScreen";
 import PaywallScreen from "./screens/PaywallScreen";
 
 import type { RootStackParamList } from "./src/navigation/types";
@@ -90,6 +91,7 @@ function AppInner({ initialRoute }: { initialRoute: keyof RootStackParamList }) 
             <Stack.Screen name="Search" component={SearchScreen} />
             <Stack.Screen name="Social" component={SocialScreen} options={{ animation: "slide_from_right" }} />
             <Stack.Screen name="AddFriend" component={AddFriendScreen} options={{ animation: "slide_from_right" }} />
+            <Stack.Screen name="GroupChat" component={GroupChatScreen} options={{ animation: "slide_from_right" }} />
           </Stack.Navigator>
         </NavigationContainer>
       </GlobalMusicProvider>

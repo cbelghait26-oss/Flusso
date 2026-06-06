@@ -28,6 +28,19 @@ import { getIncomingRequests, getMySharedInvites } from "../services/SocialServi
 
 // Module-level setter so FlussoTabBar can receive updates without prop drilling
 let setPendingBadgeCount: ((n: number) => void) | null = null;
+let _friendsAndInvitesCount = 0;
+let _groupUnreadCount = 0;
+
+function updateTotalBadge() {
+  setPendingBadgeCount?.(_friendsAndInvitesCount + _groupUnreadCount);
+}
+
+export function refreshGroupBadge(count?: number) {
+  if (count !== undefined) {
+    _groupUnreadCount = count;
+    updateTotalBadge();
+  }
+}
 
 export function refreshPendingBadge() {
   if (!auth.currentUser) return;
@@ -35,7 +48,8 @@ export function refreshPendingBadge() {
     getIncomingRequests().catch(() => []),
     getMySharedInvites().catch(() => []),
   ]).then(([reqs, invites]) => {
-    setPendingBadgeCount?.((reqs.length + invites.length));
+    _friendsAndInvitesCount = reqs.length + invites.length;
+    updateTotalBadge();
   }).catch(() => {});
 }
 
@@ -95,6 +109,7 @@ function FlussoTabBar({ state, descriptors, navigation, resetTimerFn }: BottomTa
 
   useEffect(() => {
     setPendingBadgeCount = setPendingCount;
+    updateTotalBadge();
     refreshPendingBadge();
     return () => { if (setPendingBadgeCount === setPendingCount) setPendingBadgeCount = null; };
   }, []);

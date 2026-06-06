@@ -44,6 +44,8 @@ import {
   type SharedInvite,
   type SharedObjective,
   type UserProfile,
+  getGroupsUnreadCount,
+  markGroupRead,
 } from "../../src/services/SocialService";
 import {
   loadFocusMinutesToday,
@@ -52,7 +54,7 @@ import {
   loadTasksCompletedToday,
 } from "../../src/data/storage";
 import type { RootStackParamList } from "../../src/navigation/types";
-import { refreshPendingBadge } from "../../src/navigation/AppTabs";
+import { refreshPendingBadge, refreshGroupBadge } from "../../src/navigation/AppTabs";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -391,8 +393,14 @@ export default function SocialScreen() {
         getMySharedEvents(),
       ]);
       const today = new Date().toISOString().slice(0, 10);
-      setSharedObjectives(objs.filter((o) => o.status !== "completed"));
-      setSharedEvents(evts.filter((e) => e.date >= today));
+      const activeObjs = objs.filter((o) => o.status !== "completed");
+      const upcomingEvts = evts.filter((e) => e.date >= today);
+      setSharedObjectives(activeObjs);
+      setSharedEvents(upcomingEvts);
+      // Update group unread badge
+      getGroupsUnreadCount(activeObjs, upcomingEvts)
+        .then((count) => refreshGroupBadge(count))
+        .catch(() => {});
     } catch {
       // silent
     } finally {
@@ -416,8 +424,9 @@ export default function SocialScreen() {
   useFocusEffect(
     useCallback(() => {
       loadFriendsData();
+      loadSharedData();
       refreshPendingBadge();
-    }, [loadFriendsData])
+    }, [loadFriendsData, loadSharedData])
   );
 
   useEffect(() => {
@@ -896,27 +905,45 @@ export default function SocialScreen() {
             />
           ) : (
             <View style={[ss.card, { backgroundColor: C.card, borderColor: C.line }]}>
-              {sharedObjectives.map((obj, idx) => (
-                <View key={obj.id}>
-                  {idx > 0 && <View style={[ss.divider, { backgroundColor: C.line }]} />}
-                  <View style={ss.sharedObjRow}>
-                    <View
-                      style={[ss.sharedObjDot, { backgroundColor: C.accent }]}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[ss.sharedObjTitle, { color: C.text }]}>
-                        {obj.title}
-                      </Text>
-                      <Text style={[ss.sharedObjSub, { color: C.muted }]}>
-                        {obj.members.map((m) => m.displayName).join(", ")}
-                      </Text>
-                    </View>
-                    <Text style={[ss.memberCount, { color: C.muted }]}>
-                      {obj.members.length} member{obj.members.length !== 1 ? "s" : ""}
-                    </Text>
+              {sharedObjectives.map((obj, idx) => {
+                const groupId = `obj_${obj.id}`;
+                const hasUnread =
+                  obj.lastMessage &&
+                  obj.lastMessage.senderUid !== myUid;
+                return (
+                  <View key={obj.id}>
+                    {idx > 0 && <View style={[ss.divider, { backgroundColor: C.line }]} />}
+                    <Pressable
+                      onPress={() =>
+                        navigation.navigate("GroupChat", {
+                          groupId,
+                          groupName: obj.title,
+                          memberUids: obj.memberUids,
+                        })
+                      }
+                      style={({ pressed }) => [ss.sharedObjRow, { opacity: pressed ? 0.75 : 1 }]}
+                    >
+                      <View style={[ss.sharedObjDot, { backgroundColor: C.accent }]} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[ss.sharedObjTitle, { color: C.text }]}>
+                          {obj.title}
+                        </Text>
+                        <Text style={[ss.sharedObjSub, { color: C.muted }]} numberOfLines={1}>
+                          {obj.lastMessage
+                            ? `${obj.lastMessage.senderName}: ${obj.lastMessage.text}`
+                            : obj.members.map((m) => m.displayName).join(", ")}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: s(6) }}>
+                        {hasUnread && (
+                          <View style={[ss.unreadDot, { backgroundColor: C.danger }]} />
+                        )}
+                        <Ionicons name="chevron-forward" size={s(14)} color={C.muted + "60"} />
+                      </View>
+                    </Pressable>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
 
@@ -942,25 +969,45 @@ export default function SocialScreen() {
             />
           ) : (
             <View style={[ss.card, { backgroundColor: C.card, borderColor: C.line }]}>
-              {sharedEvents.map((evt, idx) => (
-                <View key={evt.id}>
-                  {idx > 0 && <View style={[ss.divider, { backgroundColor: C.line }]} />}
-                  <View style={ss.sharedObjRow}>
-                    <Ionicons name="calendar-outline" size={s(16)} color={C.accent} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[ss.sharedObjTitle, { color: C.text }]}>
-                        {evt.title}
-                      </Text>
-                      <Text style={[ss.sharedObjSub, { color: C.muted }]}>
-                        {evt.date}
-                      </Text>
-                    </View>
-                    <Text style={[ss.memberCount, { color: C.muted }]}>
-                      {evt.participants.length} participant{evt.participants.length !== 1 ? "s" : ""}
-                    </Text>
+              {sharedEvents.map((evt, idx) => {
+                const groupId = `evt_${evt.id}`;
+                const hasUnread =
+                  evt.lastMessage &&
+                  evt.lastMessage.senderUid !== myUid;
+                return (
+                  <View key={evt.id}>
+                    {idx > 0 && <View style={[ss.divider, { backgroundColor: C.line }]} />}
+                    <Pressable
+                      onPress={() =>
+                        navigation.navigate("GroupChat", {
+                          groupId,
+                          groupName: evt.title,
+                          memberUids: evt.participantUids,
+                        })
+                      }
+                      style={({ pressed }) => [ss.sharedObjRow, { opacity: pressed ? 0.75 : 1 }]}
+                    >
+                      <Ionicons name="calendar-outline" size={s(16)} color={C.accent} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[ss.sharedObjTitle, { color: C.text }]}>
+                          {evt.title}
+                        </Text>
+                        <Text style={[ss.sharedObjSub, { color: C.muted }]} numberOfLines={1}>
+                          {evt.lastMessage
+                            ? `${evt.lastMessage.senderName}: ${evt.lastMessage.text}`
+                            : evt.date}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: s(6) }}>
+                        {hasUnread && (
+                          <View style={[ss.unreadDot, { backgroundColor: C.danger }]} />
+                        )}
+                        <Ionicons name="chevron-forward" size={s(14)} color={C.muted + "60"} />
+                      </View>
+                    </Pressable>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </ScrollView>
@@ -1262,6 +1309,11 @@ const ss = StyleSheet.create({
   sharedObjTitle: { fontSize: s(13), fontWeight: "700" },
   sharedObjSub: { fontSize: s(11), marginTop: s(2) },
   memberCount: { fontSize: s(11), fontWeight: "700" },
+  unreadDot: {
+    width: s(8),
+    height: s(8),
+    borderRadius: s(4),
+  },
 
   // Modals
   modalOverlay: {

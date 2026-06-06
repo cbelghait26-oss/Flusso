@@ -38,4 +38,5 @@ export type RootStackParamList = {
   // Social
   Social: undefined;
   AddFriend: undefined;
+  GroupChat: { groupId: string; groupName: string; memberUids: string[] };
 };

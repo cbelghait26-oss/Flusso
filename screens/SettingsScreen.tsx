@@ -91,7 +91,7 @@ import {
   type NotifSettings,
   DEFAULT_NOTIF_SETTINGS,
 } from "../src/services/notifications";
-import { getMyProfile, ensureUserProfile, tagFromUid } from "../src/services/SocialService";
+import { getMyProfile, ensureUserProfile, tagFromUid, getGroupsUnreadCount, getMySharedObjectives, getMySharedEvents } from "../src/services/SocialService";
 import { restorePurchases, isPremiumActive, presentCustomerCenter } from "../src/services/SubscriptionService";
 
 type TabKey = "profile" | "settings" | "achievements";
@@ -382,11 +382,27 @@ export default function SettingsScreen() {
     }, 1000);
   };
 
+  // ── Group unread count ────────────────────────────────────────────────────
+  const [groupUnreadCount, setGroupUnreadCount] = useState(0);
+
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
     loadData();
   }, []);
-  useFocusEffect(useCallback(() => { loadData(); }, []));
+  useFocusEffect(useCallback(() => {
+    loadData();
+    // Refresh group unread count whenever the Settings tab comes into focus
+    Promise.all([getMySharedObjectives(), getMySharedEvents()])
+      .then(([objs, evts]) => {
+        const today = new Date().toISOString().slice(0, 10);
+        return getGroupsUnreadCount(
+          objs.filter((o) => o.status !== "completed"),
+          evts.filter((e) => e.date >= today),
+        );
+      })
+      .then(setGroupUnreadCount)
+      .catch(() => {});
+  }, []));
 
   const loadData = async () => {
     const n = await loadSetupName();
@@ -1198,6 +1214,20 @@ export default function SettingsScreen() {
               value="Social Hub"
               C={C}
               onPress={() => navigation.navigate("Social")}
+              right={
+                groupUnreadCount > 0 ? (
+                  <View style={{
+                    minWidth: s(18), height: s(18), borderRadius: s(9),
+                    backgroundColor: "#FF3B30",
+                    alignItems: "center", justifyContent: "center",
+                    paddingHorizontal: s(4),
+                  }}>
+                    <Text style={{ color: "#fff", fontSize: s(10), fontWeight: "900" }}>
+                      {groupUnreadCount > 99 ? "99+" : groupUnreadCount}
+                    </Text>
+                  </View>
+                ) : undefined
+              }
             />
           </View>
         </ScrollView>
