@@ -5,15 +5,21 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
+  orderBy,
+  limit,
   query,
   serverTimestamp,
   setDoc,
   updateDoc,
   where,
   writeBatch,
+  arrayUnion,
+  arrayRemove,
+  deleteDoc,
 } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
 import type { FriendRequest, UserMetrics, Friendship } from '@/types/models'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 
 export class SocialService {
   // ── Leaderboard ──────────────────────────────────────────────────────────
@@ -88,6 +94,7 @@ export type UserProfile = {
   friendTag: string;      // 6-char uppercase alphanumeric, stored without #
   createdAt?: any;
   pushToken?: string;     // Expo push token for remote notifications
+  mutedGroups?: string[]; // group IDs the user has muted
 };
 
 export type FriendshipStatus = "pending" | "accepted" | "blocked";
@@ -135,6 +142,13 @@ export type SharedMember = {
   displayName: string;
 };
 
+export type GroupLastMessage = {
+  text: string;
+  senderName: string;
+  senderUid: string;
+  createdAt: string; // ISO string
+};
+
 export type SharedObjective = {
   id: string;
   title: string;
@@ -148,6 +162,7 @@ export type SharedObjective = {
   completedUids?: string[]; // members who pressed "Mark completed"
   status?: "active" | "completed";
   hideMembers?: boolean;
+  lastMessage?: GroupLastMessage;
   created_at: any;
 };
 
@@ -189,6 +204,7 @@ export type SharedEvent = {
   participantUids: string[]; // flat for queries
   participants: SharedParticipant[];
   hideParticipants?: boolean;
+  lastMessage?: GroupLastMessage;
   created_at: any;
 };
 
